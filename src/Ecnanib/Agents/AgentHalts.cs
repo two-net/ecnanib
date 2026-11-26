@@ -1,3 +1,4 @@
+using Ecnanib.Accounts;
 using Ecnanib.Credentials;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.Persistence;
@@ -159,6 +160,21 @@ internal sealed class AgentHalts(
             // Its user may have stopped it meanwhile, or resumed it a moment ago.
             if (agent is null || AgentStates.HaltEnds(agent.State, agent.StateCause, agent.StateChangedAt) is not { } ends || now < ends)
             {
+                return false;
+            }
+
+            // An operator disabled the account of its user: nothing of a disabled account starts
+            // to run, and the service resumes nothing for it either (FR-OPS-4). The agent stays
+            // halted, so its position is still closed where that failed, and the first close
+            // after the account is enabled again ends the halt. Its user is not told: they
+            // cannot sign in to do anything about it.
+            if (await AccountStanding.IsDisabledAsync(context, userId, cancellationToken))
+            {
+                logger.LogInformation(
+                    "Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the account of its user is disabled",
+                    agentId,
+                    userId);
+
                 return false;
             }
 

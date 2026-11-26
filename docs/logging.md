@@ -183,6 +183,33 @@ The answer of Binance to api/v3/time on Spot Live is not what the call asks for:
 
 The gateway also logs each reading of Binance's clocks, with how far the clock of the service is from them, and once when new entries pause for it and when they go on, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceClock`. See "The log" in [exchange.md](exchange.md).
 
+## The counts of errors and warnings
+
+An operator status screen shows error rates (FR-OPS-2). `ILoggedProblems` says them, in `Platform/Logging`: how many errors and warnings the application logged in the last hour and in the last 24 hours, by the area that logged them.
+
+```csharp
+public interface ILoggedProblems
+{
+    LoggedProblemCounts Read();
+}
+
+public sealed record LoggedProblemCounts(DateTimeOffset CountedSince, IReadOnlyList<AreaProblems> Areas);
+
+public sealed record AreaProblems(string? Area, int ErrorsLastHour, int WarningsLastHour, int ErrorsLastDay, int WarningsLastDay);
+```
+
+| Rule | Detail |
+|---|---|
+| **An event is counted as it is logged** | `LoggedProblems` stands in the one pipeline, beside the outputs. So an event that the levels of the file keep out of the log is not counted either, and what is counted is what the log holds. |
+| **It is no output** | It writes nothing anywhere. The host still has one logger provider, and the log still has the console and the file as its only outputs: `LogOutputTests`. |
+| **A count holds nothing of an event** | A number for each minute of the last 24 hours, for each area, and no text, property, or error. So it holds no secret, whatever is logged, and it is not written to the database (NFR-DAT-7). What went wrong is in the log. |
+| **An error is the `Error` level and above, and a warning is the `Warning` level** | A provider or an exchange that refuses, fails, or takes too long is an outcome, which is mostly logged as a warning: so both are shown. |
+| **The area is the namespace under `Ecnanib` of what logged** | `ExchangeGateway`, `Accounts`, `Platform`, as the event says in `SourceContext`. What the framework and the libraries log is counted apart, as outside the application. |
+| **The two spans are exact to the minute** | The last 60 minutes, and the last 24 hours, by the clock of the application. A clock that was set back counts nothing twice. |
+| **It counts since the instance started** | In memory, by each instance for itself: a restart begins the counts again, and the screen says since when they are. An area that logged neither an error nor a warning in the last 24 hours is not listed. |
+
+`LoggedProblemsTests` logs under an area of its own, and holds the counts to these.
+
 ## Unhandled errors
 
 An error that nothing handles is logged once, at the `Error` level, with its stack trace, the correlation properties of where it happened, and a `ReferenceId`. The user sees a plain message and that id, and nothing of the error (NFR-LOG-6).

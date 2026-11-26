@@ -29,6 +29,11 @@
     @* The same whatever the password was, and whether or not the address has an account. *@
     <p class="form-error" role="alert">@AccountPages.TooManyAttempts(Limits.SignIn.Minutes)</p>
 }
+@if (_disabled)
+{
+    @* Said only after the right password, so it tells nobody else that the address has an account. *@
+    <p class="form-error" role="alert" id="@SignInPages.DisabledId">@SignInPages.Disabled</p>
+}
 
 <form method="post" @formname="sign-in" @onsubmit="SignInAsync">
     <AntiforgeryToken />
@@ -53,6 +58,7 @@
 @code {
     private bool _failed;
     private bool _tooManyAttempts;
+    private bool _disabled;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -112,6 +118,11 @@
                 // The answer says so in its status too, for whatever sent the form without reading the page.
                 _tooManyAttempts = true;
                 HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                break;
+
+            case SignInOutcome.Disabled:
+                // The password was right, and an operator disabled the account (FR-OPS-4).
+                _disabled = true;
                 break;
 
             default:

@@ -41,6 +41,11 @@ public static class CredentialsModule
             credential => credential.MasterKeyId,
             credential => ExchangeCredential.BoundTo(credential.Id, credential.UserId));
 
+        // What syncs the model catalog for an operator, outside its schedule, and records that
+        // it was asked for (FR-CAT-2, FR-OPS-4). It is here because of what it uses: the Catalog
+        // may not use Accounts, which keeps the audit trail, and this component may use both.
+        services.AddSingleton<IOperatorCatalogSync, OperatorCatalogSync>();
+
         // The parts of the export of a user's data that this component keeps: which keys are
         // stored, each by its last four characters (NFR-SEC-9).
         services.AddSingleton<IExportedPart, AiKeysExport>();

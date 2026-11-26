@@ -53,6 +53,18 @@ public sealed class BackgroundJobSchedule
     }
 
     /// <summary>
+    /// How long it is from one run to the next: the interval, or the time between two boundaries.
+    /// It is what a status screen says of the schedule (FR-OPS-2).
+    /// </summary>
+    public TimeSpan Period => _period;
+
+    /// <summary>
+    /// Whether the job runs on UTC boundaries, at every multiple of <see cref="Period"/> since
+    /// midnight. False for a job on an interval, which is measured from its previous run.
+    /// </summary>
+    public bool OnUtcBoundaries => _atUtcBoundaries;
+
+    /// <summary>
     /// Whether a run that could not start when it was due is dropped once the following one is
     /// due. True on UTC boundaries, and false on an interval, where a late run is still the run.
     /// </summary>

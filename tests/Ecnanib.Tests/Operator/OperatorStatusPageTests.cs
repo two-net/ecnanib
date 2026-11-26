@@ -1,0 +1,349 @@
+using System.Net;
+using AngleSharp.Html.Parser;
+using Ecnanib.AiProviderGateway;
+using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.Tests.Catalog;
+using Ecnanib.Tests.DecisionEngine;
+using Ecnanib.Tests.Logging;
+using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.Settings;
+using Ecnanib.WebUi;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+
+namespace Ecnanib.Tests.Operator;
+
+/// <summary>
+/// An operator status screen shows scheduler health, queue depth, last catalog sync per
+/// provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2).
+/// These tests read the screen as an operator opens it. Who it opens for is in
+/// <c>LayoutPageTests</c>, that it shows nothing of any user in <c>GlobalHaltTests</c>, and what
+/// each reading is worked out from in the tests of the component that keeps it.
+/// </summary>
+public class OperatorStatusPageTests
+{
+    private const string Ada = "ada@example.com";
+    private const string Olive = "olive@example.com";
+
+    // Between two quarter hours, so that no close is due as an application starts.
+    private static readonly DateTimeOffset Morning = new(2026, 11, 16, 10, 7, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Quarter = new(2026, 11, 16, 10, 15, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task The_screen_has_a_part_for_each_reading_and_says_of_when_it_is()
+    {
+        var clock = new TestClock(Morning);
+        using var application = Application(clock);
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // The seven readings of the requirement, in its order, each under a heading of its own.
+        Assert.Equal(
+            ["Scheduler", "Queue of the cycles", "Catalog syncs", "Request limits of Binance", "Clock", "Tables", "Errors and warnings"],
+            Parsed(page).QuerySelectorAll("main h2").Select(heading => heading.TextContent.Trim()));
+
+        // It follows nothing, so it says of when it is, in the time zone of whoever reads it,
+        // and which of its readings are of the one instance that answered.
+        Assert.Contains("This is how the service stood on 16 November 2026, 10:07:00 UTC.", page);
+        Assert.Contains("are kept in memory by the instance that answered this page", page);
+        Assert.DoesNotContain("<!--Blazor:{\"type\":\"server\"", page);
+
+        // And nothing can be done on it: what an operator does is on a page that it leads to.
+        Assert.Empty(Parsed(page).QuerySelectorAll("main form, main button, main input"));
+        Assert.NotNull(Parsed(page).QuerySelector($"main a[href='{WebUiModule.GlobalHaltPath}']"));
+    }
+
+    [Fact]
+    public async Task The_scheduler_says_each_job_with_its_schedule_and_its_latest_run()
+    {
+        var clock = new TestClock(Morning);
+        using var application = Application(clock);
+        using var client = await OperatorAsync(application);
+        await Wait.UntilAsync(
+            () => StoredJob.Of(application.Database, CatalogApplication.Job)?.Outcome == "Succeeded", "the first run of the job that syncs the catalog");
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // The two jobs that every application of a test has. The catalog is synced as the
+        // work starts, and the keys are checked on the hour, which has not come.
+        Assert.Equal(
+            [
+                ["catalog-sync", "Every 12 hours", "16 November 2026, 10:07:00 UTC", "16 November 2026, 10:07:00 UTC", "Succeeded", "16 November 2026, 22:07:00 UTC"],
+                ["key-validation", "Every hour, on the UTC clock", "No run yet", "None", "No run yet", "Due at once"],
+            ],
+            RowsOf(page, "status-scheduler"));
+        Assert.Contains("No job is overdue.", SaidIn(page, "status-scheduler"));
+    }
+
+    [Fact]
+    public async Task The_scheduler_says_a_job_whose_run_is_overdue_and_one_that_this_version_does_not_have()
+    {
+        var database = PostgresServer.CreateDatabase();
+        database.Migrate();
+
+        // Another instance holds the background work, as far as the database can tell, and runs
+        // nothing: so the runs below are the latest that there are.
+        using var other = database.Open();
+        using (var take = new NpgsqlCommand("SELECT pg_advisory_lock(@key)", other))
+        {
+            take.Parameters.AddWithValue("key", BackgroundJobs.LockKey);
+            take.ExecuteNonQuery();
+        }
+
+        database.Execute(
+            """
+            INSERT INTO background_jobs (name, last_started_at, last_finished_at, last_outcome) VALUES
+                ('catalog-sync', '2026-11-15 10:07:00+00', '2026-11-15 10:07:02+00', 'Failed'),
+                ('key-validation', '2026-11-16 09:00:00+00', NULL, NULL),
+                ('a-job-of-an-earlier-version', '2026-11-01 00:00:00+00', '2026-11-01 00:00:01+00', 'Stopped')
+            """);
+
+        using var application = Application(new TestClock(Morning), database);
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            [
+                // Due half a day after its start, which is long past.
+                ["catalog-sync", "Every 12 hours", "15 November 2026, 10:07:00 UTC", "15 November 2026, 10:07:02 UTC",
+                    "Failed. The error is in the log.", "Overdue since 15 November 2026, 22:07:00 UTC"],
+
+                // A run with no end is still going, or was cut off: the screen says both.
+                ["key-validation", "Every hour, on the UTC clock", "16 November 2026, 09:00:00 UTC", "No end recorded",
+                    "Still going, or cut off", "Overdue since 16 November 2026, 10:00:00 UTC"],
+
+                // Last, and with no schedule to be late for.
+                ["a-job-of-an-earlier-version", "Not a job of this version", "1 November 2026, 00:00:00 UTC", "1 November 2026, 00:00:01 UTC",
+                    "Stopped by the application", "Not known"],
+            ],
+            RowsOf(page, "status-scheduler"));
+
+        Assert.Contains(
+            "2 jobs are overdue: no instance runs the background work, or a run outlasts its schedule.", SaidIn(page, "status-scheduler"));
+    }
+
+    [Fact]
+    public async Task The_queue_says_the_cycles_of_the_close_that_is_under_way()
+    {
+        using var cycles = new CyclesApplication(Quarter, maxPerProvider: 1, settings: Operators);
+        using var client = await OperatorAsync(cycles.Application);
+
+        // Between two closes there is no queue.
+        var before = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Contains("No close is under way: the cycles of the last close are over, or this instance stands by.", SaidIn(before, "status-queue"));
+        Assert.Empty(RowsOf(before, "status-queue"));
+
+        // Three cycles of one provider, of which one runs at a time, and the first does not end.
+        cycles.Agents!.Give(Guid.NewGuid());
+        cycles.Agents.Give(Guid.NewGuid());
+        cycles.Agents.Give(Guid.NewGuid());
+        cycles.Cycles.Holds = true;
+        var run = cycles.RunAsync(Quarter);
+        await cycles.Cycles.StartedAsync(1);
+        await Wait.UntilAsync(() => cycles.Application.CycleLoad.Now() is { Queued: 2, Running: 1 }, "the two cycles that wait for the first");
+
+        var during = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Close", "Waiting for candles", "Waiting for a place", "Running"],
+            ColumnsOf(during, "status-queue"));
+        Assert.Equal([["16 November 2026, 10:15 UTC", "0", "2", "1"]], RowsOf(during, "status-queue"));
+
+        // The queue names no user and no agent: it is numbers, and the time of the close.
+        Assert.All(cycles.Cycles.Started, cycle => Assert.DoesNotContain(cycle.Agent.Id.ToString(), during));
+
+        cycles.Cycles.ReleaseAll();
+        await run.Within();
+
+        Assert.Empty(RowsOf(await client.PageAsync(WebUiModule.OperatorStatusPath), "status-queue"));
+    }
+
+    [Fact]
+    public async Task The_catalog_syncs_say_the_latest_sync_of_each_provider_and_the_latest_that_succeeded()
+    {
+        var clock = new TestClock(Morning);
+        using var application = Application(clock, settings: file => Operators(file).WithCatalogKey());
+        using var client = await OperatorAsync(application);
+        await Wait.UntilAsync(
+            () => StoredJob.Of(application.Database, CatalogApplication.Job)?.Outcome == "Succeeded", "the sync of the start");
+
+        var synced = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Provider", "Synced with", "Latest sync", "How it ended", "Models", "Latest sync that succeeded"],
+            ColumnsOf(synced, "status-catalog"));
+
+        // The file holds a key of the service for Claude alone: the others are synced when a
+        // user's key is checked, and none was.
+        Assert.Equal(
+            [
+                ["Claude", "The key of the service, on the schedule and on demand", "16 November 2026, 10:07 UTC, on the schedule", "Succeeded",
+                    "2 added, 0 changed, 0 marked unavailable", "16 November 2026, 10:07 UTC"],
+                ["Gemini", "The keys of users, as each is checked", "Not synced yet", "None", "None", "None yet"],
+                ["GPT", "The keys of users, as each is checked", "Not synced yet", "None", "None", "None yet"],
+                ["Grok", "The keys of users, as each is checked", "Not synced yet", "None", "None", "None yet"],
+            ],
+            RowsOf(synced, "status-catalog"));
+
+        // A later sync fails. It is the latest, and the one before it is what the catalog holds.
+        application.ModelLists.Answer = (_, _) => StandInModelLists.Ended(AiModelListOutcome.AuthenticationFailed);
+        clock.Set(Morning.AddMinutes(20));
+        await application.Catalog.SyncAsync(TestContext.Current.CancellationToken);
+
+        var failed = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Claude", "The key of the service, on the schedule and on demand", "16 November 2026, 10:27 UTC, on demand",
+                "Failed: the provider refused the key", "0 added, 0 changed, 0 marked unavailable", "16 November 2026, 10:07 UTC"],
+            RowsOf(failed, "status-catalog")[0]);
+
+        // The key of the service is said to be there, and is not shown (FR-OPS-5).
+        Assert.DoesNotContain(SettingsJson.CatalogKey, failed);
+    }
+
+    [Fact]
+    public async Task The_request_limits_and_the_clock_say_how_the_service_stands_with_Binance()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Limit", "Environment", "Used", "Allowed to the service", "Limit of Binance", "Counted by Binance", "Calls waiting", "Held back"],
+            ColumnsOf(page, "status-limits"));
+
+        // Each limit of the gateway, on the real exchange and then in the test environment, with
+        // the 60 percent of it that the file of the tests allows the service. No test reaches
+        // Binance, so nothing is used, and Binance has said nothing.
+        Assert.Equal(
+            [
+                ["Spot", "Live", "0, which is 0 percent of what is allowed", "3,600", "6,000", "Not said yet", "0", "No"],
+                ["Spot", "Demo", "0, which is 0 percent of what is allowed", "3,600", "6,000", "Not said yet", "0", "No"],
+                ["Futures", "Live", "0, which is 0 percent of what is allowed", "1,440", "2,400", "Not said yet", "0", "No"],
+                ["Futures", "Demo", "0, which is 0 percent of what is allowed", "1,440", "2,400", "Not said yet", "0", "No"],
+                ["Key permissions", "Live", "0, which is 0 percent of what is allowed", "7,200", "12,000", "Not said yet", "0", "No"],
+            ],
+            RowsOf(page, "status-limits"));
+
+        Assert.Equal(
+            ["Market", "Environment", "State", "Drift", "Round trip", "Read", "Tolerance"],
+            ColumnsOf(page, "status-clock"));
+
+        // The application of a test does not read Binance's clocks, so none was read: the screen
+        // says that, and what follows from it, and no drift of nothing.
+        Assert.Equal(
+            [
+                ["Spot", "Live", "Not read: new entries are paused", "Not known", "Not known", "Not read yet", "400 milliseconds"],
+                ["Spot", "Demo", "Not read: new entries are paused", "Not known", "Not known", "Not read yet", "400 milliseconds"],
+                ["Futures", "Live", "Not read: new entries are paused", "Not known", "Not known", "Not read yet", "400 milliseconds"],
+                ["Futures", "Demo", "Not read: new entries are paused", "Not known", "Not known", "Not read yet", "400 milliseconds"],
+            ],
+            RowsOf(page, "status-clock"));
+    }
+
+    [Fact]
+    public async Task The_tables_say_what_each_takes_the_largest_first()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+        var tables = RowsOf(page, "status-tables");
+
+        Assert.Equal(["Table", "Size"], ColumnsOf(page, "status-tables"));
+
+        // Every table of the database, each once, with a size in a unit.
+        using var context = application.Database.Context();
+        var expected = context.Model.GetEntityTypes().Select(entity => entity.GetTableName()!).Append("__EFMigrationsHistory").Distinct();
+
+        Assert.Equal(expected.Order(StringComparer.Ordinal), tables.Select(table => table[0]).Order(StringComparer.Ordinal));
+        Assert.All(tables, table => Assert.Matches(@"^[\d,]+(\.\d)? (bytes|kB|MB|GB)$", table[1]));
+
+        // The largest first: a size in a larger unit never follows one in a smaller.
+        string[] units = ["GB", "MB", "kB", "bytes"];
+        var order = tables.Select(table => Array.IndexOf(units, table[1].Split(' ')[1])).ToList();
+        Assert.Equal(order.Order(), order);
+
+        Assert.Matches(
+            $@"The {tables.Count} tables take [\d,]+(\.\d)? (kB|MB|GB) together\.", string.Join(" ", SaidIn(page, "status-tables")));
+    }
+
+    [Fact]
+    public async Task The_errors_and_warnings_are_counted_by_the_area_that_logged_them()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        var quiet = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // It says since when it counts, and nothing of the application's own was counted yet.
+        Assert.Contains("It counts since it started, on 16 November 2026, 10:07 UTC.", string.Join(" ", SaidIn(quiet, "status-problems")));
+        Assert.DoesNotContain(RowsOf(quiet, "status-problems"), area => area[0] == "Accounts");
+
+        // A user who is no operator asks for the screen twice, and is refused: Accounts logs a
+        // warning each time (NFR-SEC-3).
+        await application.RegisterVerifiedAsync(Ada);
+        using var user = application.CreateClient();
+        await user.SignInAsync(Ada);
+
+        for (var asked = 0; asked < 2; asked++)
+        {
+            using var refused = await user.GetAsync(WebUiModule.OperatorStatusPath, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        }
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Area", "Errors, last hour", "Warnings, last hour", "Errors, last 24 hours", "Warnings, last 24 hours"],
+            ColumnsOf(page, "status-problems"));
+        Assert.Equal(["Accounts", "0", "2", "0", "2"], Assert.Single(RowsOf(page, "status-problems"), area => area[0] == "Accounts"));
+
+        // A count holds nothing of what was logged: not who was refused, and not what.
+        Assert.DoesNotContain("was refused", page);
+    }
+
+    private static AccountsApplication Application(
+        TestClock clock, TestDatabase? database = null, Func<SettingsJson, SettingsJson>? settings = null) =>
+        new(clock: clock, database: database, settings: settings ?? Operators);
+
+    private static SettingsJson Operators(SettingsJson file) => file.WithJson("Application:Operators", $"[ \"{Olive}\" ]");
+
+    /// <summary>A browser that is signed in as the operator of the configuration file.</summary>
+    private static async Task<HttpClient> OperatorAsync(AccountsApplication application)
+    {
+        await application.RegisterVerifiedAsync(Olive);
+
+        var client = application.CreateClient();
+        await client.SignInAsync(Olive);
+
+        return client;
+    }
+
+    private static AngleSharp.Html.Dom.IHtmlDocument Parsed(string page) => new HtmlParser().ParseDocument(page);
+
+    /// <summary>The part of the screen under a heading, by the id of the heading.</summary>
+    private static AngleSharp.Dom.IElement PartOf(string page, string headingId) =>
+        Parsed(page).GetElementById(headingId)?.ParentElement ?? throw new Xunit.Sdk.XunitException($"The screen has no part {headingId}.");
+
+    /// <summary>What the paragraphs of a part say.</summary>
+    private static IReadOnlyList<string> SaidIn(string page, string headingId) =>
+        [.. PartOf(page, headingId).QuerySelectorAll("p").Select(said => said.TextContent.Trim())];
+
+    /// <summary>The headings of the columns of the table of a part.</summary>
+    private static IReadOnlyList<string> ColumnsOf(string page, string headingId) =>
+        [.. PartOf(page, headingId).QuerySelectorAll("thead th").Select(heading => heading.TextContent.Trim())];
+
+    /// <summary>The rows of the table of a part, each as the texts of its cells. Empty when the part has no table.</summary>
+    private static IReadOnlyList<IReadOnlyList<string>> RowsOf(string page, string headingId) =>
+    [
+        .. PartOf(page, headingId).QuerySelectorAll("tbody tr")
+            .Select(row => (IReadOnlyList<string>)[.. row.Children.Select(cell => cell.TextContent.Trim())]),
+    ];
+}

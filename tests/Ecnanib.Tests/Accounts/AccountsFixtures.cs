@@ -314,6 +314,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What a cycle does once it has started, as the application has it.</summary>
     public IDecisionCycle Cycle => _application.Services.GetRequiredService<IDecisionCycle>();
 
+    /// <summary>How deep the queue of the cycles is now, as an operator status screen shows it (FR-OPS-2).</summary>
+    public ICycleLoad CycleLoad => _application.Services.GetRequiredService<ICycleLoad>();
+
     /// <summary>What runs a test cycle of an agent for its user, which places no orders (FR-CYC-12).</summary>
     public ITestCycles TestCycles => _application.Services.GetRequiredService<ITestCycles>();
 

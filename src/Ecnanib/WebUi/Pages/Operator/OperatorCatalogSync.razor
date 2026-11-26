@@ -1,0 +1,108 @@
+@attribute [Route(WebUiModule.OperatorCatalogSyncPath)]
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+@using Ecnanib.Catalog
+@using Ecnanib.Credentials
+@using Ecnanib.Platform.Settings
+@inject ICatalogSync Catalog
+@inject IOperatorCatalogSync Syncing
+@inject CatalogSyncSettings Settings
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: who is an operator is decided
+    with each request (NFR-SEC-3). The page is for operators alone, as the operator status screen
+    is, which leads to it. A visitor is sent to sign in, and a user who is not an operator is
+    refused, for a form that is posted as for the page.
+
+    It says what a sync does, shows the last sync of each provider, and has one button, which
+    has the catalog synced now (FR-CAT-2, FR-OPS-4). It is the page that asks before a sync is
+    made: nothing else on it can be done. What syncs asks again whether the user of its request
+    is an operator, and records that the sync was asked for (FR-OPS-5). The page waits for the
+    sync, and then asks for itself again, so that a reload of it asks for no second one. The
+    catalog is of the service: the page shows nothing of any user, and no key.
+
+    Where the configuration file holds a key for no provider, there is nothing to sync on demand,
+    and the page says so in place of the button. The form is on the page while one is answered
+    all the same: a form that is not there cannot be answered. Its texts are in OperatorSyncPages.
+*@
+
+@if (_syncs is not null)
+{
+    <PageTitle>@OperatorSyncPages.Title</PageTitle>
+
+    <h1>@OperatorSyncPages.Title</h1>
+
+    @if (Synced && !_answers)
+    {
+        <p class="form-done" role="status">@OperatorSyncPages.Done</p>
+    }
+
+    <p>@OperatorSyncPages.Explained</p>
+
+    <p>@OperatorSyncPages.Counts(Settings.MissedSyncsBeforeUnavailable)</p>
+
+    <CatalogSyncs Syncs="_syncs" />
+
+    @if (_answers || _syncs.Any(provider => provider.HasCatalogKey))
+    {
+        <p>@OperatorSyncPages.SyncMeans</p>
+
+        <form method="post" @formname="@OperatorSyncPages.SyncForm" @onsubmit="SyncAsync">
+            <AntiforgeryToken />
+
+            <button type="submit">@OperatorSyncPages.Sync</button>
+        </form>
+    }
+    else
+    {
+        <p>@OperatorSyncPages.NothingToSync</p>
+    }
+
+    <p>@OperatorSyncPages.Recorded</p>
+
+    <p><a href="@WebUiModule.OperatorStatusPath">@OperatorPages.BackToStatus</a></p>
+}
+
+@code {
+    private IReadOnlyList<ProviderSyncStatus>? _syncs;
+
+    // Whether a form is being answered, which finds its form on the page whatever the file holds.
+    private bool _answers;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // Whether the page was asked for after a sync that an operator asked for.
+    [SupplyParameterFromQuery(Name = WebUiModule.CatalogSyncedKey)]
+    private bool Synced { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _answers = !HttpMethods.IsGet(request.Request.Method);
+
+        // The syncs of the service, which are the same for every operator. Nothing of a user is read.
+        _syncs = await Catalog.StatusAsync(request.RequestAborted);
+    }
+
+    private async Task SyncAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // What syncs asks again whether the user of the request is an operator, and records
+        // that the sync was asked for. It answers when the syncs are over.
+        var synced = await Syncing.SyncAsync(request);
+
+        // The page as it is now, by a request that changes nothing: a reload of it asks for no
+        // sync again. It says that a sync is over when one was made.
+        Navigation.NavigateTo(synced is { Count: > 0 } ? WebUiModule.OperatorCatalogSyncedPath : WebUiModule.OperatorCatalogSyncPath);
+    }
+}

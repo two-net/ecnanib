@@ -185,6 +185,10 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("decisions_reviewed_at");
 
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text")

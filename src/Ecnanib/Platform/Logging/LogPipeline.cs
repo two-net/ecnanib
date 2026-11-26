@@ -26,7 +26,11 @@ internal static class LogPipeline
     /// <param name="settings">The outputs to write to. An output is on when its key is in the file.</param>
     /// <param name="contentRoot">The folder a relative log file path starts from.</param>
     /// <param name="mask">The masking every event passes before any output.</param>
-    public static Logger Create(LoggingSettings settings, string contentRoot, SecretMask mask)
+    /// <param name="problems">
+    /// What counts the errors and warnings that are logged, for the operator status screen
+    /// (FR-OPS-2). It is no output: it keeps numbers, and nothing of an event.
+    /// </param>
+    public static Logger Create(LoggingSettings settings, string contentRoot, SecretMask mask, ILogEventSink problems)
     {
         var outputs = new LoggerConfiguration().MinimumLevel.Verbose();
 
@@ -59,6 +63,10 @@ internal static class LogPipeline
             // A secret that is part of a logged object prints as ***, like one logged on its own.
             .Destructure.AsScalar<Secret>()
             .WriteTo.Sink(new MaskingSink(outputs.CreateLogger(), mask))
+
+            // Beside the outputs, and not behind the mask: it reads the level and the source of
+            // an event, and keeps neither its text nor its properties.
+            .WriteTo.Sink(problems)
             .CreateLogger();
     }
 }

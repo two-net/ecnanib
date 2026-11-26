@@ -45,4 +45,34 @@ public interface ICatalogSync
     /// nothing about the key.
     /// </returns>
     Task<IReadOnlyList<string>?> KeyValidatedAsync(AiProviderCode provider, string apiKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// How the sync of each provider's catalog stands: its latest sync, with how it ended, and
+    /// the latest one that succeeded. It is the last catalog sync per provider that an operator
+    /// status screen shows (FR-OPS-2). It reads the syncs that are recorded, and asks no
+    /// provider.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// Every provider of the application, by its code, also one that was never synced. A row
+    /// of a sync names no user and no key (FR-CAT-7), so neither does this.
+    /// </returns>
+    Task<IReadOnlyList<ProviderSyncStatus>> StatusAsync(CancellationToken cancellationToken);
 }
+
+/// <summary>How the sync of one provider's catalog stands.</summary>
+/// <param name="Provider">The provider.</param>
+/// <param name="ProviderName">What the provider is called.</param>
+/// <param name="HasCatalogKey">
+/// Whether the configuration file holds a key of the service for the provider. With one, the
+/// catalog of the provider is synced on the schedule and on demand. Without one, it is synced
+/// only when the provider takes the key of a user (FR-CAT-3). It says that there is a key, and
+/// nothing of the key.
+/// </param>
+/// <param name="Latest">The latest sync, however it ended, or null when the provider was never synced.</param>
+/// <param name="LatestSucceeded">
+/// The latest sync that succeeded, which is what the catalog of the provider holds, or null when
+/// none did. It is <paramref name="Latest"/> when that one succeeded.
+/// </param>
+public sealed record ProviderSyncStatus(
+    AiProviderCode Provider, string ProviderName, bool HasCatalogKey, CatalogSyncRun? Latest, CatalogSyncRun? LatestSucceeded);

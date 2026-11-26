@@ -106,6 +106,12 @@ public enum AgentStateCause
     /// service resumed the agent (FR-RSK-8).
     /// </summary>
     DailyLossHaltEnded,
+
+    /// <summary>
+    /// An operator disabled the account of the agent's user while the agent ran (FR-OPS-4). The
+    /// agent waits for its user, who resumes it once the account is enabled again.
+    /// </summary>
+    AccountDisabled,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>
@@ -154,6 +160,15 @@ public static class AgentStates
     /// its user left it until then.
     /// </summary>
     public static bool NeedsItsKey(AgentState state) => state == AgentState.Running;
+
+    /// <summary>
+    /// Whether an agent in a state acts for its user now, and so moves to Attention required when
+    /// an operator disables the account of its user: while it is Running (FR-OPS-4). An agent
+    /// that a loss limit halted stays halted, so that the service goes on closing its position,
+    /// and its halt does not end while the account is disabled. Every other agent stays as its
+    /// user left it: none of them runs, and a disabled account starts and resumes none.
+    /// </summary>
+    public static bool StopsWithItsAccount(AgentState state) => state == AgentState.Running;
 
     /// <summary>
     /// Whether the mode, market, symbol, and timeframe of an agent can be changed, and whether

@@ -38,6 +38,7 @@ internal sealed class DecisionCyclesJob(
     ClosedCandles candles,
     IDecisionCycle work,
     IEnumerable<IReconciliation> reconciliations,
+    CycleLoads load,
     TradingSettings trading,
     TimeProvider clock,
     ILogger<DecisionCyclesJob> logger) : IBackgroundJob
@@ -131,6 +132,7 @@ internal sealed class DecisionCyclesJob(
             work,
             _reconciliations,
             new CycleQueue(trading.Cycles.MaxPerProvider, trading.Cycles.MaxPerKey),
+            load,
             clock,
             logger,
             closedAt,
@@ -163,6 +165,7 @@ internal sealed class CycleBatch(
     IDecisionCycle work,
     IReadOnlyList<IReconciliation> reconciliations,
     CycleQueue queue,
+    CycleLoads load,
     TimeProvider clock,
     ILogger logger,
     DateTimeOffset closedAt,
@@ -205,6 +208,7 @@ internal sealed class CycleBatch(
         using var woken = stopping.Register(() => _events.Writer.TryWrite(new Woken()));
 
         Queue(running);
+        SayLoad();
 
         logger.LogInformation(
             "{CycleCount} cycles are due for the close at {ClosedAt}, with candles of {GroupCount} symbols and timeframes",
@@ -260,6 +264,8 @@ internal sealed class CycleBatch(
 
                 if (stop.IsCancellationRequested)
                 {
+                    SayLoad();
+
                     continue;
                 }
 
@@ -278,6 +284,8 @@ internal sealed class CycleBatch(
                         _started.Add(Task.Run(() => RunCycleAsync(cycle, through, stop.Token), CancellationToken.None));
                     }
                 }
+
+                SayLoad();
             }
         }
         finally
@@ -285,6 +293,9 @@ internal sealed class CycleBatch(
             // Whatever ended the loop, nothing outlives the run.
             await stop.CancelAsync();
             await Task.WhenAll(_started);
+
+            // The run of the close is over, however it ended: no close is under way.
+            load.Say(null);
         }
 
         Summarize(Math.Round(clock.GetElapsedTime(began).TotalMilliseconds, 1));
@@ -292,6 +303,14 @@ internal sealed class CycleBatch(
         // A run that was stopped says so, and the scheduler records it as stopped.
         stopping.ThrowIfCancellationRequested();
     }
+
+    /// <summary>
+    /// Says how the cycles of the close stand, for the operator status screen (FR-OPS-2): after
+    /// every pass of the loop, which is the one place that they change in. What it says holds
+    /// until the next pass, because nothing else touches the queue or the counts.
+    /// </summary>
+    private void SayLoad() =>
+        load.Say(new CycleLoad(closedAt, _unsettled.Values.Sum(cycles => cycles.Count), queue.Count, _running));
 
     /// <summary>Makes a cycle for each agent, and sorts them by the candles that they wait for.</summary>
     private void Queue(IReadOnlyList<RunningAgent> running)

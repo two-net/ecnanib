@@ -112,6 +112,24 @@ public enum AuditAction
 
     /// <summary>An operator switched the global halt off: agents open positions again.</summary>
     GlobalHaltSwitchedOff,
+
+    /// <summary>
+    /// An operator disabled the account of a user: it is not signed in from then on, and its
+    /// sessions ended (FR-OPS-4, FR-OPS-5). The event carries the operator as its user, and the
+    /// target names the account that was disabled, which is another one.
+    /// </summary>
+    AccountDisabled,
+
+    /// <summary>An operator enabled an account that was disabled: its user can sign in again.</summary>
+    AccountEnabled,
+
+    /// <summary>
+    /// An operator asked for a sync of the model catalog, outside its schedule (FR-CAT-2,
+    /// FR-OPS-4, FR-OPS-5). It is recorded when it is asked for, before the providers are asked:
+    /// what syncs the catalog may not use Accounts, and records each sync in a table of its own.
+    /// The target names the catalog, and the event carries the operator as its user.
+    /// </summary>
+    CatalogSyncRequested,
 }
 
 /// <summary>
@@ -149,8 +167,11 @@ public sealed class AuditEvent : IUserOwned
     public AuditAction Action { get; }
 
     /// <summary>
-    /// What it was done to, as a kind and an id: <c>user:…</c> for an account. A runtime flag of
-    /// the service has a name in place of an id: <c>runtime-flag:global-halt</c>.
+    /// What it was done to, as a kind and an id: <c>user:…</c> for an account. What there is one
+    /// of in the service has a name in place of an id: <c>runtime-flag:global-halt</c> for the
+    /// global halt, and <c>catalog:models</c> for the model catalog. It is the
+    /// account of <see cref="UserId"/> for what a user does to their own, and the account of
+    /// another user for what an operator does to it.
     /// </summary>
     public string Target { get; }
 

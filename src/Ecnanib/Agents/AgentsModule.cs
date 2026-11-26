@@ -33,6 +33,10 @@ public static class AgentsModule
         // moves to Attention required (FR-KEY-10).
         services.AddSingleton<IKeyDependents, AgentKeyDependents>();
 
+        // What Accounts tells when an operator disables an account: an agent of it that runs
+        // moves to Attention required (FR-OPS-4).
+        services.AddSingleton<IAccountDependents, AgentAccountDependents>();
+
         // What the Catalog tells when a sync marks a model unavailable: an agent that runs with
         // it moves to Attention required, and no other model is put in its place (FR-CAT-8).
         services.AddSingleton<IModelDependents, AgentModelDependents>();

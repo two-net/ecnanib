@@ -55,6 +55,11 @@ public static class AccountsModule
         services.AddSingleton<IAccountDeletion, AccountDeletion>();
         services.AddSingleton<IDataExport, DataExport>();
 
+        // Disabling and enabling the account of a user, which an operator does (FR-OPS-4). What
+        // depends on an account being enabled is for IAccountDependents to do, which Agents
+        // implements.
+        services.AddSingleton<IAccountDisabling, AccountDisabling>();
+
         // The theme that a user chose, which is stored with the account (FR-THM-3). A request
         // reads it with its session: see SessionAuthentication.ThemeClaimType.
         services.AddSingleton<IThemeChoice, StoredThemeChoice>();

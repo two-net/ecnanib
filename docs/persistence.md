@@ -128,6 +128,25 @@ They do not make `EcnanibDbContext` the only possible way in. Registering anothe
 
 A database error is logged once, by whoever handles the exception. The mapper's own error events would log it a second time, so they are written at the `Debug` level. The tracked configuration file sets `Microsoft.EntityFrameworkCore` to `Warning`; set it to `Information` to see every SQL statement. See [logging.md](logging.md).
 
+### The sizes of the tables
+
+An operator status screen shows table sizes (FR-OPS-2): decision records and transcripts grow with every cycle, and this is how that growth is watched until the retention jobs are built (risk R7 of the specification, NFR-DAT-5). `IDatabaseSizes` says them, in `Platform/Persistence`:
+
+```csharp
+public interface IDatabaseSizes
+{
+    Task<IReadOnlyList<TableSize>> ReadAsync(CancellationToken cancellationToken);
+}
+
+public sealed record TableSize(string Name, long Bytes);
+```
+
+- **Every ordinary table of the schema, the largest first.** The statement reads the catalog of the database, and names no table of the application: so it lists whatever tables there are, the one that keeps the migrations among them, and a table that nobody thought of shows too.
+- **The size is what the table takes on disk in all:** with its indexes, and with what it stores out of line, which is `pg_total_relation_size`.
+- **It reads no row of any table.** The statement is fixed text, takes no value, and is sent by `Platform` on a connection of the application's pool, as the lock of the background work sends its own.
+
+`DatabaseSizesTests` holds the list to the tables of the model, and finds a table that grew larger.
+
 ### Reads that agree
 
 Each statement of a transaction sees what was committed before the statement began. So two statements can stand on either side of a write of another transaction: a sum that is read first and a row that is read second may count the same thing twice, or not at all. Where several reads must agree with each other, they are made in a snapshot:

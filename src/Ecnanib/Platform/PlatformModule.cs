@@ -102,10 +102,16 @@ public static class PlatformModule
             .AddSingleton<IPostConfigureOptions<LoggerFilterOptions>>(levels)
             .AddSingleton<IOptionsChangeTokenSource<LoggerFilterOptions>>(levels)
 
+            // What counts the errors and warnings that are logged, for the operator status screen
+            // (FR-OPS-2). It is part of the one pipeline, and no provider of its own.
+            .AddSingleton<LoggedProblems>()
+            .AddSingleton<ILoggedProblems>(provider => provider.GetRequiredService<LoggedProblems>())
+
             // Registered as a provider of the host's logger factory, which enforces the levels.
             // Serilog's own AddSerilog would add a rule that lets every level through.
-            .AddSingleton<ILoggerProvider>(_ => new SerilogLoggerProvider(
-                LogPipeline.Create(settings.Logging, contentRoot, mask), dispose: true))
+            .AddSingleton<ILoggerProvider>(provider => new SerilogLoggerProvider(
+                LogPipeline.Create(settings.Logging, contentRoot, mask, provider.GetRequiredService<LoggedProblems>()),
+                dispose: true))
             .AddHostedService<LogLevelReloader>()
             .AddSingleton<UnhandledErrors>()
             .AddExceptionHandler<UnhandledExceptionRecorder>()

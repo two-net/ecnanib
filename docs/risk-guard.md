@@ -255,6 +255,8 @@ public interface ILossLimits
 
 `LossLimitVerdict` is `Within`, `NotKnown`, or `Halted`. `LossLimitHaltTests` holds it to the rules below.
 
+**An agent that was halted stays halted when an operator disables the account of its user** (FR-OPS-4). The agents of the account that run move to Attention required, and a halted one does not: the position of a halted agent is closed again with a later evaluation while it is open still, and that goes on only while the agent is halted. Its daily halt does not end while the account is disabled. See "When an account is disabled" in [agents.md](agents.md).
+
 **Both limits are evaluated at every cycle and every reconciliation:**
 
 | When | Where | What follows |

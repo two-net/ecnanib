@@ -1,0 +1,124 @@
+@page "/operator/accounts/{Id:guid}"
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+@inject IAccountDisabling Accounts
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: who is an operator is decided
+    with each request (NFR-SEC-3). The page is for operators alone. A visitor is sent to sign in,
+    and a user who is not an operator is refused, for a form that is posted as for the page.
+
+    It is the page of one account, which an operator found by its email address. It says the
+    address of the account and whether it is disabled, and has one button, which switches it the
+    other way (FR-OPS-4). It is the page that asks before the account is switched: nothing else
+    on it can be done. It shows nothing else of the user: no agent, no position, and no key
+    (FR-OPS-5). The account of an operator has no button, because it is not disabled.
+
+    One form at a time, named for what it does. Both are on the page while a form is answered,
+    whatever the account is by then: a form that is not there cannot be answered, and one that is
+    sent twice, or after another operator was first, switches nothing and leads back here. What
+    switches the account records it in the audit trail. Its texts are in OperatorAccountPages.
+*@
+
+@if (_account is not null || _answers)
+{
+    <PageTitle>@OperatorAccountPages.AccountTitle</PageTitle>
+
+    <h1>@OperatorAccountPages.AccountTitle</h1>
+
+    @if (_account is { } account)
+    {
+        <p role="status">@OperatorAccountPages.Stands(account, Times)</p>
+
+        <p>@OperatorAccountPages.ShowsNothingElse</p>
+
+        @if (account is { IsOperator: true, DisabledAt: null })
+        {
+            <p>@OperatorAccountPages.OperatorsAccount</p>
+        }
+    }
+
+    @if (_answers || _account is { DisabledAt: not null })
+    {
+        <p>@OperatorAccountPages.EnableMeans</p>
+
+        <form method="post" @formname="@OperatorAccountPages.EnableForm" @onsubmit="() => SwitchAsync(disable: false)">
+            <AntiforgeryToken />
+
+            <button type="submit">@OperatorAccountPages.Enable</button>
+        </form>
+    }
+
+    @if (_answers || _account is { DisabledAt: null, IsOperator: false })
+    {
+        <p>@OperatorAccountPages.DisableMeans</p>
+
+        <form method="post" @formname="@OperatorAccountPages.DisableForm" @onsubmit="() => SwitchAsync(disable: true)">
+            <AntiforgeryToken />
+
+            <button type="submit">@OperatorAccountPages.Disable</button>
+        </form>
+    }
+
+    <p>@OperatorAccountPages.Recorded</p>
+
+    <p><a href="@WebUiModule.OperatorAccountsPath">@OperatorAccountPages.FindAnother</a></p>
+
+    <p><a href="@WebUiModule.OperatorStatusPath">@OperatorPages.BackToStatus</a></p>
+}
+
+@code {
+    private OperatorFoundAccount? _account;
+
+    // Whether a form is being answered, which finds its form on the page whatever the account is.
+    private bool _answers;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _answers = !HttpMethods.IsGet(request.Request.Method);
+
+        // The one account that the address of the page names, asked for by an operator: its
+        // address and whether it is disabled, and nothing else of it.
+        _account = await Accounts.FindAsync(request, Id);
+
+        if (_account is null && !_answers)
+        {
+            // No such account: it never was, or it was deleted since it was found.
+            Navigation.NotFound();
+        }
+    }
+
+    private async Task SwitchAsync(bool disable)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // What switches the account asks again whether the user of the request is an operator,
+        // refuses the account of an operator, and records the switch. An account that is as
+        // asked for already stays as it is.
+        var outcome = disable ? await Accounts.DisableAsync(request, Id) : await Accounts.EnableAsync(request, Id);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no form
+        // again. An account that is gone leads back to where one is found.
+        Navigation.NavigateTo(
+            outcome == AccountSwitchOutcome.NotFound ? WebUiModule.OperatorAccountsPath : WebUiModule.OperatorAccountPath(Id));
+    }
+}

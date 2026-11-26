@@ -269,6 +269,20 @@ internal sealed class AgentControls(
 
         if (next == AgentState.Running)
         {
+            // An operator disabled the account after this request was signed in, and the request
+            // waited for the lock behind that: its session has ended, and no agent of a disabled
+            // account starts to run (FR-OPS-4). Answered as for an account that is gone.
+            if (await AccountStanding.IsDisabledAsync(context, userId, cancellationToken))
+            {
+                logger.LogInformation(
+                    "User {UserId} was refused the control {AgentControl} of agent {AgentId}: their account is disabled",
+                    userId,
+                    control,
+                    agentId);
+
+                return new AgentControlResult(AgentControlOutcome.NotFound);
+            }
+
             // The credential of the agent is the one of its user for its mode. It is asked
             // about under the lock that a change to a key takes, so the answer holds until the
             // agent runs. Binance is asked nothing (FR-KEY-5).
@@ -655,5 +669,68 @@ internal sealed class AgentKeyDependents(INotifications notifications, TimeProvi
 
         return $"The agent in {symbol} ({mode}) waits for you: {key} {went}. Store a key that works on the page of your keys, and " +
             "resume the agent.";
+    }
+}
+
+/// <summary>
+/// What Agents does when it is told that an operator disabled an account (FR-OPS-4): the agents
+/// of the account that run move to Attention required, in the transaction that disables it. It is
+/// what Accounts tells through <see cref="IAccountDependents"/>, as Credentials tells of a key
+/// through <see cref="IKeyDependents"/>. See "When an account is disabled" in docs/agents.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The caller holds the lock of the account, which is the lock that every change of the state of
+/// an agent takes. So the agents are as they are read here until the transaction ends, and a
+/// start or a resume that waits for the lock finds the account disabled.
+/// </para>
+/// <para>
+/// Only an agent that runs is moved. It runs no cycle and opens no position from then on, and an
+/// open position stays open with its protective orders. An agent that a loss limit halted stays
+/// halted: the service goes on closing its position, and <see cref="AgentHalts"/> does not end
+/// its halt while the account is disabled. Nothing is moved back when the account is enabled:
+/// its user signs in, and resumes what they want to run.
+/// </para>
+/// </remarks>
+internal sealed class AgentAccountDependents(
+    INotifications notifications, TimeProvider clock, ILogger<AgentAccountDependents> logger) : IAccountDependents
+{
+    public async Task AccountDisabledAsync(EcnanibDbContext context, Guid userId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // The agents of the user, in the order of their ids. A user has few: they are read, and
+        // the code says which of them stops with its account.
+        var agents = await context.Set<Agent>()
+            .AsNoTracking()
+            .OwnedBy(userId)
+            .OrderBy(agent => agent.Id)
+            .Select(agent => new { agent.Id, agent.State, agent.Mode, agent.Symbol })
+            .ToListAsync(cancellationToken);
+
+        var now = clock.GetUtcNow();
+
+        foreach (var agent in agents.Where(agent => AgentStates.StopsWithItsAccount(agent.State)))
+        {
+            // Labeled with the mode that the agent is in, as every change of its state is (FR-BIN-11).
+            await AgentStateChanges.MoveAsync(
+                context, userId, agent.Id, agent.Mode, AgentState.AttentionRequired, AgentStateCause.AccountDisabled, now, cancellationToken);
+
+            // Its user is told that the agent waits for them, in the same transaction: so they
+            // are told when the agent is moved, and not when it is not (FR-NTF-1). They read it
+            // when they are signed in again, and by email where they opted in.
+            await notifications.RaiseInAsync(
+                context,
+                userId,
+                NotificationType.AttentionRequired,
+                agent.Id,
+                agent.Mode,
+                $"The agent in {agent.Symbol} ({agent.Mode}) waits for you: an operator of the service disabled your account. " +
+                "An open position stays open with its stop-loss order. Once your account is enabled again, sign in and resume the agent.",
+                cancellationToken);
+
+            logger.LogInformation(
+                "Agent {AgentId} of user {UserId} requires attention: an operator disabled the account of its user", agent.Id, userId);
+        }
     }
 }

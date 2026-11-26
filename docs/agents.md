@@ -188,7 +188,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `Running` | Its user starts or resumes it, or the service resumes it when the UTC day in which its daily loss limit halted it is over (FR-RSK-8). | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
 | `Halted` | A loss limit of the Risk Guard is reached while it runs: its daily loss limit, or its drawdown limit (FR-RSK-8). See "Halting an agent". | No | No | Closed by the system | Yes |
-| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), or the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
+| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2), or an operator disables the account of its user (FR-OPS-4). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
 - **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask. What starts the cycles asks `IRunningAgents`, which goes by `AgentStates.RunsCycles`: when a candle closes, and again as the turn of a cycle comes. See "What other components ask of Agents".
@@ -362,6 +362,7 @@ public interface IAgentHalts
 | **The service resumes it with the first candle that closes on the next UTC day.** | What starts the cycles asks `EndDailyHaltsAsync` before it reads the agents that run, at every close. So the agent has its cycle of the close of midnight, which evaluates its loss limits before its team is called: see "When a cycle starts" in [cycles.md](cycles.md). |
 | **It is resumed when what a resume asks without the exchange allows it.** | A valid Binance key that may trade on its market (FR-KEY-5), and a team that can work (FR-TEAM-1), each asked under the lock of its account, of the agent as it is then. Otherwise it stays halted, the log says what keeps it, and it is asked about again with the next close. Its user is told what keeps it, and what puts it right, with a notification of the type `AttentionRequired`: once in a day for an agent, because its state does not change and it is asked about every quarter hour. Its user resumes it from that day on. |
 | **Nobody is asked once more for an agent in Live.** | The halt ends as the requirement says it does: it is the service that resumes the agent, and no user. |
+| **It is not resumed while the account of its user is disabled.** | Nothing of a disabled account starts to run, by itself either (FR-OPS-4). It stays halted, the log says so, and its user is not told: they cannot sign in to do anything about it. The first close after the account is enabled ends the halt. See "When an account is disabled". |
 | **The account of its user at Binance is not asked about.** | That waits for Binance. An agent that runs meets the question before each entry, where an account that conflicts moves it to Attention required: see "The account of Futures". |
 | **An agent that its drawdown limit halted is resumed by its user, at any time.** | Its drawdown is counted anew from then on. Resumed on the day of the loss, it may be halted again by its daily loss limit: see "Halting an agent" in [risk-guard.md](risk-guard.md). |
 | **What the service does is no action of a user.** | A halt, and the resume after a daily halt, are recorded as changes of the state, and not in the audit trail. Its user is told of a halt with a notification, which what watches the loss limits raises, and of the resume after a daily halt with one of the type `AgentResumed`, which is stored in the transaction that resumes the agent: see [notifications.md](notifications.md). |
@@ -416,6 +417,19 @@ The Catalog tells whatever depends on a model when a sync marks the model unavai
 - **Its user is told of each agent that is moved** (FR-CAT-8, FR-NTF-1), with a notification of the type `ModelUnavailable` about the agent, which names the roles whose model went, and says what to do. It is stored in the transaction of the sync, so it is said when the model is marked, and not when it is not. See [notifications.md](notifications.md).
 - A model that is active again resumes no agent: its user does.
 - **A model that the configuration file no longer allows moves no agent.** It stops being one that can be selected, so an agent that has it is not started or resumed with it. See "Not built yet".
+
+### When an account is disabled
+
+Accounts tells whatever depends on an account when an operator disables it, through `IAccountDependents`, inside the transaction that disables it. Agents implements it, as `AgentAccountDependents` (FR-OPS-4). See "Disabling an account" in [accounts.md](accounts.md).
+
+- **The agents of the account that run move to `AttentionRequired`,** with the cause `AccountDisabled`: `AgentStates.StopsWithItsAccount`. Such an agent runs no cycle and opens no position, and an open position stays open with its protective orders. What reconciles and protects a position goes on for it.
+- **An agent that a loss limit halted stays halted.** The service closes the position of a halted agent, and tries again while that fails: moving the agent would end that. Its daily halt does not end while the account is disabled, which `AgentHalts` asks under the lock of the account. The first close after the account is enabled ends the halt, as it ends any.
+- **Every other agent stays as its user left it.** None of them runs, and a disabled account starts and resumes none: its user is not signed in.
+- **Nothing of a disabled account starts to run.** A start or a resume that was signed in before the account was disabled, and reaches the lock of the account after it, is answered as for an account that is gone: `AccountStanding.IsDisabledAsync`, asked under the lock.
+- The change is stored when the account is disabled, and not when it is not: both are of one transaction, which has locked the row of the account.
+- **The service does it, and no user of the agent:** the change is recorded as a change of the state, and not in the audit trail, which has the disabling of the account, under the operator.
+- **Its user is told of each agent that is moved** (FR-NTF-1), with a notification of the type `AttentionRequired` about the agent, which says that an operator disabled the account, that an open position stays open with its stop-loss order, and what to do once the account is enabled. They read it when they are signed in again, and by email where they opted in.
+- **Enabling the account moves no agent.** Its user signs in, reads why the agent waits, and resumes it.
 
 ## The mode
 
@@ -585,6 +599,8 @@ The rows of an account go with it: `agents.user_id`, `agent_roles.user_id`, and 
 | Notifications | `INotifications.RaiseAsync` | Telling the user of an agent that the service gave a role of it another model (FR-TEAM-10). See "Reassigning the roles automatically". |
 | Credentials tells Agents | `IKeyDependents` | That a key is being deleted or marked invalid: the agents that run with it move to `AttentionRequired` (FR-KEY-10). See "When a key goes". |
 | The Catalog tells Agents | `IModelDependents` | That models are being marked unavailable: the agents that run with one move to `AttentionRequired` (FR-CAT-8). See "When a model goes". |
+| Accounts tells Agents | `IAccountDependents` | That an operator is disabling an account: the agents of it that run move to `AttentionRequired` (FR-OPS-4). See "When an account is disabled". |
+| Accounts | `AccountStanding.IsDisabledAsync` | Whether the account of an agent is disabled, under its lock, before the agent starts to run and before its daily halt ends. |
 | Accounts | `IFairUse.MayCreateAgentAsync` | Whether the user may create one more agent (FR-ACC-1, FR-ACC-7). |
 | Accounts | `AuditTrail.RecordAsync` | Recording what a user does to an agent (NFR-LOG-7). See "The audit trail". |
 | Whatever keeps positions and orders | `IAgentExposure` | What an agent holds, closing its position, and what in the account of its user at Binance stands in the way of an agent of Futures. See "What an agent holds" and "The account of Futures". |
@@ -707,10 +723,13 @@ The position of agent {AgentId} could not be closed at market, as user {UserId} 
 Agent {AgentId} of user {UserId} requires attention with the change to the Binance key for {TradingMode}: {AgentStateCause}
 Agent {AgentId} of user {UserId} requires attention with the change to the key for the AI provider {Provider}: {AgentStateCause}
 Agent {AgentId} of user {UserId} requires attention: the AI provider {Provider} no longer offers a model of its team
+Agent {AgentId} of user {UserId} requires attention: an operator disabled the account of its user
+User {UserId} was refused the control {AgentControl} of agent {AgentId}: their account is disabled
 Agent {AgentId} of user {UserId} is halted: {AgentStateCause}
 Agent {AgentId} of user {UserId} runs again: the UTC day in which its daily loss limit halted it is over
 Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the Binance key for {TradingMode} blocks it ({StartBlock})
 Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: {RoleCount} of the roles of its team cannot work ({Roles})
+Agent {AgentId} of user {UserId} stays halted after the day of its daily loss limit: the account of its user is disabled
 The halt of agent {AgentId} of user {UserId} for its daily loss limit could not be ended
 User {UserId} was refused the control {AgentControl} of agent {AgentId}: its daily loss limit halted it until the next UTC day
 User {UserId} switched agent {AgentId} from {PreviousTradingMode} to {TradingMode}

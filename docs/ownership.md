@@ -136,7 +136,31 @@ An operator is a user with the status screens and the safety controls of the ser
 
 An operator function asks in one of the two ways of "The check", and in no other. `AuditRulesTests` watches for both: what an operator does is recorded in the audit trail (FR-OPS-5), so each operator function that is built is listed in `AuditRules.RecordedOperatorFunctions` with the actions that record it, and one that is not listed fails a test. See "The audit trail" in [accounts.md](accounts.md).
 
-**A screen that only shows is no operator function.** The operator status screen, `/operator`, has its route and its place in the bar of an operator (FR-UI-2): it requires the policy, says what it is to show, and does nothing. It has no form, asks the database nothing, and shows nothing of any user, so there is nothing of it to record, and nothing that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and the rule that tells when the first operator function is built leaves a listed screen out. `AuditRulesTests` holds a listed screen to it: its page has no form but the button of the bar, which signs out. The first form that is put on it fails that test, the screen is taken off the list, and what waits for the operator functions fails until it is built. Anything else that requires the policy counts as before, whether its address is under that of the screen or not. The bar shows the link to the screen by asking the same policy, with `AuthorizeView`, and not by `IsOperator`. See "Screens whose feature is not built" in [layout.md](layout.md).
+**A screen that only shows is no operator function.** The operator status screen, `/operator`, has its route and its place in the bar of an operator (FR-UI-2): it requires the policy, shows how the service stands, and does nothing. It has no form, and shows nothing of any user, so there is nothing of it to record, and nothing that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and the rule that tells whether an operator function is listed leaves a listed screen out. `AuditRulesTests` holds a listed screen to it: its page has no form but the button of the bar, which signs out. The first form that is put on it fails that test, and the screen is then an operator function, which is listed with what records it. Anything else that requires the policy counts as before, whether its address is under that of the screen or not. The bar shows the link to the screen by asking the same policy, with `AuthorizeView`, and not by `IsOperator`. See "The operator status screen" below.
+
+**Every operator function is listed.** `AuditRulesTests.Every_operator_function_is_listed_with_what_records_it` fails for a route that requires the policy, and for a type outside Accounts that asks `IsOperator`, that is neither a screen that only shows nor listed in `AuditRules.RecordedOperatorFunctions`. Nothing of the requirement waits for the operator functions any more, so this test is what sees one that is built later.
+
+### The operator status screen
+
+The screen shows scheduler health, queue depth, last catalog sync per provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2). It is a page of the Web UI, `Pages/Operator/OperatorStatus.razor`, and no component of its own: each reading is said by the component that keeps it, behind an interface, and the page puts them together and holds the words, in `OperatorStatusPages`.
+
+| Reading | Who says it | From what |
+|---|---|---|
+| Scheduler health | `IBackgroundWorkStatus` of `Platform` | The latest run of each job, in `background_jobs`, and the schedule of each registered job. See "The status of the jobs" in [background-work.md](background-work.md). |
+| Queue depth | `ICycleLoad` of the Decision Engine | The cycles of the close that is under way, in memory. See "The depth of the queue" in [cycles.md](cycles.md). |
+| Last catalog sync | `ICatalogSync.StatusAsync` of the Catalog | The rows of `catalog_sync_runs`. See "The status of the syncs" in [catalog.md](catalog.md). |
+| Rate-limit usage | `IExchangeLimits.Usage` of the Exchange Gateway | The one limiter of the gateway, in memory. See [exchange.md](exchange.md). |
+| Clock drift | `IExchangeClock.Drift` of the Exchange Gateway | The latest reading of each of Binance's clocks, in memory. See [exchange.md](exchange.md). |
+| Table sizes | `IDatabaseSizes` of `Platform` | The catalog of the database. See "The sizes of the tables" in [persistence.md](persistence.md). |
+| Error rates | `ILoggedProblems` of `Platform` | The errors and warnings that were logged, counted in memory. See "The counts of errors and warnings" in [logging.md](logging.md). |
+
+| Rule | Detail |
+|---|---|
+| **It only reads** | It has no form and no control. What an operator does is on a page of its own, which the screen leads to with a link: the global halt, the accounts, and the catalog sync. |
+| **It is never a page that follows** | It is rendered on the server for each request, says of when it is, and is loaded again for how the service stands now. |
+| **It shows nothing of any user** | No reading names a user, an agent, or a key: a queue is numbers, a sync names a provider, and a count of errors holds no word of an event (FR-OPS-5). `GlobalHaltTests.The_pages_of_an_operator_show_nothing_of_any_user` holds it to that, with a user who has keys and two-factor authentication. |
+| **What is of one instance says so** | The queue, the limits, the clock, and the counts are kept in memory by the instance that answered. The jobs, the syncs, and the sizes are read from the database, and are the same on every instance. |
+| **Unknown is said as unknown** | A clock that was not read has no drift, and is not shown with a drift of nothing. A job that has not run is not said to be late. |
 
 ### The global halt
 
@@ -161,6 +185,41 @@ ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, changed_by = NULL, chan
 
 `FALSE` in place of `TRUE` switches it off.
 
+### Disabling and enabling an account
+
+An operator disables the account of a user, and enables it again (FR-OPS-4). A disabled account is signed out on every browser at once and is not signed in, and its agents that run wait for its user. What it does to the account is in "Disabling an account" of [accounts.md](accounts.md), and what it does to the agents in "When an account is disabled" of [agents.md](agents.md).
+
+| Rule | Detail |
+|---|---|
+| **It has two pages of its own** | `/operator/accounts` finds an account by its email address, and leads to `/operator/accounts/{id}`, the page of that account. That page says the address and whether the account is disabled, and since when, and has one button, which switches it the other way. It is what asks before the account is switched. |
+| **An account is found by its address** | The operator types it. There is no list of the accounts. The page of an account names it by its id, so no address is in the address of a page. |
+| **It asks in both ways** | Both pages carry `[Authorize(Policy = OperatorAccess.Policy)]`. And `IAccountDisabling` of Accounts asks `OperatorAccess.IsOperator` of the user of its request again, for finding as for switching: whatever calls it, nobody else does either. |
+| **It asks without `OwnedBy`** | It is about a user who is not the one signed in, which is why it requires the policy. |
+| **It is never a page that follows** | As every operator function. |
+| **The account of an operator is not disabled** | Their own included: an operator who is disabled switches no global halt. Whoever is to be no operator is taken off the list of the configuration file first. The page of such an account has a sentence in place of the button. |
+| **Every switch is recorded** | As `AccountDisabled` or `AccountEnabled`, in the transaction that switches (FR-OPS-5). The event carries the operator as its user, and names the other account as its target, `user:<id>`. A form that is sent twice, or for what the account already is, switches nothing and records nothing. Finding an account changes nothing, and is not recorded. |
+| **It shows the address and nothing else** | The page of an account shows the address that the operator typed and whether the account is disabled: no agent, no position, no key, and not whether it has two-factor authentication (FR-OPS-5). It does not say who disabled it: the audit trail does. |
+
+**When the application cannot be reached**, whoever runs the database can enable an account there, or disable one. That is not recorded in the audit trail, and it ends no session and moves no agent: a session of a disabled account is not found all the same, so its user is signed out with their next request.
+
+```sql
+UPDATE users SET disabled_at = NULL WHERE email = 'ada@example.com';
+```
+
+### Syncing the catalog on demand
+
+An operator has the model catalog synced, outside its schedule (FR-CAT-2, FR-OPS-4). What a sync does is in [catalog.md](catalog.md).
+
+| Rule | Detail |
+|---|---|
+| **It has a page of its own** | `/operator/catalog-sync`, which the operator status screen leads to. It says what a sync does, shows the last sync of each provider, and has one button. |
+| **It asks in both ways** | The page carries the policy. And `IOperatorCatalogSync.SyncAsync` of Credentials asks `OperatorAccess.IsOperator` of the user of its request again. |
+| **It is in Credentials because of what it uses** | The Catalog syncs, and may not use Accounts, which keeps the audit trail. Credentials may use both, and already tells the Catalog of the keys of users. No key of a user has a part in this. |
+| **It is recorded when it is asked for** | As `CatalogSyncRequested`, with the target `catalog:models`, in a transaction of its own that is over before a provider is asked (FR-OPS-5). The rows of `catalog_sync_runs`, which the Catalog writes, say what came of it, with the cause `OnDemand`. |
+| **It is not given up with the request** | Once recorded, the syncs run until they are over or the application stops. The page waits for them, up to a minute, and then asks for itself again, so a reload asks for no second sync. |
+| **With no catalog key there is nothing to sync** | Where the configuration file holds a catalog key for no provider, the page says so in place of the button, and a form that is sent all the same asks no provider and records nothing. |
+| **It shows no key** | The page says whether a provider is synced with the key of the service, and never the key. It shows nothing of any user. |
+
 ## No tenants and no billing
 
 - `users` is the only table of accounts, and an account has no type. Fair-use limits come from the configuration file and are the same for every user: no account carries a limit of its own. See "The registration switch and fair-use limits" in [accounts.md](accounts.md).
@@ -182,7 +241,10 @@ If the rows belong to the service instead, list the table in `OwnershipRules.Ser
 
 ## Not built yet
 
-- The other operator functions: what the status screen is to show (FR-OPS-2), and the account controls and the trigger of a catalog sync (FR-OPS-4), each recorded in the audit trail when it is built. `AuditRules` says that they wait, and a test fails when one is built and is not listed with what records it.
 - Telling the users that a global halt is on. Today a user sees it where a plan of an agent was rejected: the rule "Global halt" of the check says so.
+- A reason for disabling an account, a list of the accounts that are disabled, and an email that tells the user of it. Their user is told at the sign-in, with the right password, and of each agent that was moved with a notification.
+- Exporting or deleting a disabled account by its user. Both need a session, which a disabled account has none of.
+- Readings of every instance on the operator status screen. The queue, the limits, the clock, and the counts are those of the instance that answered, and version 1 targets one.
+- A history of the sizes of the tables, and a status screen that refreshes itself.
 - What a protected endpoint under `/api` answers to a visitor. See "Not built yet" in [accounts.md](accounts.md).
 - Checking again whether the user of a connection is an operator. Who the user is, and whether they are an operator, is decided when the connection of a page that follows is made. Whether the session of the connection still stands is asked again: see "The session of a connection" in [accounts.md](accounts.md). No page that follows is an operator function, and `AuditRulesTests` holds the ones that are built to it.

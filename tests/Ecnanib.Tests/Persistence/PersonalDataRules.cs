@@ -62,7 +62,9 @@ internal static class PersonalDataRules
         ["legal_acceptances.version"] = "The version of a document of the service.",
         ["audit_events.target"] =
             "A kind and an id: user:<id> for an account, ai-key:<id> and exchange-key:<id> for a stored key, and agent:<id> for an " +
-            "agent. Or a kind and the name of a flag of the service, which is of no user: runtime-flag:global-halt.",
+            "agent. The account is that of the user of the event, or for what an operator does to an account that of another " +
+            "user: an id, which says nothing of who that is, and names nobody once the account is deleted. Or a kind and the " +
+            "name of something that the service has one of, which is of no user: runtime-flag:global-halt and catalog:models.",
         ["ai_credentials.provider"] = "The code of an AI provider, which is one of the rows of ai_providers.",
         ["ai_credentials.encrypted_value"] = "A key that an AI provider made for its user, encrypted.",
         ["ai_credentials.master_key_id"] = "The id of the master key of the configuration file that encrypted that key.",

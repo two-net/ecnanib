@@ -20,6 +20,17 @@ public static class SignInPages
     /// </summary>
     public static string NotRight => "The email address or the password is not right.";
 
+    /// <summary>The id of what the page answers to the right password of a disabled account.</summary>
+    public const string DisabledId = "sign-in-disabled";
+
+    /// <summary>
+    /// What the page answers to the right password of an account that an operator disabled
+    /// (FR-OPS-4): what keeps its user out, and that nothing of theirs is gone.
+    /// </summary>
+    public static string Disabled =>
+        "This account is disabled, so you cannot sign in. An operator of the service disabled it. Nothing of your account " +
+        "was deleted.";
+
     /// <summary>The button that signs in, on the page of the password and on the page of the code.</summary>
     public static string SignIn => "Sign in";
 

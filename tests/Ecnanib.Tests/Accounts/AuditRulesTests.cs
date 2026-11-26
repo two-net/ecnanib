@@ -48,13 +48,28 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
             Assert.True(!waits || !string.IsNullOrWhiteSpace(action.Value.What), $"\"{action.Key}\" does not say what is to be recorded.");
         });
 
-        // One is both, and is pinned as that: the actions of operators are recorded as far as
-        // they are built, which is the global halt, and the rest of them waits (FR-OPS-4).
-        Assert.Equal(
-            ["operator actions"],
-            AuditRules.Requirement
-                .Where(action => action.Value.RecordedAs.Count > 0 && action.Value.WaitsFor is not null)
-                .Select(action => action.Key));
+        // None waits any more, and that is pinned: the last to be built were the actions of
+        // operators, which are the global halt, the controls of an account, and the trigger of a
+        // catalog sync (FR-OPS-3, FR-OPS-4). An entry that waits again is a decision that shows.
+        Assert.Empty(AuditRules.Requirement.Where(action => action.Value.WaitsFor is not null).Select(action => action.Key));
+    }
+
+    [Fact]
+    public void Every_operator_function_is_listed_with_what_records_it()
+    {
+        // Nothing of the requirement waits for the operator functions any more, so the test
+        // below, which asks only for what waits, would not see one that is built later. This
+        // one does: every route that requires the operator policy, and every type outside
+        // Accounts that asks whether its user is an operator, is a screen that only shows or is
+        // listed with the actions that record what an operator does there (FR-OPS-5).
+        var unlisted = WhyFurtherOperatorFunctionsAreBuilt();
+
+        Assert.True(
+            unlisted is null,
+            $"An operator function is not recorded in the audit trail, as far as {nameof(AuditRules)} says: {unlisted}. Record what " +
+            $"an operator does there with {nameof(AuditTrail)}.{nameof(AuditTrail.RecordAsync)}, and list it in " +
+            $"{nameof(AuditRules.RecordedOperatorFunctions)} with the members that record it. If it only shows, list it in " +
+            $"{nameof(AuditRules.OperatorScreensThatOnlyShow)} with why. See \"Operators\" in docs/ownership.md.");
     }
 
     [Fact]
@@ -148,9 +163,11 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
         // And a call of IsOperator is seen where there is one: the policy itself makes it.
         Assert.Contains(CallersOfIsOperator(), caller => IsWithin(caller, "Ecnanib.Accounts"));
 
-        // So is the one outside Accounts: what switches the global halt asks again whether the
-        // user of its request is an operator, and is seen as the type that is listed for it.
+        // So are the ones outside Accounts: what switches the global halt, and what has the
+        // catalog synced, each ask again whether the user of their request is an operator, and
+        // each is seen as the type that is listed for it.
         Assert.Contains(CallersOfIsOperator(), caller => AuditRules.IsOf(caller, "Ecnanib.Agents.GlobalHaltSwitch"));
+        Assert.Contains(CallersOfIsOperator(), caller => AuditRules.IsOf(caller, "Ecnanib.Credentials.OperatorCatalogSync"));
     }
 
     [Fact]
@@ -186,12 +203,13 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
         using var hosted = new AccountsApplication(
             settings: file => file.WithJson("Application:Operators", "[ \"olive@example.com\" ]"));
         using var client = hosted.CreateClient();
-        await hosted.RegisterVerifiedAsync("olive@example.com");
+        var olive = await hosted.RegisterVerifiedAsync("olive@example.com");
         await client.SignInAsync("olive@example.com");
 
         foreach (var route in AuditRules.RecordedOperatorFunctions.Keys.Where(guarded.Contains))
         {
-            var page = await client.PageAsync(route);
+            // The page of one account is opened for an account that there is: her own.
+            var page = await client.PageAsync(route.Replace("{Id:guid}", olive.Id.ToString(), StringComparison.Ordinal));
 
             Assert.Contains("<h1", page);
             Assert.DoesNotContain("<!--Blazor:{\"type\":\"server\"", page);
@@ -264,9 +282,9 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
             Serving(ForOperators(listed), ForOperators(WebUiModule.GlobalHaltPath), ForUsers("/account"))));
 
         Assert.Equal(
-            $"{listed}/accounts requires the operator policy",
+            $"{listed}/users requires the operator policy",
             AuditRules.WhyFurtherOperatorFunctionsAreBuilt(
-                Serving(ForOperators(listed), ForOperators(WebUiModule.GlobalHaltPath), ForOperators($"{listed}/accounts"))));
+                Serving(ForOperators(listed), ForOperators(WebUiModule.GlobalHaltPath), ForOperators($"{listed}/users"))));
 
         Assert.Equal(
             "/api/catalog/sync requires the operator policy",

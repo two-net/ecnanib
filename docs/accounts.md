@@ -72,6 +72,7 @@ The form is at `/sign-in`. It asks for the email address and the password.
 - **A password can be tried only so often,** from one client and for one address. After that the form answers "Too many attempts" for a while, whatever the password is, and whether or not the address has an account. See "Limits on attempts".
 - A page that needs a signed-in user carries `@attribute [Authorize]`. A visitor who opens it is sent to `/sign-in?returnUrl=...` and comes back after signing in. `returnUrl` is followed only when it is a path of this application: it starts with one `/`, and holds no control character. Anything else leads to the start page. `/account` is the first such page.
 - An account with two-factor authentication is not signed in by its password. It is asked for a code: see "Signing in with a code" below. Only the right password tells that an account has it on.
+- **An account that an operator disabled is not signed in,** and is asked for no code. The right password is answered with "This account is disabled, so you cannot sign in", and a wrong one as for any account: only the right password tells that an account is disabled. See "Disabling an account".
 - The log names the account by its id: `User {UserId} signed in`, `A sign-in failed: ...`.
 - A sign-in is recorded in the audit trail, in the transaction that starts the session. One that fails is not: see "The audit trail".
 
@@ -97,6 +98,8 @@ A session that has ended is deleted when its cookie is next seen, and the cookie
 `SessionAuthenticationHandler` is the application's one authentication scheme, registered by `AddAccounts()`. It reads the cookie, finds the session and its account with one query, and makes the account the user of the request: the name identifier is the account's id, and the name is its address. The user also names the session, by its id, which is not its token: `SignedInUser.SessionIdOf`. The Web UI and the API see the same user, and every log event of the request carries the id as `UserId`. See [logging.md](logging.md).
 
 Whatever needs the user of a request asks `SignedInUser.IdOf(request)`, and asks for that user's rows with `OwnedBy`. The handler also says whether the user is an operator, for the policy that an operator function requires. See [ownership.md](ownership.md).
+
+The query finds no session of an account that is disabled, as it finds none that has ended: no request is signed in for a disabled account, also where one of its sessions is still stored. See "Disabling an account".
 
 The same query reads the theme of the account, and the user of the request says it: `SignedInUser.ThemeOf`. So a page is written in the theme that the account has now, on every device, and asks the database nothing more for it. See [themes.md](themes.md). It reads how much of the pages moves for the account in the same way, `SignedInUser.MotionOf`: see [motion.md](motion.md). And which time zone they write a time in, `SignedInUser.TimeDisplayOf`: see [times.md](times.md).
 
@@ -164,7 +167,7 @@ public interface IConnectedSession
 | **What writes to a page over its connection asks whether the session of the connection still stands.** | `StandsAsync` takes the user of the connection, which names its session. The session stands while its row is there and was used within the period of inactivity. The feed of a page asks when the database says that a session of its user ended, and once a minute. |
 | **Asking is no activity, and ends nothing.** | A session that is past its period ends when a request next carries its token, as before. |
 | **A session stands for its own user alone.** | It is asked for with `OwnedBy`. A user who names no session, or whom nothing vouched for, has none that stands. |
-| **A session that does not stand ends for the page.** | Nothing more is written to it, and the browser loads it anew, which leads to the page that signs in. So signing out, a new password, and the deletion of the account end what an open page is told, as they end what a request is answered. |
+| **A session that does not stand ends for the page.** | Nothing more is written to it, and the browser loads it anew, which leads to the page that signs in. So signing out, a new password, the deletion of the account, and an operator disabling the account end what an open page is told, as they end what a request is answered. |
 | **The connection of a page is no activity of its user.** | A request under `/_blazor` is made by the page, and made again whenever the connection was lost. It finds the session, and does not count as use of it. |
 | **A page that asks for itself again is no activity either.** | The feed of the page says `ExpectsPageAgain` first, with the path and the query of the page. The request of that session for that address which follows within 10 seconds, and asks the way a page asks without leaving the page that it is, is not written down as activity. |
 | **The word of a page is good for one request.** | Each page that says so is counted: two tabs of one address that hear the same change are both expected, and a third request counts. A request for another address, with another session, after the 10 seconds, or as a browser asks when its user follows a link, counts. |
@@ -448,6 +451,7 @@ What an operator does is recorded in the audit trail under their own account (FR
 | **Once the file no longer lists the address, they do** | Who is an operator is decided from the file, with each request. Taking an address off `Application:Operators` takes a restart, and whoever runs the service does it. After that the account is one like any other, and is deleted with its events, those of what its user did as an operator among them. |
 | **So the trail is kept from the operator, and not for good** | An operator cannot remove their own events alone. Keeping them after the account is gone would take a record that names no account, and is not built. |
 | **The halt does not go with the account** | `runtime_flags.changed_by` is set to nobody, and the halt stays as it is. See "What is not asked for by owner" in [ownership.md](ownership.md). |
+| **An operator is not disabled either** | An operator who was disabled could switch no global halt. See "Disabling an account". |
 
 `AccountDeletionTests` refuses a listed operator, on the page and for a form that is posted all the same. `GlobalHaltTests` takes the address off the list, deletes the account, and finds the halt on and nothing of the account left.
 
@@ -494,6 +498,48 @@ public interface IAgentActivity
 | The rows of a user go with the account. | Each foreign key that carries the owner to `users` deletes the row with what it points at, at every row on the way. `OwnershipModelTests` reads the model. See [ownership.md](ownership.md). |
 | Deleting an account leaves no row of its user, and changes no row of another. | `AccountDeletionTests` gives two users a row in every table of the model that holds rows of users, deletes one account, and compares. A table that is added later fails that test until the test gives both users a row in it. |
 
+## Disabling an account
+
+An operator can disable or enable a user account (FR-OPS-4). A disabled account is not signed in: its sessions end as it is disabled, and its password starts none. Nothing of it is deleted, and enabling it puts it back as it was. `IAccountDisabling` does it, in `AccountDisabling.cs`, and the pages are of the Web UI: see "Disabling and enabling an account" in [ownership.md](ownership.md).
+
+```csharp
+public interface IAccountDisabling
+{
+    Task<OperatorFoundAccount?> FindAsync(HttpContext request, string email);
+    Task<OperatorFoundAccount?> FindAsync(HttpContext request, Guid accountId);
+    Task<AccountSwitchOutcome> DisableAsync(HttpContext request, Guid accountId);
+    Task<AccountSwitchOutcome> EnableAsync(HttpContext request, Guid accountId);
+}
+
+public sealed record OperatorFoundAccount(Guid Id, string Email, DateTimeOffset? DisabledAt, bool IsOperator);
+
+public enum AccountSwitchOutcome { Done, AlreadySo, NotFound, IsOperator, Refused }
+```
+
+| Rule | Detail |
+|---|---|
+| **It is stored with the account** | As `users.disabled_at`: since when, and empty for an account that is not disabled. Who disabled it is in the audit trail, and in no column. |
+| **Its sessions end at once** | `Sessions.EndAllAsync`, in the transaction that disables: every browser of the user is signed out, and a sign-in of theirs that waits for a code ends. A page of theirs that follows what changes stops within moments: see "The session of a connection". |
+| **Its password starts no session** | `Sessions.StartAsync` asks under its lock, before a sign-in that waits for a code is made, and `ISignIn` answers `SignInOutcome.Disabled`. The page says "This account is disabled, so you cannot sign in", to the right password alone. A code that was asked for before signs nobody in: `SignInCodeOutcome.StartAgain`. |
+| **No request is signed in for it** | The query that signs a request in finds no session of a disabled account. So an account that was disabled in the database by hand is signed out with its next request, though its sessions are still stored. |
+| **One transaction, under the locks of both accounts** | The row of the operator and the row of the account are locked in one statement, in the order of their ids. A sign-in, a start of an agent, and a change to a key each take the lock of the account, so each comes before the disabling or finds the account disabled. |
+| **What depends on the account is told** | Through `IAccountDependents`, in the same transaction. Agents implements it: the agents of the account that run move to Attention required. See "When an account is disabled" in [agents.md](agents.md). |
+| **The account of an operator is not disabled** | `AccountSwitchOutcome.IsOperator`, their own included. |
+| **Twice switches once** | An account that is as asked for already stays as it is: `AlreadySo`, and nothing is recorded. |
+| **Enabling undoes the one thing** | It clears `disabled_at`. No session comes back, and no agent is moved: the user signs in, and resumes what they want to run. |
+| **It is recorded under the operator** | `AccountDisabled` and `AccountEnabled` carry the operator as their user, and name the other account as their target. So the event is in the export of the operator, goes with the account of the operator, which is not deleted while they are one, and stays when the account that it names is deleted: the id then names nobody. |
+| **Everything is asked again** | Each member asks `OperatorAccess.IsOperator` of the user of its request, whatever calls it, and answers a request that is not as for an account that is not there. |
+
+What a disabled account still does, and does not:
+
+- **Its links still work.** A verification link and a reset link start no session, so they are followed as before. A new password signs nobody in.
+- **The service still works for it.** Its keys are checked, its positions are reconciled and protected, and its notifications are raised and sent. Only what its user would do is kept from it.
+- **Its user cannot export or delete it.** Both need a session.
+
+`AccountStanding.IsDisabledAsync` says whether an account is disabled, for what acts for a user and reaches the lock of the account only after it was disabled: Agents asks it before an agent starts to run.
+
+`AccountDisablingTests` disables and enables an account from the pages, as an operator does, and holds each rule above to what is stored, recorded, logged, and shown.
+
 ## Exporting your data
 
 A user can download what is stored about them (NFR-SEC-9). The link is on `/account`, and leads to `/account/export`. `IDataExport` reads the data, and an endpoint of the Web UI answers with it as a file.
@@ -501,7 +547,7 @@ A user can download what is stored about them (NFR-SEC-9). The link is on `/acco
 | Section | What it holds |
 |---|---|
 | `exportedAt` | When the export was made. |
-| `account` | The id, the email address, when it was registered and verified, whether two-factor authentication is on, since when, and how many recovery codes are left, the theme of the account (FR-THM-3): `System`, `Dark`, or `Light`, which time zone its pages write a time in (NFR-USA-3): `Device` or `Utc`, how much of its pages moves (FR-ANI-4): `System` or `Reduced`, and what the user said on the setup checklist (FR-UI-4): when they marked the decisions as reviewed, and when they considered Live, each empty while they have not. |
+| `account` | The id, the email address, when it was registered and verified, whether two-factor authentication is on, since when, and how many recovery codes are left, the theme of the account (FR-THM-3): `System`, `Dark`, or `Light`, which time zone its pages write a time in (NFR-USA-3): `Device` or `Utc`, how much of its pages moves (FR-ANI-4): `System` or `Reduced`, and what the user said on the setup checklist (FR-UI-4): when they marked the decisions as reviewed, and when they considered Live, each empty while they have not. Not since when the account is disabled: a user who makes an export is signed in, so their account is not. |
 | `legalAcceptances` | Each document that was accepted, with its version and the time. |
 | `sessions` | Each browser that is signed in: when it signed in, and when it was last used. |
 | `auditEvents` | Each event of the account in the audit trail: the action, what it was done to, when, and the IP address it came from. |
@@ -546,13 +592,13 @@ The log has `User {UserId} exported their data`, and nothing of the data.
 
 ## The audit trail
 
-Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, and the changes to two-factor authentication. Credentials records the changes to a key, and Agents the changes to the risk settings of an agent. What is not built records its own when it is: see "What is not recorded yet".
+Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, the changes to two-factor authentication, and an operator disabling or enabling an account. Credentials records the changes to a key, and that an operator asked for a sync of the catalog, and Agents what a user does to an agent and an operator switching the global halt. Every action of the requirement is recorded: see "What is not recorded yet".
 
 | Column | What it holds |
 |---|---|
 | `user_id` | The user who did it. For the one action that the service does itself, `KeyRejected`, the user it was done for: the owner of the key. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
-| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. A runtime flag of the service has a name in place of an id: `runtime-flag:global-halt`, which `AuditTarget.GlobalHalt` is. |
+| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. The account is that of `user_id`, but for what an operator does to the account of another user, where it is that other account. What the service has one of has a name in place of an id: `runtime-flag:global-halt`, which `AuditTarget.GlobalHalt` is, and `catalog:models`, which `AuditTarget.ModelCatalog` is. |
 | `occurred_at` | When. |
 | `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not, or when no request did it. |
 
@@ -574,6 +620,8 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `AgentPositionCloseRequested` | The user asked for the position of an agent to be closed at market, by hand. It is recorded when it is asked for, before the order. See "The audit trail" in [agents.md](agents.md). |
 | `AgentSwitchedToLive`, `AgentSwitchedToDemo` | The user switched an agent from Demo to Live, where it trades with real money, or back. See "The mode" in [agents.md](agents.md). |
 | `GlobalHaltSwitchedOn`, `GlobalHaltSwitchedOff` | An operator switched the global halt on, or off (FR-OPS-3, FR-OPS-5). The event carries the operator as its user. See "The global halt" in [ownership.md](ownership.md). |
+| `AccountDisabled`, `AccountEnabled` | An operator disabled the account of a user, or enabled it again (FR-OPS-4, FR-OPS-5). The event carries the operator as its user, and names the other account as its target. See "Disabling an account". |
+| `CatalogSyncRequested` | An operator asked for a sync of the model catalog, outside its schedule (FR-OPS-4, FR-OPS-5). It is recorded when it is asked for, before a provider is asked. The target is `catalog:models`. See "On demand" in [catalog.md](catalog.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
@@ -614,17 +662,19 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 ### What is not recorded yet
 
-`AuditRules.cs` is the source of truth. It lists the actions that the requirement names, each with the members of `AuditAction` that record it, or with what it waits for:
+`AuditRules.cs` is the source of truth. It lists the actions that the requirement names, each with the members of `AuditAction` that record it, or with what it waits for. None of them waits any more: the last to be built were the actions of operators.
 
-| Action of the requirement | Waits for |
+Each operator function is listed in `AuditRules.RecordedOperatorFunctions` with the members that record what an operator does there:
+
+| Operator function | Recorded as |
 |---|---|
-| Operator actions, but for the global halt | The next operator function: disabling and enabling an account, and triggering a catalog sync (FR-OPS-4) |
-
-The actions of operators are recorded as far as they are built. Switching the global halt is, and is listed in `AuditRules.RecordedOperatorFunctions` with the two members that record it: the page `/operator/global-halt`, and `GlobalHaltSwitch` of Agents, which asks whether the user of its request is an operator.
+| The page `/operator/global-halt`, and `GlobalHaltSwitch` of Agents, which asks whether the user of its request is an operator | `GlobalHaltSwitchedOn`, `GlobalHaltSwitchedOff` |
+| The pages `/operator/accounts` and `/operator/accounts/{id}`. What switches an account is `AccountDisabling` of Accounts, which asks the same there. | `AccountDisabled`, `AccountEnabled` |
+| The page `/operator/catalog-sync`, and `OperatorCatalogSync` of Credentials, which asks the same | `CatalogSyncRequested` |
 
 What a user does to an agent is recorded: risk setting changes, starts, pauses, resumes, and stops, manual closes, and switches of its mode. Agents takes the request for a manual close and records it, and whatever keeps positions places the order. See "The audit trail" in [agents.md](agents.md).
 
-`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the operator actions, that is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`, and is not listed in `AuditRules.RecordedOperatorFunctions` with what records it. A screen of an operator that only shows is left out as well: the operator status screen is listed in `AuditRules.OperatorScreensThatOnlyShow`, and the same tests hold it to having no form of its own. See "Operators" in [ownership.md](ownership.md). It also fails for a member of `AuditAction` that no marked test shows being recorded.
+`AuditRulesTests` fails for an action that still waits once what it waits for is built. And it fails for an operator function that is not listed: a page or an endpoint that requires the operator policy, or something outside Accounts that calls `OperatorAccess.IsOperator`, and is not in `AuditRules.RecordedOperatorFunctions` with what records it. A screen of an operator that only shows is left out: the operator status screen is listed in `AuditRules.OperatorScreensThatOnlyShow`, and the same tests hold it to having no form of its own. See "Operators" in [ownership.md](ownership.md). It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## The setup marks
 
@@ -748,7 +798,7 @@ A user can export this data and delete it: see "Exporting your data" and "Deleti
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until`, `theme`, `motion`, `time_display`, `decisions_reviewed_at`, `live_considered_at` |
+| `users` | `id`, `email` (unique), `password_hash`, `registered_at`, `email_verified_at`, `email_verification_token_hash` (unique), `email_verification_expires_at`, `email_verification_sets_password`, `password_reset_token_hash` (unique), `password_reset_expires_at`, `two_factor_secret`, `two_factor_secret_key_id`, `two_factor_enabled_at`, `two_factor_last_step`, `two_factor_failed_codes`, `two_factor_locked_until`, `theme`, `motion`, `time_display`, `decisions_reviewed_at`, `live_considered_at`, `disabled_at` |
 | `legal_acceptances` | `user_id`, `document`, `version`, `accepted_at`. The rows of an account are deleted with it. |
 | `sessions` | `id`, `user_id`, `token_hash` (unique), `created_at`, `last_active_at`, `reauthenticated_at`. The rows of an account are deleted with it. |
 | `pending_sign_ins` | `id`, `user_id`, `token_hash` (unique), `expires_at`. The rows of an account are deleted with it. |
@@ -759,7 +809,7 @@ An account's id is a version 7 UUID that the application assigns. A table that b
 
 Deleting an account deletes its row of `users`, and the database deletes the rows of the five tables with it. See "Deleting the account".
 
-`users` has no column for a kind of account, because there is one kind. Who is an operator is in the configuration file and is stored nowhere.
+`users` has no column for a kind of account, because there is one kind. Who is an operator is in the configuration file and is stored nowhere. `disabled_at` says since when an operator has an account disabled, and is empty for an account that is not: it is the status of an account in the data model of the specification. Who disabled it is in the audit trail.
 
 The first three `two_factor_` columns are empty together or set together: two-factor authentication is on exactly while `two_factor_enabled_at` is set. None of the six has an index.
 
@@ -787,8 +837,10 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
 - Preferences, but for five. Whether a user left the platform-wide board is stored, and so are whether they are sent email for critical events, the theme of their account, how much of its pages moves, and which time zone they write a time in, and all five are in the export. The account page has no settings of its own: it says that there are those choices, and leads to the board, to the page of the email, and to the page of the appearance, where each is made. It is the profile among the settings, which have a navigation of their own above each of their pages: see "The settings" in [layout.md](layout.md). When another preference is stored, it is personal data of an allowed kind, and it is in the export.
 - Keeping the audit events of operator actions for good. An operator cannot delete their account while the configuration file lists it, so they cannot remove their own events alone: see "An operator". Once the address is off the list, the account is deleted with its events. A record that outlasts the account would name no account, and is not built.
-- Whose export and whose deletion an event about the account of another user follows. No such action is built: disabling and enabling an account will name that account as its target, under the operator's own, and it is decided then.
-- The rest of the audit trail: the actions of operators but for the global halt, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- Showing a user that an operator disabled or enabled their account, in their export. The event is the operator's: see "Disabling an account".
+- A reason for disabling an account, and an email that tells its user. They are told at the sign-in, with the right password.
+- Exporting or deleting a disabled account by its user: both need a session.
+- The job that removes events older than `Retention:AuditDays`.
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

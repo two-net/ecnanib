@@ -107,6 +107,7 @@ public class AgentStateTests
                 "DailyLossLimitReached",
                 "DrawdownLimitReached",
                 "DailyLossHaltEnded",
+                "AccountDisabled",
             ],
             Enum.GetNames<AgentStateCause>());
     }

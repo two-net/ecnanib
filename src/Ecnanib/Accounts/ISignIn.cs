@@ -22,6 +22,8 @@ public interface ISignIn
     /// its password. Which of the two it was is not told, and neither takes longer than the other.
     /// <see cref="SignInOutcome.TooManyAttempts"/> when the client or the address has been tried
     /// too often, whatever the password is, and whether or not the address has an account.
+    /// <see cref="SignInOutcome.Disabled"/> when the password is right and an operator disabled
+    /// the account: it is told only to whoever has the password.
     /// </returns>
     Task<SignInOutcome> SignInAsync(HttpContext request, string email, string password);
 
@@ -66,6 +68,13 @@ public enum SignInOutcome
     /// password was not looked at, and nobody is signed in.
     /// </summary>
     TooManyAttempts,
+
+    /// <summary>
+    /// The password is right, and an operator disabled the account (FR-OPS-4). Nobody is signed
+    /// in, and no code is asked for. It is told because the password was right: a wrong one is
+    /// <see cref="Failed"/>, whatever the account is.
+    /// </summary>
+    Disabled,
 }
 
 /// <summary>How giving a code after the password ended.</summary>
@@ -85,7 +94,8 @@ public enum SignInCodeOutcome
 
     /// <summary>
     /// No sign-in of the browser waits for a code: it waited too long, the password was changed,
-    /// or two-factor authentication was turned off. Signing in starts again with the password.
+    /// two-factor authentication was turned off, or the account was disabled. Signing in starts
+    /// again with the password.
     /// </summary>
     StartAgain,
 }

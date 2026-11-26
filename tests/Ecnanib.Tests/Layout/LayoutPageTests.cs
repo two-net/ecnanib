@@ -353,11 +353,11 @@ public partial class LayoutPageTests
         Assert.Matches(link, await anOperator.PageAsync("/"));
         Assert.Matches(link, await anOperator.PageAsync("/account"));
 
-        // An operator opens the screen, which says what it is to show, and that it is open.
+        // An operator opens the screen, which shows how the service stands, and that it is open.
         var page = await anOperator.PageAsync(WebUiModule.OperatorStatusPath);
 
         Assert.Contains("<h1>Operator status</h1>", page);
-        Assert.Contains("What it is to show is not built yet", page);
+        Assert.Contains("This is how the service stood on ", page);
         Assert.Equal(["Operator status=page"], Marked(BarOf(page)));
 
         // The screen leads to the page of the global halt, which is a part of it: the bar

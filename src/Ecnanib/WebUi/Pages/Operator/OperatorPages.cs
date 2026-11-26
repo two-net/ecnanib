@@ -1,11 +1,11 @@
 namespace Ecnanib.WebUi.Pages.Operator;
 
 /// <summary>
-/// The texts of the operator status screen and of the page of the global halt, in one place
-/// (NFR-USA-4). The screen has a route and a place in the navigation of an operator (FR-UI-2).
-/// What it is to show is not built yet (FR-OPS-2), and it does nothing itself: it leads to the
-/// page on which an operator switches the global halt (FR-OPS-3). See "Operators" in
-/// docs/ownership.md.
+/// The texts that frame the operator status screen, and those of the page of the global halt,
+/// in one place (NFR-USA-4). The screen has a route and a place in the navigation of an operator
+/// (FR-UI-2). What it shows has its texts in <see cref="OperatorStatusPages"/> (FR-OPS-2). It
+/// does nothing itself: it leads to the pages on which an operator does something, of which the
+/// global halt is one (FR-OPS-3). See "Operators" in docs/ownership.md.
 /// </summary>
 public static class OperatorPages
 {
@@ -19,14 +19,12 @@ public static class OperatorPages
     public static string ForOperators =>
         "This screen is for operators: the users whose email addresses the configuration file lists.";
 
-    /// <summary>What the screen is to show, and does not yet.</summary>
-    public static string NotBuiltYet =>
-        "What it is to show is not built yet: the health of the scheduler, the depth of the queue, the last catalog sync of " +
-        "each provider, the use of the request limits of Binance, the drift of the clock, the sizes of the tables, and the " +
-        "rates of errors.";
-
-    /// <summary>What the screen holds for now, which is what makes it safe to have before the rest.</summary>
-    public static string OnlyShows => "It shows nothing of any user, and nothing can be done on it.";
+    /// <summary>
+    /// That the screen only shows, said over the links to the pages on which an operator does
+    /// something: nothing of it is an action, so nothing of it is recorded (FR-OPS-5).
+    /// </summary>
+    public static string OnlyShows =>
+        "It shows nothing of any user, and nothing can be done on it. What an operator does is on a page of its own:";
 
     /// <summary>
     /// The title, in the browser, of the page of the global halt, its heading, and the text of

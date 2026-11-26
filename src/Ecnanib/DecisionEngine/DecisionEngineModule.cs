@@ -161,6 +161,11 @@ public static class DecisionEngineModule
         // queues the cycles of a close with the limits of the configuration file (FR-CYC-11).
         services.AddBackgroundJob<DecisionCyclesJob>();
 
+        // How deep that queue is now, which the job says as it goes, for the operator status
+        // screen (FR-OPS-2). In memory, of every user, and with nothing of any.
+        services.AddSingleton<CycleLoads>();
+        services.AddSingleton<ICycleLoad>(provider => provider.GetRequiredService<CycleLoads>());
+
         // Runs a test cycle of an agent for its user, on demand: it produces a full decision
         // record, which its kind tells apart, and places no orders (FR-CYC-12). It runs inside
         // the request that asked, outside the queue of a close, one for a user at a time.

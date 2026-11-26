@@ -82,6 +82,15 @@ internal sealed class SignIn(
             AuditOrigin.Of(request),
             cancellationToken);
 
+        if (started.Disabled)
+        {
+            // An operator disabled the account. Whoever is here gave its password, so they are
+            // told what keeps them out, and an address without the password is told nothing.
+            logger.LogInformation("User {UserId} gave their password and is not signed in: the account is disabled", userId);
+
+            return SignInOutcome.Disabled;
+        }
+
         if (started.PendingToken is { } pendingToken)
         {
             // The account has two-factor authentication. The browser is not signed in: it is
@@ -144,7 +153,9 @@ internal sealed class SignIn(
         var stillWaits = await context.Set<PendingSignIn>()
             .AnyAsync(pending => pending.Id == waiting.Id && pending.ExpiresAt > now, cancellationToken);
 
-        if (account is not { IsOn: true } || !stillWaits)
+        // Disabling the account ends the sign-ins that wait as well, under the same lock. It is
+        // asked all the same: no code starts a session of a disabled account (FR-OPS-4).
+        if (account is not { IsOn: true } || !stillWaits || await AccountStanding.IsDisabledAsync(context, waiting.UserId, cancellationToken))
         {
             return StartAgain(request);
         }

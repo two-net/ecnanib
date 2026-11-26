@@ -28,6 +28,9 @@ internal static class PersistenceRegistration
 
         services.AddSingleton<DatabaseMigrator>();
 
+        // The sizes of the tables, for the operator status screen (FR-OPS-2).
+        services.AddSingleton<IDatabaseSizes, DatabaseSizes>();
+
         return services;
     }
 }

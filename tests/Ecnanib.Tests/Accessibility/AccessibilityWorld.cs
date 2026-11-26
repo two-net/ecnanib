@@ -65,6 +65,13 @@ internal sealed class AccessibilityWorld : IDisposable
     private const string Registered = "victor@example.com";
     private const string Forgetful = "rita@example.com";
 
+    /// <summary>
+    /// The address of a user whom the operator finds, and disables (FR-OPS-4). Nobody is signed
+    /// in as them, so disabling the account signs nobody out: a visitor then gives its password,
+    /// and is told that the account is disabled.
+    /// </summary>
+    public const string Idle = "ida@example.com";
+
     private static readonly DateTimeOffset Morning = Feeding.Morning;
 
     private static readonly LivePrice Bitcoin = new(Market.Spot, TradingMode.Demo, "BTCUSDT", ExchangePriceKind.LastTraded);
@@ -106,6 +113,10 @@ internal sealed class AccessibilityWorld : IDisposable
             settings: file => file
                 .WithJson("Application:Operators", $"[ \"{Operator}\" ]")
                 .WithJson("Binance:Symbols", "[ \"BTCUSDT\", \"SOLUSDT\", \"ETHUSDT\" ]")
+
+                // A key of the service for one provider, of which no user of the world has a
+                // key or a model: so the operator has a catalog to sync on demand (FR-OPS-4).
+                .With("AiProviders:GPT:CatalogKey", "gpt-catalog-key")
 
                 // Few enough that what the world holds fills the strengths and the board.
                 .With("Experience:MinSamples", 3)
@@ -283,8 +294,9 @@ internal sealed class AccessibilityWorld : IDisposable
     {
         var ada = await application.RegisterVerifiedAsync(User);
         await application.RegisterVerifiedAsync(Newcomer);
-        await application.RegisterVerifiedAsync(Operator);
+        var olive = await application.RegisterVerifiedAsync(Operator);
         await application.RegisterVerifiedAsync(Guarded);
+        var ida = await application.RegisterVerifiedAsync(Idle);
 
         Assert.Equal(RegistrationOutcome.Accepted, (await application.RegisterAsync(Unverified)).Outcome);
 
@@ -410,6 +422,8 @@ internal sealed class AccessibilityWorld : IDisposable
             ["Model"] = model.ToString(),
             ["VerificationToken"] = Uri.EscapeDataString(verification),
             ["ResetToken"] = Uri.EscapeDataString(reset),
+            ["IdleAccount"] = ida.Id.ToString(),
+            ["OperatorAccount"] = olive.Id.ToString(),
         };
 
         // The list of the rules is what a path may name, and the world fills every one of them.

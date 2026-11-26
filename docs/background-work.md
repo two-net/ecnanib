@@ -169,6 +169,35 @@ Two limits come with a second instance, which version 1 does not have:
 
 Nothing that goes wrong with the background work stops the application. When the database cannot be reached, the scheduler logs that once, tries again every second, and takes up the work by itself when the database is back. The schedules go on from what the table says.
 
+## The status of the jobs
+
+An operator status screen shows scheduler health (FR-OPS-2). `IBackgroundWorkStatus` says it, in `Platform/BackgroundWork`, from the table above and from the jobs that are registered:
+
+```csharp
+public interface IBackgroundWorkStatus
+{
+    Task<IReadOnlyList<BackgroundJobStatus>> ReadAsync(CancellationToken cancellationToken);
+}
+
+public enum BackgroundJobRunState { NoRunYet, NotEnded, Succeeded, Failed, Stopped }
+
+public sealed record BackgroundJobStatus(
+    string Name, BackgroundJobSchedule? Schedule, BackgroundJobRunState State,
+    DateTimeOffset? LastStartedAt, DateTimeOffset? LastFinishedAt, DateTimeOffset? DueAt, bool Overdue);
+```
+
+| Rule | Detail |
+|---|---|
+| **It is read from the database** | And from nothing that one instance holds in memory. So it says the same on every instance, also on one that stands by and runs no job itself. |
+| **Every registered job is listed, by name** | With its schedule: `BackgroundJobSchedule.Period`, and `OnUtcBoundaries`. A job that has not run has no row, and is `NoRunYet`. |
+| **A row of a job that is not registered is listed last** | A job of an earlier version, or one that this instance was started without. It has no schedule here, so nothing says when it is due. |
+| **A run with no end is `NotEnded`** | It is still going, or the process ended before it did: the row cannot tell the two apart, and neither does the status. |
+| **When the next run is due is worked out as the scheduler does** | One period after the start of the latest run, or the boundary that follows it. A run on an interval that the application stopped is due from when it was stopped. |
+| **A run is overdue 30 seconds after it was due** | With no start of it in the database. The scheduler looks at the clock every second, and an instance that takes the work over needs a few seconds, so a run that is this late says that no instance runs the background work, or that the run before it outlasts its schedule. The shortest schedule that the configuration file allows is 30 seconds. |
+| **A job that has not run is not overdue** | It is due at once, and since when is not known. |
+
+`BackgroundWorkStatusTests` holds it to these, mostly with the lock held by the test, as another instance would hold it: the application then runs nothing, and a row says what the test wrote.
+
 ## The log
 
 The scheduler logs under the area `Ecnanib.Platform.BackgroundWork.BackgroundJobScheduler`. Each event about a job carries its name as `Job`.

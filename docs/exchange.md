@@ -200,7 +200,7 @@ public sealed record ExchangeLimitUsage(
     int? Reported, DateTimeOffset? ReportedAt, int Waiting, DateTimeOffset? HeldUntil);
 ```
 
-The limiter says where each limit stands, in the order of the table above, each in the real exchange and then in the test environment. It is what the operator status screen shows of Binance (FR-OPS-2), which is not built.
+The limiter says where each limit stands, in the order of the table above, each in the real exchange and then in the test environment. It is what the operator status screen shows of Binance (FR-OPS-2): for each limit what was used in the last minute, and how much that is of what the service allows itself, what Binance itself last said that it counted, how many calls wait, and until when calls are held back. It is of the instance that answered, which is the one limiter of a service with one instance. See "The operator status screen" in [ownership.md](ownership.md).
 
 | | |
 |---|---|
@@ -247,7 +247,7 @@ public sealed record ExchangeClockDrift(
     TimeSpan? Drift, TimeSpan? RoundTrip, DateTimeOffset? ReadAt, TimeSpan Tolerance);
 ```
 
-The watch says how the clock of the service stands against each of Binance's: Spot and then Futures, each on the real exchange and then in the test environment. It is what the operator status screen shows of the clock (FR-OPS-2), which is not built.
+The watch says how the clock of the service stands against each of Binance's: Spot and then Futures, each on the real exchange and then in the test environment. It is what the operator status screen shows of the clock (FR-OPS-2): the state of each clock in words, with what follows from it for new entries, the drift and which way it is, the round trip, when the clock was read, and the tolerance. A clock that was not read has no drift, and the screen says that, and not a drift of nothing. An instance that stands by reads no clock, so its screen says that none was read.
 
 | `State` | When | New entries |
 |---|---|---|
@@ -804,7 +804,6 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 
 ## Not built yet
 
-- The operator status screen, which shows what `IExchangeLimits` and `IExchangeClock` say (FR-OPS-2).
 - The limit on the orders of an account, which Binance counts for each account and not for the address. An order that Binance answers with its signal of too many ends as `NotSent`, as any call does. A protective order has no turn before other calls at the limiter either.
 - The leverage brackets of a symbol of Futures, `/fapi/v1/leverageBracket`, by which Binance allows less leverage for a larger position. A leverage that Binance refuses ends as `Rejected`.
 - The positions of an account in all its symbols, in one read. The margin of each open position is read with a call of its own, in its symbol. See "Not built yet" in [orders.md](orders.md).

@@ -132,6 +132,8 @@ internal static class AccessibilityRules
         "Model",
         "VerificationToken",
         "ResetToken",
+        "IdleAccount",
+        "OperatorAccount",
     ];
 
     /// <summary>
@@ -486,9 +488,10 @@ internal static class AccessibilityRules
         new("/usage", "one agent", Who.User, Reach.Opened, "main select#usage-agent option[selected]",
             "The usage of one agent, which the filter holds, with the links back.", Path: "/usage?agent={Agent}"),
 
-        // Three paragraphs under the heading: the page of an address without a page has two.
-        new("/operator", "the page", Who.Operator, Reach.Opened, "main > h1 + p + p + p",
-            "The screen of an operator, under a bar that has the link to it."),
+        // The readings of the service, each under a heading of its own and most of them as a
+        // table: the first is the scheduler, whose table every application has rows for.
+        new("/operator", "the page", Who.Operator, Reach.Opened, "main h2#status-scheduler + p + p + .status-table tbody th[scope='row']",
+            "The screen of an operator, under a bar that has the link to it, with a table for each reading of the service."),
 
         // The global halt, which the screen above leads to. The second state switches it on,
         // and stores that: no cycle runs in the world, and no other page says whether the halt
@@ -498,6 +501,43 @@ internal static class AccessibilityRules
         new("/operator/global-halt", "switched on", Who.Operator, Reach.Answered("halt-on"),
             "main input[name='_handler'][value='halt-off']",
             "The page comes back with since when the halt is on, and the one button, which switches it off."),
+
+        // The accounts of users, which the screen above leads to as well: the page that finds one
+        // by its address, and the page of the one that was found. The account is one that nobody
+        // signs in as, so disabling it, which the last of these states stores, signs nobody out
+        // and changes no other state.
+        new("/operator/accounts", "form", Who.Operator, Reach.Opened, "main input[name='Email']",
+            "What disabling an account does, and the form of one field that finds an account by its address."),
+        new("/operator/accounts", "no such account", Who.Operator,
+            Reach.Answered("find-account", ("Email", "nobody@example.com")), "main .form-error",
+            "The form comes back with one message above its field."),
+        new(AuditRules.OperatorAccountRoute, "enabled", Who.Operator,
+            Reach.AnsweredFrom("/operator/accounts", "find-account", ("Email", AccessibilityWorld.Idle)),
+            "main input[name='_handler'][value='disable-account']",
+            "The account that was found, by its address, that it is enabled, and the one button, which disables it.",
+            Path: "/operator/accounts/{IdleAccount}"),
+        new(AuditRules.OperatorAccountRoute, "of an operator", Who.Operator, Reach.Opened, "main p[role='status'] + p + p + p",
+            "The account of an operator has a sentence in place of the button: it is not disabled.",
+            Path: "/operator/accounts/{OperatorAccount}"),
+        new(AuditRules.OperatorAccountRoute, "disabled", Who.Operator, Reach.Answered("disable-account"),
+            "main input[name='_handler'][value='enable-account']",
+            "The page comes back with since when the account is disabled, and the one button, which enables it.",
+            Path: "/operator/accounts/{IdleAccount}"),
+
+        // The sync of the model catalog, which the screen above leads to as well. The file of the
+        // world holds a key of the service for one provider, so there is something to sync: the
+        // second state syncs it, which adds no model that the first sync of the world did not.
+        new("/operator/catalog-sync", "button", Who.Operator, Reach.Opened, "main input[name='_handler'][value='sync-catalog']",
+            "What a sync does, the last sync of each provider as a table, and the one button."),
+        new("/operator/catalog-sync", "synced", Who.Operator, Reach.AnsweredFrom("/operator/catalog-sync", "sync-catalog"), "main .form-done",
+            "The page comes back with a message that the sync is over, above the table that says how it ended.",
+            Path: "/operator/catalog-sync?synced=true"),
+
+        // What the user of that account is told from then on, with the right password. It stands
+        // after the state that disabled the account, and before the clock of the world moves.
+        new("/sign-in", "account disabled", Who.Visitor,
+            Reach.Answered("sign-in", ("Email", AccessibilityWorld.Idle), ("Password", Password)), "main #sign-in-disabled",
+            "The form comes back with what keeps its user out, said only to whoever has the password."),
 
         // Two-factor authentication, as its user goes through it: she sets it up, signs in on
         // another browser, proves who she is, makes new recovery codes, and stops before turning
@@ -564,6 +604,10 @@ internal static class AccessibilityRules
         ["\"We could not send the email\" on /register and /forgot-password"] =
             "It takes a mail server that fails, and the one world sends the links that its states open. It is a message " +
             "above the form, as the wrong password of /sign-in is.",
+
+        ["A sentence in place of the button on /operator/catalog-sync, where the configuration file holds a key for no provider"] =
+            "The one world holds a key for one provider, so that its operator has something to sync. It is a sentence in " +
+            "place of a button, as the page of the account of an operator has one.",
 
         ["/Error, shown in place of a request that failed"] =
             "The page is shown in place of a failed request only by an application that runs as deployed, which is another " +

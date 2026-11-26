@@ -1,15 +1,37 @@
 @attribute [Route(WebUiModule.OperatorStatusPath)]
 @attribute [Authorize(Policy = OperatorAccess.Policy)]
 @using Ecnanib.Accounts
+@using Ecnanib.Catalog
+@using Ecnanib.DecisionEngine
+@using Ecnanib.ExchangeGateway
+@using Ecnanib.Platform.BackgroundWork
+@using Ecnanib.Platform.Logging
+@using Ecnanib.Platform.Persistence
+@using Ecnanib.WebUi.Pages.Agents
+@inject IBackgroundWorkStatus Work
+@inject ICycleLoad Cycles
+@inject ICatalogSync Catalog
+@inject IExchangeLimits Limits
+@inject IExchangeClock Clock
+@inject IDatabaseSizes Sizes
+@inject ILoggedProblems Problems
+@inject TimeProvider Time
 
 @*
-    The operator status screen (FR-UI-2). It is for operators alone: a visitor is sent to sign
-    in, and a user who is not an operator is refused (NFR-SEC-3). It has a route and a place in
-    the bar of an operator, and only says what it is to show (FR-OPS-2). It has no form, asks
-    the database nothing, and shows nothing of any user (FR-OPS-5): a screen that only shows is
-    no action of an operator, so nothing of it is recorded in the audit trail. The first form
-    here is such an action. What an operator does is on a page of its own, which this screen
-    leads to with a link: the global halt (FR-OPS-3). See "Operators" in docs/ownership.md.
+    The operator status screen (FR-UI-2, FR-OPS-2). It is for operators alone: a visitor is sent
+    to sign in, and a user who is not an operator is refused (NFR-SEC-3). Rendered on the server
+    for each request, and never interactive: it says how the service stood when it was written,
+    and follows nothing.
+
+    It shows the health of the scheduler, the depth of the queue of the cycles, the last catalog
+    sync of each provider, the use of the request limits of Binance, the drift of the clock, the
+    sizes of the tables, and the rates of errors. Each is said by the component that keeps it,
+    behind an interface, and each is of the service: none of them names a user, an agent, or a
+    key, so the screen shows nothing of any user (FR-OPS-5).
+
+    It only shows. It has no form, so nothing of it is recorded in the audit trail: what an
+    operator does is on a page of its own, which this screen leads to with a link. See
+    "Operators" in docs/ownership.md. Its texts are in OperatorPages and OperatorStatusPages.
 *@
 
 <PageTitle>@Screens.OperatorStatus.Name</PageTitle>
@@ -18,8 +40,288 @@
 
 <p>@OperatorPages.ForOperators</p>
 
-<p>@OperatorPages.NotBuiltYet</p>
+@if (_read is { } read)
+{
+    <p>@OperatorStatusPages.AsItStood(read.At, Times)</p>
 
-<p>@OperatorPages.OnlyShows</p>
+    <p>@OperatorPages.OnlyShows</p>
 
-<p><a href="@WebUiModule.GlobalHaltPath">@OperatorPages.HaltTitle</a></p>
+    <ul>
+        <li><a href="@WebUiModule.GlobalHaltPath">@OperatorPages.HaltTitle</a></li>
+        <li><a href="@WebUiModule.OperatorAccountsPath">@OperatorAccountPages.Title</a></li>
+        <li><a href="@WebUiModule.OperatorCatalogSyncPath">@OperatorSyncPages.Title</a></li>
+    </ul>
+
+    <section>
+        <h2 id="@OperatorStatusPages.SchedulerId">@OperatorStatusPages.SchedulerHeading</h2>
+
+        <p>@OperatorStatusPages.SchedulerExplained</p>
+
+        <p>@OperatorStatusPages.SchedulerHealth(read.Jobs)</p>
+
+        @* A table that is wider than a narrow screen scrolls by itself, also by keyboard. *@
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.SchedulerId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.JobsCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.JobHeading</th>
+                        <th scope="col">@OperatorStatusPages.ScheduleHeading</th>
+                        <th scope="col">@OperatorStatusPages.StartedHeading</th>
+                        <th scope="col">@OperatorStatusPages.EndedHeading</th>
+                        <th scope="col">@OperatorStatusPages.OutcomeHeading</th>
+                        <th scope="col">@OperatorStatusPages.DueHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var job in read.Jobs)
+                    {
+                        <tr>
+                            <th scope="row"><code>@job.Name</code></th>
+                            <td>@OperatorStatusPages.Schedule(job.Schedule)</td>
+                            <td>@OperatorStatusPages.Started(job, Times)</td>
+                            <td>@OperatorStatusPages.Ended(job, Times)</td>
+                            <td>@OperatorStatusPages.NameOf(job.State)</td>
+                            <td>@OperatorStatusPages.Due(job, Times)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.QueueId">@OperatorStatusPages.QueueHeading</h2>
+
+        <p>@OperatorStatusPages.QueueExplained</p>
+
+        @if (read.Load is { } load)
+        {
+            <div class="status-table" role="region" aria-labelledby="@OperatorStatusPages.QueueId" tabindex="0">
+                <table>
+                    <caption>@OperatorStatusPages.QueueCaption</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">@OperatorStatusPages.CloseHeading</th>
+                            <th scope="col">@OperatorStatusPages.AwaitingCandlesHeading</th>
+                            <th scope="col">@OperatorStatusPages.QueuedHeading</th>
+                            <th scope="col">@OperatorStatusPages.RunningHeading</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row">@Times.At(load.ClosedAt)</th>
+                            <td>@OperatorStatusPages.Count(load.AwaitingCandles)</td>
+                            <td>@OperatorStatusPages.Count(load.Queued)</td>
+                            <td>@OperatorStatusPages.Count(load.Running)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <p>@OperatorStatusPages.NoCloseUnderWay</p>
+        }
+    </section>
+
+    <CatalogSyncs Syncs="read.Syncs" />
+
+    <section>
+        <h2 id="@OperatorStatusPages.LimitsId">@OperatorStatusPages.LimitsHeading</h2>
+
+        <p>@OperatorStatusPages.LimitsExplained</p>
+
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.LimitsId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.LimitsCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.LimitHeading</th>
+                        <th scope="col">@OperatorStatusPages.EnvironmentHeading</th>
+                        <th scope="col">@OperatorStatusPages.UsedHeading</th>
+                        <th scope="col">@OperatorStatusPages.AllowedHeading</th>
+                        <th scope="col">@OperatorStatusPages.LimitOfBinanceHeading</th>
+                        <th scope="col">@OperatorStatusPages.ReportedHeading</th>
+                        <th scope="col">@OperatorStatusPages.WaitingHeading</th>
+                        <th scope="col">@OperatorStatusPages.HeldHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var limit in read.Limits)
+                    {
+                        <tr>
+                            <th scope="row">@limit.Name</th>
+                            <td>@AgentPages.NameOf(limit.Environment)</td>
+                            <td>@OperatorStatusPages.Used(limit)</td>
+                            <td>@OperatorStatusPages.Count(limit.Allowed)</td>
+                            <td>@OperatorStatusPages.Count(limit.Limit)</td>
+                            <td>@OperatorStatusPages.Reported(limit, Times)</td>
+                            <td>@OperatorStatusPages.Count(limit.Waiting)</td>
+                            <td>@OperatorStatusPages.Held(limit, Times)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.ClockId">@OperatorStatusPages.ClockHeading</h2>
+
+        <p>@OperatorStatusPages.ClockExplained</p>
+
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.ClockId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.ClocksCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.MarketHeading</th>
+                        <th scope="col">@OperatorStatusPages.EnvironmentHeading</th>
+                        <th scope="col">@OperatorStatusPages.ClockStateHeading</th>
+                        <th scope="col">@OperatorStatusPages.DriftHeading</th>
+                        <th scope="col">@OperatorStatusPages.RoundTripHeading</th>
+                        <th scope="col">@OperatorStatusPages.ReadHeading</th>
+                        <th scope="col">@OperatorStatusPages.ToleranceHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var clock in read.Clocks)
+                    {
+                        <tr>
+                            <th scope="row">@AgentPages.NameOf(clock.Market)</th>
+                            <td>@AgentPages.NameOf(clock.Environment)</td>
+                            <td>@OperatorStatusPages.NameOf(clock.State)</td>
+                            <td>@OperatorStatusPages.Drift(clock.Drift)</td>
+                            <td>@OperatorStatusPages.Milliseconds(clock.RoundTrip)</td>
+                            <td>@OperatorStatusPages.Read(clock.ReadAt, Times)</td>
+                            <td>@OperatorStatusPages.Milliseconds(clock.Tolerance)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.TablesId">@OperatorStatusPages.TablesHeading</h2>
+
+        <p>@OperatorStatusPages.TablesExplained</p>
+
+        <p>@OperatorStatusPages.TotalSize(read.Tables)</p>
+
+        <div class="status-table" role="region" aria-labelledby="@OperatorStatusPages.TablesId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.TablesCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.TableHeading</th>
+                        <th scope="col">@OperatorStatusPages.SizeHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var table in read.Tables)
+                    {
+                        <tr>
+                            <th scope="row"><code>@table.Name</code></th>
+                            <td>@OperatorStatusPages.Size(table.Bytes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.ProblemsId">@OperatorStatusPages.ProblemsHeading</h2>
+
+        <p>@OperatorStatusPages.ProblemsExplained(read.Problems.CountedSince, Times)</p>
+
+        @if (read.Problems.Areas.Count == 0)
+        {
+            <p>@OperatorStatusPages.NoProblems</p>
+        }
+        else
+        {
+            <div class="status-table" role="region" aria-labelledby="@OperatorStatusPages.ProblemsId" tabindex="0">
+                <table>
+                    <caption>@OperatorStatusPages.ProblemsCaption</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">@OperatorStatusPages.AreaHeading</th>
+                            <th scope="col">@OperatorStatusPages.ErrorsLastHourHeading</th>
+                            <th scope="col">@OperatorStatusPages.WarningsLastHourHeading</th>
+                            <th scope="col">@OperatorStatusPages.ErrorsLastDayHeading</th>
+                            <th scope="col">@OperatorStatusPages.WarningsLastDayHeading</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var area in read.Problems.Areas)
+                        {
+                            <tr>
+                                @if (area.Area is { } name)
+                                {
+                                    <th scope="row"><code>@name</code></th>
+                                }
+                                else
+                                {
+                                    <th scope="row">@OperatorStatusPages.OutsideTheApplication</th>
+                                }
+                                <td>@OperatorStatusPages.Count(area.ErrorsLastHour)</td>
+                                <td>@OperatorStatusPages.Count(area.WarningsLastHour)</td>
+                                <td>@OperatorStatusPages.Count(area.ErrorsLastDay)</td>
+                                <td>@OperatorStatusPages.Count(area.WarningsLastDay)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <p>@OperatorStatusPages.OfThisInstance</p>
+}
+
+@code {
+    // Everything that the screen shows, read once, as the page is written.
+    private Reading? _read;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var cancellationToken = request.RequestAborted;
+
+        // Each is of the service, and is asked of the component that keeps it. Nothing of a
+        // user is read: no row is asked for by owner, and none of another user either.
+        _read = new Reading(
+            Time.GetUtcNow(),
+            await Work.ReadAsync(cancellationToken),
+            Cycles.Now(),
+            await Catalog.StatusAsync(cancellationToken),
+            Limits.Usage(),
+            Clock.Drift(),
+            await Sizes.ReadAsync(cancellationToken),
+            Problems.Read());
+    }
+
+    private sealed record Reading(
+        DateTimeOffset At,
+        IReadOnlyList<BackgroundJobStatus> Jobs,
+        CycleLoad? Load,
+        IReadOnlyList<ProviderSyncStatus> Syncs,
+        IReadOnlyList<ExchangeLimitUsage> Limits,
+        IReadOnlyList<ExchangeClockDrift> Clocks,
+        IReadOnlyList<TableSize> Tables,
+        LoggedProblemCounts Problems);
+}

@@ -1,0 +1,56 @@
+@using Ecnanib.Catalog
+@using Ecnanib.WebUi.Pages.Catalog
+
+@*
+    The last catalog sync of each provider, as a part of a page of an operator: a heading, what
+    the table holds, and the table (FR-OPS-2, FR-CAT-7). The operator status screen has it among
+    its readings, and the page on which an operator has the catalog synced has it for how the
+    syncs ended. A row of a sync names no user and no key, so neither does this. Its texts are in
+    OperatorStatusPages.
+*@
+
+<section>
+    <h2 id="@OperatorStatusPages.CatalogId">@OperatorStatusPages.CatalogHeading</h2>
+
+    <p>@OperatorStatusPages.CatalogExplained</p>
+
+    @* A table that is wider than a narrow screen scrolls by itself, also by keyboard. *@
+    <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.CatalogId" tabindex="0">
+        <table>
+            <caption>@OperatorStatusPages.SyncsCaption</caption>
+            <thead>
+                <tr>
+                    <th scope="col">@CatalogPages.ProviderHeading</th>
+                    <th scope="col">@OperatorStatusPages.SyncedWithHeading</th>
+                    <th scope="col">@OperatorStatusPages.LatestSyncHeading</th>
+                    <th scope="col">@OperatorStatusPages.SyncResultHeading</th>
+                    <th scope="col">@OperatorStatusPages.SyncCountsHeading</th>
+                    <th scope="col">@OperatorStatusPages.LatestSucceededHeading</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var provider in Syncs)
+                {
+                    <tr>
+                        <th scope="row">@provider.ProviderName</th>
+                        <td>@OperatorStatusPages.SyncedWith(provider.HasCatalogKey)</td>
+                        <td>@OperatorStatusPages.Sync(provider.Latest, Times)</td>
+                        <td>@OperatorStatusPages.Result(provider.Latest)</td>
+                        <td>@OperatorStatusPages.SyncCounts(provider.Latest)</td>
+                        <td>@OperatorStatusPages.Succeeded(provider.LatestSucceeded, Times)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    /// <summary>How the sync of each provider's catalog stands, as the Catalog says it.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ProviderSyncStatus> Syncs { get; set; } = [];
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+}

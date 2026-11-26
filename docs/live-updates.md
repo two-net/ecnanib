@@ -185,7 +185,7 @@ A page that is rendered for each request is checked with each request. A connect
 |---|---|
 | **The feed asks whether its session stands.** | When the database says that a session of its user ended, and once a minute, for a session that was left alone for the period of inactivity. Asking is no activity. |
 | **What a page does by itself is no activity of its user.** | Its connection, and the request with which it asks for itself again, which its feed announces first. So a page that follows does not keep the session of a browser alive that nobody sits at (NFR-SEC-1). |
-| **A session that ended ends for the page.** | Signing out, a new password, the deletion of the account, and the period of inactivity each stop the feeds of that session, within moments or within the minute, and the browser lands on the page that signs in. |
+| **A session that ended ends for the page.** | Signing out, a new password, the deletion of the account, an operator disabling the account, and the period of inactivity each stop the feeds of that session, within moments or within the minute, and the browser lands on the page that signs in. |
 
 ## Within two seconds
 

@@ -456,10 +456,12 @@ public class GlobalHaltTests
         await client.SignInAsync(Olive);
 
         // The pages of an operator, as they open, and the page of the halt in both of its
-        // states, as a switch leaves it.
+        // states, as a switch leaves it. The page of one account names that account, by the
+        // address that the operator typed to find it: AccountDisablingTests holds it to that.
         var seen = new List<string>
         {
             await client.PageAsync(WebUiModule.OperatorStatusPath),
+            await client.PageAsync(WebUiModule.OperatorAccountsPath),
             await client.PageAsync(HaltPage),
             (await client.SubmitAsync(HaltPage, OnForm)).Page,
             (await client.SubmitAsync(HaltPage, OffForm)).Page,

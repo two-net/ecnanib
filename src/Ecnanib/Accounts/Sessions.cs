@@ -68,6 +68,12 @@ internal readonly struct SignInStart
 
     /// <summary>The token of the sign-in that waits for a code, for an account with it.</summary>
     public string? PendingToken { get; init; }
+
+    /// <summary>
+    /// Whether nothing started because an operator disabled the account (FR-OPS-4). The password
+    /// was right, so whoever gave it is told: neither token is set.
+    /// </summary>
+    public bool Disabled { get; init; }
 }
 
 /// <summary>A sign-in that waits for a code, as far as the page that takes the code needs to know it.</summary>
@@ -144,19 +150,35 @@ internal sealed class Sessions(
         // The same lock, in the same statement, says whether the account asks for a code.
         // Turning two-factor authentication on changes the row, so it waits for this or this
         // waits for it, and a password alone never starts a session of an account that has it on.
-        var asksForCode = await context.Database
-            .SqlQuery<bool>(
+        //
+        // And it says whether the account is disabled, which is asked first (FR-OPS-4).
+        // Disabling an account changes the row and ends its sessions, so it waits for this and
+        // then ends the session that starts here, or this waits for it and starts none.
+        var standing = await context.Database
+            .SqlQuery<int>(
                 $"""
-                SELECT two_factor_enabled_at IS NOT NULL AS "Value" FROM users
+                SELECT CASE
+                    WHEN disabled_at IS NOT NULL THEN 2
+                    WHEN two_factor_enabled_at IS NOT NULL THEN 1
+                    ELSE 0 END AS "Value"
+                FROM users
                 WHERE id = {userId} AND password_hash = {verifiedPasswordHash}
                 FOR SHARE
                 """)
             .ToListAsync(cancellationToken);
 
-        if (asksForCode.Count == 0)
+        if (standing.Count == 0)
         {
             return default;
         }
+
+        if (standing[0] == 2)
+        {
+            // Before a sign-in that waits for a code is made: a disabled account is asked for none.
+            return new SignInStart { Disabled = true };
+        }
+
+        var asksForCode = standing[0] == 1;
 
         // A browser has one sign-in waiting for a code. The one it held ends, whoever it belonged to.
         if (heldPendingToken is not null && SecretToken.HashOf(heldPendingToken) is { } heldPendingHash)
@@ -181,7 +203,7 @@ internal sealed class Sessions(
             cancellationToken);
 
         SignInStart started;
-        if (asksForCode[0])
+        if (asksForCode)
         {
             var (token, tokenHash) = SecretToken.Create();
 
@@ -401,11 +423,14 @@ internal sealed class Sessions(
         return new SessionUser(
             found.Id, found.UserId, found.Email, found.IsVerified, found.Theme, found.Motion, found.TimeDisplay, lastActiveAt + _idle);
 
+        // A session of a disabled account is not found, as one that has ended is not. Disabling
+        // an account ends its sessions, so there is none to find: this holds also for an account
+        // that was disabled by hand, in the database (FR-OPS-4).
         Task<FoundSession?> ReadAsync() =>
             context.Set<Session>()
                 .Where(session => session.TokenHash == tokenHash)
                 .Join(
-                    context.Set<User>(),
+                    context.Set<User>().Where(user => user.DisabledAt == null),
                     session => session.UserId,
                     user => user.Id,
                     (session, user) => new FoundSession(

@@ -63,6 +63,11 @@ namespace Ecnanib.Accounts;
 /// When the user said, on the setup checklist, that they considered Live, or first switched an
 /// agent to Live, or null while they did neither (FR-UI-4). See <see cref="SetupMark.LiveConsidered"/>.
 /// </param>
+/// <param name="disabledAt">
+/// When an operator disabled the account, or null while it is not disabled (FR-OPS-4). A
+/// disabled account is not signed in, and has no session. Who disabled it is in the audit trail,
+/// and not here. See <see cref="IAccountDisabling"/>.
+/// </param>
 public sealed class User(
     Guid id,
     string email,
@@ -84,7 +89,8 @@ public sealed class User(
     Motion motion,
     TimeDisplay timeDisplay,
     DateTimeOffset? decisionsReviewedAt,
-    DateTimeOffset? liveConsideredAt)
+    DateTimeOffset? liveConsideredAt,
+    DateTimeOffset? disabledAt)
 {
     public Guid Id { get; } = id;
 
@@ -127,6 +133,8 @@ public sealed class User(
     public DateTimeOffset? DecisionsReviewedAt { get; } = decisionsReviewedAt;
 
     public DateTimeOffset? LiveConsideredAt { get; } = liveConsideredAt;
+
+    public DateTimeOffset? DisabledAt { get; } = disabledAt;
 }
 
 internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
@@ -170,6 +178,10 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // and no index: they are read with the account, by its id.
         builder.Property(user => user.DecisionsReviewedAt);
         builder.Property(user => user.LiveConsideredAt);
+
+        // Since when the account is disabled, and empty for an account that is not. No index: it
+        // is read with the account, by its id, and with the session of a request.
+        builder.Property(user => user.DisabledAt);
 
         // One account for each address. Registration relies on it: see Registration.
         builder.HasIndex(user => user.Email).IsUnique();

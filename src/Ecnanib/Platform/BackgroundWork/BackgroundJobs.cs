@@ -40,6 +40,9 @@ public static class BackgroundJobs
         services.AddSingleton<BackgroundWorkLock>();
         services.AddHostedService<BackgroundJobScheduler>();
 
+        // How the jobs stand, read from the database, for the operator status screen (FR-OPS-2).
+        services.AddSingleton<IBackgroundWorkStatus, BackgroundWorkStatus>();
+
         return services;
     }
 }

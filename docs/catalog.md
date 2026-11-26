@@ -31,9 +31,35 @@ How a provider's list is read is in [ai-providers.md](ai-providers.md). How a jo
 
 - **The schedule is the job `catalog-sync`,** on `BackgroundJobSchedule.Every`. It is due one interval after the start of its previous run, and at once on a database that it has never run on. See [background-work.md](background-work.md).
 - **An empty catalog does not wait for the interval.** The job implements `IDueAtStart`, and says that it is due when a provider that the service has a key for has no model in the catalog. So the application syncs as it starts after the first sync failed, and after a key was added to the file. The run is a run of the job like any other: it syncs every provider that the service has a key for, and the next one is due an interval after it. A start with a catalog that is filled for each of them asks no provider: a restart then costs nothing.
-- **A sync on demand answers with the sync of each provider, as it was recorded.** It does not move the schedule. Nothing calls it yet: see "Not built yet".
+- **A sync on demand answers with the sync of each provider, as it was recorded.** It does not move the schedule. An operator asks for it: see "On demand".
 - **Each provider is synced on its own, and all at the same time.** One that is slow or fails neither delays nor fails another (FR-CAT-7).
 - With no `CatalogKey` in the file at all, the job and a sync on demand ask nobody and write nothing. The catalog of a provider is then empty until a key of a user for it is next validated, which is within a day for a key that is stored.
+
+### On demand
+
+An Operator can trigger a catalog sync (FR-CAT-2, FR-OPS-4). The page is `/operator/catalog-sync`, and what does it for the operator is `IOperatorCatalogSync` of Credentials: the Catalog may not use Accounts, which keeps the audit trail, and Credentials may use both. See "Syncing the catalog on demand" in [ownership.md](ownership.md).
+
+- **It is recorded when it is asked for,** as `CatalogSyncRequested` in the audit trail, before a provider is asked (FR-OPS-5). The rows of the syncs say what came of it.
+- **It counts as a sync of the schedule does.** A model that the list of its provider lacks is counted as missed, and one that was missed in `CatalogSync:MissedSyncsBeforeUnavailable` syncs in a row is marked unavailable: see "Unavailable models". The page says so before the button.
+- **It is not given up with the request.** The syncs run until they are over, or the application stops.
+- **With no `CatalogKey` in the file there is nothing to sync on demand.** The page says so in place of the button, and nothing is recorded.
+
+### The status of the syncs
+
+An operator status screen shows the last catalog sync per provider (FR-OPS-2). `ICatalogSync.StatusAsync` says it:
+
+```csharp
+Task<IReadOnlyList<ProviderSyncStatus>> StatusAsync(CancellationToken cancellationToken);
+
+public sealed record ProviderSyncStatus(
+    AiProviderCode Provider, string ProviderName, bool HasCatalogKey, CatalogSyncRun? Latest, CatalogSyncRun? LatestSucceeded);
+```
+
+- **Every provider is in it, by its code,** also one that was never synced.
+- **The latest sync, however it ended, and the latest one that succeeded,** which is what the catalog of the provider holds. Each is the newest row of the provider's syncs, which their index finds.
+- **`HasCatalogKey` says that there is a key, and nothing of the key.** It is what tells a provider that is synced on the schedule and on demand from one that is synced when the key of a user is checked. It is on this interface because only the Catalog reads the key that the service holds for a provider: `NoSharedKeyTests`.
+- **It reads the syncs that are recorded, and asks no provider.** A row of a sync names no user and no key, so neither does this.
+- The screen of the catalog, which every user reads, says when a provider was last synced, and that a later sync failed: it does not say why. The operator status screen does, in the word that the sync was recorded with.
 
 ## The key
 
@@ -284,6 +310,8 @@ The file of the tests allows the models of Claude that `claude-*` names, but for
 
 The file of the tests gives one price, to the models of Claude that `claude-priced-*` names, which is no model that a test runs with. A test that needs other prices writes them into its own file in the same way. `ModelPriceTests` asks `IModelPrices` for the price of a model, as a component asks.
 
+`OperatorCatalogSyncTests` has an operator sync the catalog from the page, and holds it to what is synced, recorded, and shown, and to who may ask.
+
 `CatalogPageTests` reads the screen as a signed-in user does, on `AccountsApplication`, which has the pages of an account. It waits for the first run of the job, and then asks for each further sync itself, with `ICatalogSync.SyncAsync`. Those syncs are minutes apart: the session of the user who reads the screen ends after 45 idle minutes in the file of the tests.
 
 ## Not built yet
@@ -291,7 +319,6 @@ The file of the tests gives one price, to the models of Claude that `claude-pric
 - What follows a call that reports that the model does not exist (FR-CAT-8). The gateway answers such a call with the outcome `ModelNotFound`: see "Outcomes" in [ai-providers.md](ai-providers.md). What runs the team of an agent records the call, and the cycle ends as its role says: see "When a role gives no valid result" in [team.md](team.md). Moving the agent to Attention required then is not built: it takes an operation of Agents that a cycle can ask. Until then such an agent is called again at each close, until a sync marks the model. The Catalog is not told, and marks nothing for it: a model is marked by the provider's list alone.
 - Telling the user of an agent that does not run that a model of its team is unavailable (FR-NTF-1). The user of an agent that ran with it is told, by Agents, which moves the agent: see "When a model goes" in [agents.md](agents.md). The catalog names no user, and may not use Notifications.
 - Telling an agent that its model is no longer eligible, after the patterns of the file were changed. The model cannot be selected anew, and an agent that has it keeps it: it is not started or resumed with it, and one that runs with it runs on.
-- The operator's button that triggers a sync, and its event in the audit trail (FR-OPS-4, FR-OPS-5). `ICatalogSync.SyncAsync` is what it calls.
 - Deleting old rows of `catalog_sync_runs`. Every sync adds a row. With the keys of users that is a row for each check of a key, which is about one a day for each stored key.
 - Keeping the prices that a provider lists. Grok lists them, and they are not kept: the price of a model is what the configuration file says (FR-CAT-11), and a model that the file gives none has none.
 - The price of a model on the catalog screen. The page of the AI usage shows what the calls of a user are estimated to cost, and not what a model costs.

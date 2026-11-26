@@ -64,7 +64,8 @@ public static class WebUiModule
 
     /// <summary>
     /// The path of the operator status screen, which is for operators alone (FR-UI-2, FR-OPS-2).
-    /// What it is to show is not built yet.
+    /// It shows how the service stands, and only shows: what an operator does is on a page of
+    /// its own, under this path.
     /// </summary>
     public const string OperatorStatusPath = "/operator";
 
@@ -73,6 +74,33 @@ public static class WebUiModule
     /// It is for operators alone, and is a part of the operator status screen, which leads to it.
     /// </summary>
     public const string GlobalHaltPath = "/operator/global-halt";
+
+    /// <summary>
+    /// The path of the page on which an operator finds the account of a user by its email
+    /// address, to disable or enable it (FR-OPS-4). It is for operators alone, and is a part of
+    /// the operator status screen, which leads to it.
+    /// </summary>
+    public const string OperatorAccountsPath = "/operator/accounts";
+
+    /// <summary>
+    /// The path of the page on which an operator disables or enables one account (FR-OPS-4). It
+    /// names the account by its id, so that no address is in an address of a page.
+    /// </summary>
+    /// <param name="accountId">The id of the account.</param>
+    public static string OperatorAccountPath(Guid accountId) => $"{OperatorAccountsPath}/{accountId}";
+
+    /// <summary>
+    /// The path of the page on which an operator has the model catalog synced, outside its
+    /// schedule (FR-CAT-2, FR-OPS-4). It is for operators alone, and is a part of the operator
+    /// status screen, which leads to it.
+    /// </summary>
+    public const string OperatorCatalogSyncPath = "/operator/catalog-sync";
+
+    /// <summary>The query parameter of that page which says that a sync that was asked for is over.</summary>
+    public const string CatalogSyncedKey = "synced";
+
+    /// <summary>The path of that page after a sync that an operator asked for: it says that the sync is over.</summary>
+    public static string OperatorCatalogSyncedPath => $"{OperatorCatalogSyncPath}?{CatalogSyncedKey}=true";
 
     /// <summary>The path of the download of what is stored about the signed-in user (NFR-SEC-9).</summary>
     public const string ExportPath = "/account/export";

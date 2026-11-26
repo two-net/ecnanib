@@ -584,6 +584,9 @@ public static class AgentPages
             "anew from then on.",
         AgentStateCause.DailyLossHaltEnded =>
             "The UTC day in which the agent reached its daily loss limit was over, so the service resumed it.",
+        AgentStateCause.AccountDisabled =>
+            "An operator of the service disabled your account while the agent ran, so the agent stopped running. Now " +
+            "that your account is enabled again, resume the agent.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
     };
 

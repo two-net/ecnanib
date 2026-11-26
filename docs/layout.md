@@ -25,7 +25,7 @@ How a page is kept from carrying a script or a style of its own is in [security.
 | Settings: API keys | `/account/keys` | Users | The navigation of the settings. See [credentials.md](credentials.md). |
 | Settings: appearance | `/account/appearance` | Users | The navigation of the settings. See [themes.md](themes.md), and [motion.md](motion.md) for how much of the pages moves, which is chosen there too. |
 | Settings: notifications | `/account/notifications` | Users | The navigation of the settings. See [notifications.md](notifications.md). |
-| Operator status | `/operator` | Operators | The bar of an operator. |
+| Operator status | `/operator` | Operators | The bar of an operator. See "Operators" in [ownership.md](ownership.md). |
 
 | Rule | Detail |
 |---|---|
@@ -129,17 +129,21 @@ It uses no container query, no `:has()`, and no nesting.
 
 **An address that has no page** is answered with "Page not found", with the frame around it, so there is a way on. A page that is not for the user who asked for it, such as the operator status screen, is answered with the same page and the status 403. The address of the browser stays the one that was asked for, and the link past the bar names that one.
 
-## Screens whose feature is not built
+## The operator status screen and its parts
 
-One screen of the specification has a route and a place in the navigation, and says what it is for until its feature is built.
+Every screen of the specification is built. The last was the operator status screen, `/operator`, which shows how the service stands: the scheduler, the queue of the cycles, the catalog syncs, the request limits and the clock of Binance, the sizes of the tables, and the rates of errors, each under a heading of its own and most of them as a table (FR-OPS-2). It says of when it is, and is loaded again for how the service stands now. See "The operator status screen" in [ownership.md](ownership.md).
 
-| Screen | What its page says | Its feature |
-|---|---|---|
-| Operator status, `/operator` | That it is for operators, what it is to show, and that it shows nothing of any user and nothing can be done on it. It has no form, and asks the database nothing. A link leads to the page of the global halt. | What the status screen shows, and the account controls of an operator (FR-OPS-2, FR-OPS-4). |
+**What an operator does is a part of that screen, on a page of its own,** which the screen leads to with a link, and which leads back. None of them is a screen of the specification, as the page that deletes an account is none: the bar marks "Operator status" on each, as a part of that screen. Each is for operators alone, and is an operator function: see "Operators" in [ownership.md](ownership.md).
 
-**The global halt is a part of the operator status screen, on a page of its own:** `/operator/global-halt`, which the screen leads to with a link, and which leads back (FR-OPS-3). It is no screen of the specification, as the page that deletes an account is none: the bar marks "Operator status" on it, as a part of that screen. It is for operators alone, and is an operator function: see "The global halt" in [ownership.md](ownership.md).
+| Page | What an operator does there |
+|---|---|
+| `/operator/global-halt` | Switches the global halt on or off (FR-OPS-3). |
+| `/operator/accounts`, and `/operator/accounts/<id>` | Finds the account of a user by its email address, and disables or enables it (FR-OPS-4). |
+| `/operator/catalog-sync` | Has the model catalog synced, outside its schedule (FR-OPS-4). |
 
 **The operator status screen is no operator function.** It requires the operator policy, as an operator function does, and does nothing that the audit trail could record or that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and `AuditRulesTests` holds it to that: the one form of its page is the button of the bar. The first form that is put on it fails that test, and anything else that requires the policy counts as an operator function as before. See "Operators" in [ownership.md](ownership.md).
+
+**A table of the screen that is wider than a narrow screen scrolls sideways by itself,** as the tables of the catalog do, and the page around it does not: `.status-table` in `app.css`. A table with few columns is as wide as what it holds.
 
 ## Testing
 
@@ -157,10 +161,10 @@ No test of these drives a browser. `AccessibilityBrowserTests` does, when a run 
 3. Register, sign in, and open each screen of the map at both widths. On the phone, "Menu" opens and closes the navigation, by a pointer and by the keyboard, in any order of the two, and a page that is opened from it has it closed. The link of the open screen is marked.
 4. With the keyboard alone: a page that opens has the focus at its heading, so the first Tab is in the content. Shift and Tab from there go back through the bar to "Skip to the content", which shows while it has the focus. Enter follows it, and the next Tab is in the content again. In Safari, a link is a stop of the keyboard with Option and Tab.
 5. Do the same in Chrome or Edge, in Firefox, and in Safari. The console of the browser shows no report of the content security policy.
-6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status". The screen leads to "Global halt", where one button switches the halt on, and then off.
+6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status". The screen shows the seven readings of the service, at both widths. It leads to "Global halt", where one button switches the halt on, and then off, to "Disable or enable an account", where the address of a second account finds it, and one button disables it and then enables it, and to "Sync the model catalog", where one button syncs the providers that the file holds a catalog key for.
 
 ## Not built yet
 
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
-- What the operator status screen shows, and the account controls of an operator (FR-OPS-2, FR-OPS-4). The global halt is built. The Operator role itself is still to confirm (SRS 2.2).
+- Confirming the Operator role itself (SRS 2.2). Its screen and its functions are built.
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".

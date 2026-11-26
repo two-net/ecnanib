@@ -472,6 +472,68 @@ public class CatalogSyncTests
                 $"{written["Changed"].GetInt32()} {written["Unavailable"].GetInt32()}"));
     }
 
+    [Fact]
+    public async Task The_status_says_the_latest_sync_of_every_provider_and_the_latest_one_that_succeeded()
+    {
+        var clock = new TestClock(Start);
+        var providers = new StandInModelLists { Answer = (_, _) => StandInModelLists.Listed(Opus, Haiku) };
+        using var application = await WithAKeyForClaude(clock, providers).StartedAsync();
+
+        // What an operator status screen shows (FR-OPS-2): every provider of the application, by
+        // its code, also the ones that were never synced.
+        var status = await application.Catalog.StatusAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [("claude", "Claude", true), ("gemini", "Gemini", false), ("gpt", "GPT", false), ("grok", "Grok", false)],
+            status.Select(provider => (provider.Provider.Value, provider.ProviderName, provider.HasCatalogKey)));
+
+        // The sync of the start succeeded, so it is both the latest and what the catalog holds.
+        var claude = status[0];
+        Assert.NotNull(claude.Latest);
+        Assert.Same(claude.Latest, claude.LatestSucceeded);
+        Assert.Equal(
+            (CatalogSyncCause.Scheduled, CatalogSyncResult.Succeeded, Start, Start, 2, 0, 0),
+            (claude.Latest.Cause, claude.Latest.Result, claude.Latest.StartedAt, claude.Latest.FinishedAt, claude.Latest.Added,
+                claude.Latest.Changed, claude.Latest.Unavailable));
+        Assert.Null(claude.Latest.Failure);
+
+        // A provider that the file holds no key for is synced when it takes the key of a user,
+        // and none has: it has no sync.
+        Assert.All(status.Skip(1), provider => Assert.Equal((null, null), (provider.Latest, provider.LatestSucceeded)));
+
+        // Half an hour on, a sync fails. It is the latest, and the one before it is what the
+        // catalog still holds.
+        providers.Answer = (_, _) => StandInModelLists.Ended(AiModelListOutcome.TimedOut);
+        clock.Set(Start.AddMinutes(30));
+        await application.Catalog.SyncAsync(TestContext.Current.CancellationToken);
+
+        claude = (await application.Catalog.StatusAsync(TestContext.Current.CancellationToken))[0];
+
+        Assert.Equal(
+            (CatalogSyncCause.OnDemand, CatalogSyncResult.Failed, CatalogSyncFailure.TimedOut, Start.AddMinutes(30)),
+            (claude.Latest!.Cause, claude.Latest.Result, claude.Latest.Failure, claude.Latest.StartedAt));
+        Assert.Equal(
+            (CatalogSyncCause.Scheduled, CatalogSyncResult.Succeeded, Start),
+            (claude.LatestSucceeded!.Cause, claude.LatestSucceeded.Result, claude.LatestSucceeded.StartedAt));
+
+        // It read the syncs that are recorded, and asked no provider: the two syncs did.
+        Assert.Equal(2, providers.Asked.Count);
+    }
+
+    [Fact]
+    public async Task The_status_says_a_key_for_a_provider_whose_models_the_application_cannot_list_as_none()
+    {
+        // The file holds a key for Claude, and the application has no way to list its models:
+        // nothing is synced with it, so the status does not say that something is.
+        var providers = new StandInModelLists { Providers = [new AiProviderCode("gemini")] };
+        using var application = await WithAKeyForClaude(new TestClock(Start), providers).StartedAsync();
+
+        var status = await application.Catalog.StatusAsync(TestContext.Current.CancellationToken);
+
+        Assert.All(status, provider => Assert.False(provider.HasCatalogKey, $"{provider.Provider} is said to be synced with a key of the service."));
+        Assert.Empty(providers.Asked);
+    }
+
     /// <summary>The application with a key of the service for the models of Claude, and of no other provider.</summary>
     private static CatalogApplication WithAKeyForClaude(TimeProvider clock, StandInModelLists providers) =>
         new(clock, providers: providers, settings: file => file.WithCatalogKey());

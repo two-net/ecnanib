@@ -94,6 +94,30 @@ The cycles of a close wait in one queue, `CycleQueue`, which one run of the job 
 
 In the tracked file the limits are 250 for a provider and 4 for a key. A team of four different providers takes a place with each, so 250 cycles run at once then, and the cycles of 500 agents that share a boundary start in two rounds. Four of a user's agents are called with one key at once, and a fifth waits for one of them.
 
+### The depth of the queue
+
+An operator status screen shows queue depth (FR-OPS-2). `ICycleLoad` says it: the cycles of the close that is under way, by how far each has come.
+
+```csharp
+public interface ICycleLoad
+{
+    CycleLoad? Now();
+}
+
+public sealed record CycleLoad(DateTimeOffset ClosedAt, int AwaitingCandles, int Queued, int Running);
+```
+
+| Rule | Detail |
+|---|---|
+| **The run of a close says it, as it goes** | After every pass of its loop, which is the one place that the queue and the counts change in. What it says is replaced whole, so a reader has the numbers of one moment. |
+| **A cycle is in one of three numbers** | It waits for its candles, it has them and waits for a place, or it runs. A cycle that is over, or that was skipped, is in none: the summary of the close in the log counts those. |
+| **Between two closes there is none** | `Now` answers with nothing once every cycle of the run has ended, however the run ended, and for a close at which no agent ran. |
+| **It is of every user, and names none** | Numbers, and the time of a close. A user follows the cycle of an agent of theirs through `ICycleProgress`. |
+| **It is in memory, of the instance that runs the background work** | As the queue itself is, of which nothing is stored (FR-CYC-8). An instance that stands by has no close under way. |
+| **A test cycle is not in it** | It runs outside the queue. |
+
+`CycleLoadTests` holds it to these, with cycles that are held, and with candles that the exchange has not given yet.
+
 ## When time runs out
 
 **The cycles of a close are over before the next close.** The scheduler runs a job once at a time, and skips a boundary whose run cannot start: see [background-work.md](background-work.md). A run that went on past the quarter hour would cost every agent of every user its next cycle. So a run ends in time, by two rules, which are fixed and are no settings:
@@ -623,5 +647,5 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
 - Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A provider that is slow holds back the cycles that need it, and nothing pauses its calls.
 - Stopping the cycle of an agent when its user pauses or stops it. What places an entry asks again whether the agent takes new entries.
-- The queue depth and the health of the scheduler on the operator status screen (FR-OPS-2). The summary of each close is in the log.
+- The depth of the queue on an instance that stands by, and what a close counted once it is over, on the operator status screen. The summary of each close is in the log.
 - The load test at 500 running agents, with real cycles (NFR-PRF-3).

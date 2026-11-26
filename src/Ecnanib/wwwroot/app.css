@@ -81,7 +81,7 @@ h1:focus {
 
 /* What is read out and not shown: the name of a table whose heading above says the same, and
    what a screen reader is told while a page is on its way. */
-.visually-hidden, .catalog-models caption, .track-records caption, .agents caption {
+.visually-hidden, .catalog-models caption, .track-records caption, .agents caption, .status-table caption {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -263,6 +263,41 @@ code {
     }
 
     .track-records tbody tr {
+        border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+/* The readings of the operator status screen: a table for each, as the catalog has one for each
+   provider. One with few columns is as wide as what it holds. One with many is not squeezed
+   below a width that still reads well, and scrolls sideways by itself on a narrow screen. */
+.status-table {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+    .status-table table {
+        border-collapse: collapse;
+    }
+
+    .status-table.status-wide table {
+        min-width: 60rem;
+    }
+
+    .status-table th, .status-table td {
+        padding: 0.25rem 1rem 0.25rem 0;
+        text-align: start;
+        vertical-align: baseline;
+    }
+
+    /* The name of a job or of a table is in one piece, as it is typed. */
+    .status-table code {
+        white-space: nowrap;
+    }
+
+    .status-table tbody th {
+        font-weight: 600;
+    }
+
+    .status-table tbody tr {
         border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     }
 

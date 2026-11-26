@@ -50,8 +50,9 @@ internal static class AuditRules
 
     /// <summary>
     /// The actions that NFR-LOG-7 names, each with how it is recorded. An entry stands on its
-    /// own: one of them can be recorded while another still waits. The actions of operators are
-    /// recorded as far as they are built, and the rest of them waits.
+    /// own: one of them can be recorded while another still waits. Every one of them is recorded
+    /// now. An operator function that is built later and is not listed in
+    /// <see cref="RecordedOperatorFunctions"/> fails a test of its own.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, AuditCoverage> Requirement = new Dictionary<string, AuditCoverage>
     {
@@ -97,14 +98,17 @@ internal static class AuditRules
         // created or copied, changes none.
         ["risk setting changes"] = AuditCoverage.By(AuditAction.AgentRiskSettingsChanged),
 
-        // What an operator does. Switching the global halt is built, and recorded: the event
-        // carries the operator as its user, and names the halt (FR-OPS-3, FR-OPS-5). The
-        // controls of an account and the trigger of a catalog sync are not built, and wait.
-        ["operator actions"] = AuditCoverage
-            .By(AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff)
-            .AndWaiting(
-                OperatorFunctions,
-                "Disabling and enabling an account, and triggering a catalog sync (FR-OPS-4, FR-OPS-5)."),
+        // What an operator does. Switching the global halt is recorded: the event carries the
+        // operator as its user, and names the halt (FR-OPS-3, FR-OPS-5). So are disabling and
+        // enabling the account of a user: the event carries the operator, and names the other
+        // account (FR-OPS-4). And so is asking for a sync of the model catalog: the event names
+        // the catalog, and is recorded when the sync is asked for.
+        ["operator actions"] = AuditCoverage.By(
+            AuditAction.GlobalHaltSwitchedOn,
+            AuditAction.GlobalHaltSwitchedOff,
+            AuditAction.AccountDisabled,
+            AuditAction.AccountEnabled,
+            AuditAction.CatalogSyncRequested),
     };
 
     /// <summary>
@@ -151,10 +155,12 @@ internal static class AuditRules
     public static readonly IReadOnlyDictionary<string, string> OperatorScreensThatOnlyShow = new Dictionary<string, string>
     {
         [WebUiModule.OperatorStatusPath] =
-            "The operator status screen has its route and its place in the bar of an operator (FR-UI-2), and says only " +
-            "what it is to show (FR-OPS-2). It has no form, asks the database nothing, and shows nothing of any user: it " +
-            "switches no halt, disables no account, and triggers no sync, which are the actions of an operator. It leads " +
-            "to the page of the global halt with a link, and that page is an operator function of its own.",
+            "The operator status screen has its route and its place in the bar of an operator (FR-UI-2), and shows how " +
+            "the service stands: the scheduler, the queue of the cycles, the catalog syncs, the request limits and the " +
+            "clock of Binance, the sizes of the tables, and the rates of errors (FR-OPS-2). It only reads, has no form, " +
+            "and shows nothing of any user: it switches no halt, disables no account, and triggers no sync, which are " +
+            "the actions of an operator. It leads to the page of each with a link, and each such page is an operator " +
+            "function of its own.",
     };
 
     /// <summary>
@@ -171,7 +177,24 @@ internal static class AuditRules
             // which asks again whether the user of its request is an operator (FR-OPS-3).
             [WebUiModule.GlobalHaltPath] = [AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff],
             ["Ecnanib.Agents.GlobalHaltSwitch"] = [AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff],
+
+            // The page on which an operator finds the account of a user by its address, and the
+            // page of that account, on which they disable or enable it (FR-OPS-4). Finding an
+            // account reads it and changes nothing, so it is no action that could be recorded:
+            // what an operator does there is the two switches. What does them is of Accounts,
+            // and asks whether the user of its request is an operator there.
+            [WebUiModule.OperatorAccountsPath] = [AuditAction.AccountDisabled, AuditAction.AccountEnabled],
+            [OperatorAccountRoute] = [AuditAction.AccountDisabled, AuditAction.AccountEnabled],
+
+            // The page on which an operator has the model catalog synced, and what does it for
+            // them, which asks again whether the user of its request is an operator (FR-OPS-4).
+            // It is of Credentials, which may use both the Catalog and Accounts.
+            [WebUiModule.OperatorCatalogSyncPath] = [AuditAction.CatalogSyncRequested],
+            ["Ecnanib.Credentials.OperatorCatalogSync"] = [AuditAction.CatalogSyncRequested],
         };
+
+    /// <summary>The route of the page of one account, as an operator opens it: its parameter is the id of the account.</summary>
+    public const string OperatorAccountRoute = WebUiModule.OperatorAccountsPath + "/{Id:guid}";
 
     /// <summary>
     /// Why a further operator function counts as built, or null while none is: an endpoint that

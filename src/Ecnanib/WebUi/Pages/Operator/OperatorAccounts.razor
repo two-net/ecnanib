@@ -1,0 +1,79 @@
+@attribute [Route(WebUiModule.OperatorAccountsPath)]
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+@using Ecnanib.WebUi.Pages.Account
+@inject IAccountDisabling Accounts
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: who is an operator is decided
+    with each request (NFR-SEC-3). The page is for operators alone, as the operator status screen
+    is, which leads to it. A visitor is sent to sign in, and a user who is not an operator is
+    refused, for a form that is posted as for the page.
+
+    It finds the account that an operator means, by its email address, and leads to the page of
+    that account, which names it by its id: no address is in an address of a page. Finding an
+    account changes nothing, so nothing of it is recorded: what disables and enables an account
+    is on the page that this one leads to (FR-OPS-4, FR-OPS-5). There is no list of the accounts.
+    Its texts are in OperatorAccountPages.
+*@
+
+<PageTitle>@OperatorAccountPages.Title</PageTitle>
+
+<h1>@OperatorAccountPages.Title</h1>
+
+<p>@OperatorAccountPages.Explained</p>
+
+<p>@OperatorAccountPages.DisabledMeans</p>
+
+@if (_notFound)
+{
+    <p class="form-error" role="alert">@OperatorAccountPages.NoSuchAccount</p>
+}
+
+<form method="post" @formname="@OperatorAccountPages.FindForm" @onsubmit="FindAsync">
+    <AntiforgeryToken />
+
+    <div class="field">
+        <label for="email">@AccountPages.EmailLabel</label>
+        @* The address of another user, and none of the operator's own: so it is a field of text
+           that is typed as an address is, and the browser offers nothing of the operator for it.
+           Whether it is an address is for what finds the account to say. *@
+        <input id="email" name="Email" type="text" inputmode="email" autocapitalize="none" spellcheck="false"
+               autocomplete="off" required value="@Email" />
+    </div>
+
+    <button type="submit">@OperatorAccountPages.Find</button>
+</form>
+
+<p>@OperatorAccountPages.Recorded</p>
+
+<p><a href="@WebUiModule.OperatorStatusPath">@OperatorPages.BackToStatus</a></p>
+
+@code {
+    private bool _notFound;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Email { get; set; }
+
+    private async Task FindAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // What finds the account asks again whether the user of the request is an operator.
+        if (await Accounts.FindAsync(request, Email ?? string.Empty) is { } account)
+        {
+            Navigation.NavigateTo(WebUiModule.OperatorAccountPath(account.Id));
+        }
+        else
+        {
+            _notFound = true;
+        }
+    }
+}

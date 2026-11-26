@@ -152,6 +152,51 @@ internal sealed class CatalogSync(
         return listed;
     }
 
+    public async Task<IReadOnlyList<ProviderSyncStatus>> StatusAsync(CancellationToken cancellationToken)
+    {
+        await using var context = await contexts.CreateDbContextAsync(cancellationToken);
+
+        // The providers are the rows of their table, as the screen of the catalog lists them.
+        var all = await context.Set<AiProvider>()
+            .AsNoTracking()
+            .OrderBy(provider => provider.Code)
+            .ToListAsync(cancellationToken);
+
+        var statuses = new List<ProviderSyncStatus>(all.Count);
+
+        foreach (var provider in all)
+        {
+            // Each is the newest row of the provider's syncs, which their index finds: the table
+            // has a row for every sync there ever was, and none of the others is read.
+            var syncs = context.Set<CatalogSyncRun>().AsNoTracking().Where(sync => sync.Provider == provider.Code);
+
+            var latest = await syncs
+                .OrderByDescending(sync => sync.StartedAt)
+                .ThenByDescending(sync => sync.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            // When the latest one failed, the catalog is as the last one that succeeded left it.
+            var succeeded = latest is null or { Result: CatalogSyncResult.Succeeded }
+                ? latest
+                : await syncs
+                    .Where(sync => sync.Result == CatalogSyncResult.Succeeded)
+                    .OrderByDescending(sync => sync.StartedAt)
+                    .ThenByDescending(sync => sync.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+            statuses.Add(new ProviderSyncStatus(provider.Code, provider.DisplayName, HasCatalogKey(provider.Code), latest, succeeded));
+        }
+
+        return statuses;
+    }
+
+    /// <summary>
+    /// Whether the service has a key of its own that the catalog of a provider is synced with:
+    /// the configuration file holds one, and the application can list the provider's models.
+    /// </summary>
+    private bool HasCatalogKey(AiProviderCode provider) =>
+        providers.ByCode.TryGetValue(provider, out var entry) && entry.CatalogKey is not null && lists.Providers.Contains(provider);
+
     /// <summary>
     /// Whether a provider that the service has a key for has no model in the catalog: the
     /// catalog is then synced as the application starts, and not when it is next due (FR-CAT-2).

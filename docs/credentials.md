@@ -187,6 +187,19 @@ When a provider took a user's key, Credentials tells the Catalog, with `ICatalog
 | **What the list gives says nothing about the key.** | A provider that gives no list, and a catalog that cannot be written, are the Catalog's to record and to log. The key is stored and `Valid` all the same, and the page says so. |
 | The form waits for the list. | The list may take 15 seconds, which is what the check itself may take, and storing it takes a moment more. A provider whose list ran out of that time is then left alone for a minute. |
 
+### A sync that an operator asks for
+
+Credentials also has the catalog synced for an operator, on demand: `IOperatorCatalogSync`, in `OperatorCatalogSync.cs` (FR-CAT-2, FR-OPS-4). It is here because of what it uses, and not because a key of a user has a part in it: none has. The Catalog syncs, with the key that the configuration file holds for each provider, and may not use Accounts, which keeps the audit trail. Credentials may use both.
+
+| Rule | Detail |
+|---|---|
+| **It asks again whether the user of its request is an operator.** | `OperatorAccess.IsOperator`, whatever calls it (NFR-SEC-3). |
+| **It records that the sync was asked for, and then has the Catalog sync.** | `CatalogSyncRequested`, under the lock of the operator's account, in a transaction that is over before a provider is asked (FR-OPS-5). |
+| **It does not read the catalog key.** | It asks the Catalog whether any provider has one, with `ICatalogSync.StatusAsync`, and with none it asks for nothing and records nothing. `NoSharedKeyTests` holds it to reading no key of the service. |
+| **It is not given up with the request.** | The syncs run under the token of the application. |
+
+See "Syncing the catalog on demand" in [ownership.md](ownership.md), and "On demand" in [catalog.md](catalog.md).
+
 ### The models a key can use
 
 A provider does not list the same models to every key: Grok lists the models that a key may use, and GPT those of the key's project. So what the Catalog answers is kept with the key, in `ai_credentials.accessible_models`, as the models that the key can use (FR-CAT-9).
