@@ -9,29 +9,29 @@
     Rendered on the server for each request, and never interactive. Deleting a key takes no proof
     of who the user is: only adding and replacing one do (FR-ACC-4). The form is on the page
     whenever one is posted, whatever is stored by then: a form that is not there cannot be
-    answered.
+    answered. Its texts are in KeyPages.
 *@
 
 @if (_slot is not null)
 {
-    <PageTitle>Delete your @_slot.ProviderName key</PageTitle>
+    <PageTitle>@KeyPages.DeleteTitle(_slot.ProviderName)</PageTitle>
 
-    <h1>Delete your @_slot.ProviderName key</h1>
+    <h1>@KeyPages.DeleteTitle(_slot.ProviderName)</h1>
 
     @if (_slot.Key is { } stored)
     {
-        <p>This deletes the key <code>@KeyPages.Masked(stored)</code>, at once and for good. It cannot be undone: to use @_slot.ProviderName again, you add a key anew.</p>
+        <p>@KeyPages.DeletesAiKey <code>@KeyPages.Masked(stored)</code>, @KeyPages.AiKeyGone(_slot.ProviderName)</p>
     }
 
-    <p>An agent that works with @_slot.ProviderName cannot run without this key. It stops and asks for your attention.</p>
+    <p>@KeyPages.AiAgentsStop(_slot.ProviderName)</p>
 
     <form method="post" @formname="@KeyPages.DeleteForm" @onsubmit="DeleteAsync">
         <AntiforgeryToken />
 
-        <button type="submit">Delete the key</button>
+        <button type="submit">@KeyPages.DeleteKey</button>
     </form>
 
-    <p><a href="@WebUiModule.KeysPath">Keep the key</a></p>
+    <p><a href="@WebUiModule.KeysPath">@KeyPages.KeepKey</a></p>
 }
 
 @code {

@@ -15,7 +15,8 @@
     The form is on the page whenever one is posted, whatever was proved by then: a form that is
     not there cannot be answered. Whether the keys are stored is for StoreExchangeKeyAsync to say,
     which asks again, and asks Binance about the keys before it stores them: keys that Binance
-    does not take are not stored, and keys that can withdraw never are (FR-KEY-3, FR-KEY-4).
+    does not take are not stored, and keys that can withdraw never are (FR-KEY-3, FR-KEY-4). Its
+    texts are in KeyPages.
 *@
 
 @if (_slot is not null)
@@ -37,18 +38,18 @@
 
     @if (_slot.Key is { } stored)
     {
-        <p>The API key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new keys take the place of it and of its secret key, and the stored ones are gone for good.</p>
+        <p>@KeyPages.ExchangeKeyStoredNow <code>@KeyPages.Masked(stored)</code>. @KeyPages.ExchangeKeysReplaced</p>
     }
 
     @if (_showForm)
     {
-        <p>This is for @KeyPages.Describe(_slot.Environment). Orders of your agents in @_slot.Environment are placed with these keys. Both are stored encrypted. Once they are saved, neither is shown again: you see only the last four characters of the API key.</p>
+        <p>@KeyPages.ExchangeKeysExplained(_slot.Environment)</p>
 
-        <p>When you save the keys, Binance is asked what they may do, with calls that only read. <strong>Make the API key without the permission to withdraw.</strong> Ecnanib never withdraws, deposits, or transfers funds, and stores no key that can withdraw. The key needs the permission to trade on the market of each agent that uses it: Spot trading, Futures trading, or both.</p>
+        <p>@KeyPages.AskedWhatTheyMayDo <strong>@KeyPages.WithoutWithdrawals</strong> @KeyPages.PermissionsNeeded</p>
 
         @if (KeyPages.OutboundAddresses(Binance) is { Count: > 0 } addresses)
         {
-            <p>A key that works only from listed IP addresses is safer. If you restrict the key at Binance, list the addresses that Ecnanib calls Binance from:</p>
+            <p>@KeyPages.ListedAddresses</p>
 
             <ul class="outbound-addresses">
                 @foreach (var address in addresses)
@@ -62,7 +63,7 @@
             <AntiforgeryToken />
 
             <div class="field">
-                <label for="api-key">API key</label>
+                <label for="api-key">@KeyPages.ApiKey</label>
                 @* A key is never written back into the page, and the browser is asked not to keep it. *@
                 <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
                        aria-invalid="@PageFields.Invalid(_apiKeyProblem is not null)"
@@ -75,23 +76,23 @@
             </div>
 
             <div class="field">
-                <label for="secret-key">Secret key</label>
+                <label for="secret-key">@KeyPages.SecretKeyLabel</label>
                 <input id="secret-key" name="SecretKey" type="password" autocomplete="off" spellcheck="false" required
                        aria-invalid="@PageFields.Invalid(_secretKeyProblem is not null)"
                        aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("secret-key", _secretKeyProblem is not null), "secret-key-hint")"
                        autofocus="@(FirstRefused == "secret-key")" />
-                <p id="secret-key-hint" class="field-hint">Binance shows the secret key once, when the API key is created.</p>
+                <p id="secret-key-hint" class="field-hint">@KeyPages.SecretKeyHint</p>
                 @if (_secretKeyProblem is { } secretKeyProblem)
                 {
                     <p id="secret-key-error" class="field-error">@KeyPages.Says(secretKeyProblem)</p>
                 }
             </div>
 
-            <button type="submit">Save the keys</button>
+            <button type="submit">@KeyPages.SaveKeys</button>
         </form>
     }
 
-    <p><a href="@WebUiModule.KeysPath">Back to your keys</a></p>
+    <p><a href="@WebUiModule.KeysPath">@KeyPages.BackToKeys</a></p>
 }
 
 @code {
@@ -122,9 +123,7 @@
     [SupplyParameterFromForm]
     private string? SecretKey { get; set; }
 
-    private string Title => _slot is { Key: null }
-        ? $"Add your Binance keys for {_slot.Environment}"
-        : $"Replace your Binance keys for {_slot?.Environment}";
+    private string Title => _slot is null ? string.Empty : KeyPages.StoreTitle(_slot);
 
     protected override async Task OnInitializedAsync()
     {

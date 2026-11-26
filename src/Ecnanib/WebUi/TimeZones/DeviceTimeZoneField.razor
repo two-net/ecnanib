@@ -1,0 +1,9 @@
+@*
+    The field of a form that carries the time zone of the device (NFR-USA-3). The script of the
+    times, times.js, writes into it what the browser says its time zone is, and the page that
+    takes the form keeps that on the device: see DeviceTimeZone. It is the field of a form and
+    no form itself. Without the script it stays empty, nothing is kept, and the pages are in
+    UTC. See docs/times.md.
+*@
+
+<input type="hidden" name="@DeviceTimeZone.Field" data-time-zone />

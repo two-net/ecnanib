@@ -28,7 +28,8 @@ public class RoleRecommendationPageTests
     private const string TeamModel = StoredAgentRows.TeamModel;
     private const string Stronger = "claude-b";
 
-    private const string NotEnough = AgentPages.NotEnoughDataToRecommend;
+    // A text of a text class is a property, and no constant: see docs/texts.md.
+    private static string NotEnough => AgentPages.NotEnoughDataToRecommend;
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 17, 9, 20, 0, TimeSpan.Zero);
 

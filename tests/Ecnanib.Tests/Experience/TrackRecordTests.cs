@@ -77,7 +77,10 @@ public class TrackRecordTests
         // Two trades of one moment are told apart by their ids, so the same trades always give
         // the same record.
         var earlier = Trades.Closed(5, 1m);
-        var later = Trades.Closed(5, -1m) with { PositionId = Guid.CreateVersion7() };
+
+        // The id of a later moment, said outright: two ids that are made within one millisecond
+        // come in either order, and the test would then hold or fail by chance.
+        var later = Trades.Closed(5, -1m) with { PositionId = Guid.CreateVersion7(DateTimeOffset.UtcNow.AddMinutes(1)) };
 
         Assert.True(earlier.PositionId < later.PositionId);
         Assert.Equal(1m, TrackRecord.Of([later, earlier], NoMinimum).LargestDrawdownR);

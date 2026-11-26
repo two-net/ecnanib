@@ -19,7 +19,7 @@
 
     @if (Position is not null)
     {
-        <p>@LivePages.Says(Position)</p>
+        <p>@LivePages.Says(Position, Times)</p>
 
         <p>@LivePages.Protection(Position)</p>
     }
@@ -32,7 +32,7 @@
     {
         @if (Price is not null)
         {
-            <p class="live-price"><FigureText Of="@LivePages.PriceFigure(Followed, Price, Position?.QuoteAsset ?? QuoteAsset)" /></p>
+            <p class="live-price"><FigureText Of="@LivePages.PriceFigure(Followed, Price, Position?.QuoteAsset ?? QuoteAsset, Times)" /></p>
 
             @if (Position is not null)
             {
@@ -47,6 +47,14 @@
 </section>
 
 @code {
+    /// <summary>
+    /// The times of the page, which every time is written in (NFR-USA-3). The part is written
+    /// over the connection of its page, where nothing is handed down from the page: so the
+    /// page hands them to it. See docs/times.md.
+    /// </summary>
+    [Parameter]
+    public PageTimes Times { get; set; } = PageTimes.Utc;
+
     /// <summary>The open position, or null when the agent holds none.</summary>
     [Parameter]
     public OpenPosition? Position { get; set; }

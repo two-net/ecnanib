@@ -37,8 +37,8 @@
     itself again when one of them is first read. A page that answers a form asks for itself
     again on nothing. Above it all, a first-time user is shown the setup checklist, until they
     have marked its last two steps (FR-UI-4): where they stand on it is worked out from the keys,
-    the agents, and the decisions of the user, with what they said. See docs/dashboard.md and
-    docs/live-updates.md.
+    the agents, and the decisions of the user, with what they said. Its texts are in
+    DashboardPages. See docs/dashboard.md and docs/live-updates.md.
 *@
 
 @if (_agents is not null && _equities is not null && _totals is not null && _unread is not null)
@@ -89,7 +89,7 @@
         <section class="dashboard-mode" aria-labelledby="@DashboardPages.Id(mode, "heading")">
             <h2 id="@DashboardPages.Id(mode, "heading")">@DashboardPages.Heading(mode)</h2>
 
-            <p>Mode: <ModeBadge Mode="@mode" /> @DashboardPages.ModeExplained(mode)</p>
+            <p>@DashboardPages.BadgeLabel <ModeBadge Mode="@mode" /> @DashboardPages.ModeExplained(mode)</p>
 
             @if (agents.Count == 0)
             {
@@ -112,7 +112,7 @@
                         </div>
                     </dl>
 
-                    <p>@DashboardPages.Counted(total) @DashboardPages.Valued(total, equities.Where(equity => equity.Asset == total.Asset))</p>
+                    <p>@DashboardPages.Counted(total) @DashboardPages.Valued(total, equities.Where(equity => equity.Asset == total.Asset), Times)</p>
                 }
 
                 <h3 id="@DashboardPages.Id(mode, "positions")">@DashboardPages.PositionsHeading</h3>
@@ -133,17 +133,17 @@
                             <caption>@DashboardPages.PositionsCaption(mode)</caption>
                             <thead>
                                 <tr>
-                                    <th scope="col">Agent</th>
-                                    <th scope="col">Symbol</th>
-                                    <th scope="col">Market</th>
-                                    <th scope="col">Side</th>
-                                    <th scope="col">Quantity</th>
-                                    <th scope="col">Entry price</th>
-                                    <th scope="col">Stop-loss</th>
-                                    <th scope="col">Take-profit</th>
+                                    <th scope="col">@DashboardPages.AgentHeading</th>
+                                    <th scope="col">@DashboardPages.SymbolHeading</th>
+                                    <th scope="col">@DashboardPages.MarketHeading</th>
+                                    <th scope="col">@DashboardPages.SideHeading</th>
+                                    <th scope="col">@DashboardPages.QuantityHeading</th>
+                                    <th scope="col">@DashboardPages.EntryPriceHeading</th>
+                                    <th scope="col">@DashboardPages.StopLossHeading</th>
+                                    <th scope="col">@DashboardPages.TakeProfitHeading</th>
                                     <th scope="col">@DashboardPages.PriceHeading</th>
-                                    <th scope="col">Would make now</th>
-                                    <th scope="col">Open since</th>
+                                    <th scope="col">@DashboardPages.WouldMakeHeading</th>
+                                    <th scope="col">@DashboardPages.OpenSinceHeading</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -155,15 +155,15 @@
                                     <tr data-key="@agent.Id">
                                         <th scope="row"><a href="@WebUiModule.AgentStatePath(agent.Id)">@agent.Name</a></th>
                                         <td><code>@position.Symbol</code></td>
-                                        <td>@position.Market</td>
+                                        <td>@AgentPages.NameOf(position.Market)</td>
                                         <td>@DashboardPages.Side(position)</td>
                                         <td>@AgentPages.Number(position.Quantity)</td>
                                         <td>@AgentPages.Number(position.EntryPrice)</td>
                                         <td>@DashboardPages.Rests(position.StopLoss)</td>
                                         <td>@DashboardPages.Rests(position.TakeProfit)</td>
-                                        <td><FigureText Of="@DashboardPages.PriceFigure(equity)" Otherwise="@DashboardPages.NotKnown" /></td>
+                                        <td><FigureText Of="@DashboardPages.PriceFigure(equity, Times)" Otherwise="@DashboardPages.NotKnown" /></td>
                                         <td><FigureText Of="@DashboardPages.WouldMakeFigure(equity)" Otherwise="@DashboardPages.NotKnown" /></td>
-                                        <td>@PageTimes.At(position.OpenedAt)</td>
+                                        <td>@Times.At(position.OpenedAt)</td>
                                     </tr>
                                 }
                             </tbody>
@@ -189,19 +189,19 @@
 
                             <dl>
                                 <div>
-                                    <dt>State</dt>
-                                    <dd data-change="@agent.State">@DashboardPages.StateOf(agent.State, agent.StateChangedAt)</dd>
+                                    <dt>@DashboardPages.StateLabel</dt>
+                                    <dd data-change="@agent.State">@DashboardPages.StateOf(agent.State, agent.StateChangedAt, Times)</dd>
                                 </div>
                                 <div>
-                                    <dt>Equity</dt>
+                                    <dt>@DashboardPages.EquityLabel</dt>
                                     <dd><FigureText Of="@DashboardPages.AmountFigureOrNot(equity?.Equity, agent.QuoteAsset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                                 </div>
                                 <div>
-                                    <dt>Today</dt>
+                                    <dt>@DashboardPages.TodayLabel</dt>
                                     <dd><FigureText Of="@DashboardPages.SignedFigureOrNot(equity?.MadeToday, agent.QuoteAsset)" Otherwise="@DashboardPages.NotKnown" /></dd>
                                 </div>
                                 <div>
-                                    <dt>Position</dt>
+                                    <dt>@DashboardPages.PositionLabel</dt>
                                     <dd>@(equity?.Position is { } holds ? DashboardPages.Holds(holds) : DashboardPages.HoldsNothing)</dd>
                                 </div>
                             </dl>
@@ -213,7 +213,7 @@
                                 @if (AgentStates.HaltEnds(agent.State, agent.StateCause, agent.StateChangedAt) is { } ends)
                                 {
                                     @* A daily loss limit halts until the next UTC day (FR-RSK-8): the card says when that is. *@
-                                    <p>@AgentPages.HaltEnds(ends)</p>
+                                    <p>@AgentPages.HaltEnds(ends, Times)</p>
                                 }
                             }
                         </li>
@@ -237,9 +237,9 @@
                         <caption>@DashboardPages.DecisionsCaption(mode)</caption>
                         <thead>
                             <tr>
-                                <th scope="col">Candle close</th>
-                                <th scope="col">Agent</th>
-                                <th scope="col">Outcome</th>
+                                <th scope="col">@DashboardPages.CandleCloseHeading</th>
+                                <th scope="col">@DashboardPages.AgentHeading</th>
+                                <th scope="col">@DashboardPages.OutcomeHeading</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -247,7 +247,7 @@
                             {
                                 <tr data-key="@cycle.Cycle.Id">
                                     @* The time leads to the timeline of the cycle, which says what each role answered. *@
-                                    <th scope="row"><a href="@WebUiModule.AgentCyclePath(cycle.AgentId, cycle.Cycle.Id)">@PageTimes.At(cycle.Cycle.ClosedAt)</a></th>
+                                    <th scope="row"><a href="@WebUiModule.AgentCyclePath(cycle.AgentId, cycle.Cycle.Id)">@Times.At(cycle.Cycle.ClosedAt)</a></th>
                                     <td>@NameOf(cycle.AgentId)</td>
                                     <td>@CyclePages.Describe(cycle.Cycle.Outcome)</td>
                                 </tr>
@@ -279,7 +279,15 @@
         </section>
     }
 
-    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+    @* What each state of the cards means, under them: a state is explained where it appears (NFR-USA-2). *@
+    @if (_agents.Count > 0)
+    {
+        <h2>@AgentPages.StatesHeading</h2>
+
+        <AgentStateMeanings States="@StatesOf(_agents)" />
+    }
+
+    <p><a href="@WebUiModule.AgentsPath">@DashboardPages.AgentsLink</a></p>
 
     @* The trades and the decisions of every agent, to keep (FR-RPT-4). Marked as downloads, so that the browser asks for each file once. *@
     <p>@ExportFiles.Explained</p>
@@ -293,6 +301,10 @@
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     // What the page asks for itself again on: an agent, what one holds, a cycle that is
     // recorded, and what its user is told, which is also the count in the bar.
     private static readonly LiveSubject[] Followed =
@@ -301,6 +313,11 @@
     private readonly Dictionary<TradingMode, IReadOnlyList<RecentCycle>> _cycles = [];
 
     private IReadOnlyList<AgentView>? _agents;
+
+    // The states that the cards show, in the order that the states have: what each of them
+    // means is said once, under the cards of both modes.
+    private static IReadOnlyList<AgentState> StatesOf(IReadOnlyList<AgentView> agents) =>
+        [.. Enum.GetValues<AgentState>().Where(state => agents.Any(agent => agent.State == state))];
     private Dictionary<Guid, AgentEquity>? _equities;
     private IReadOnlyList<EquityTotal>? _totals;
     private UnreadByMode? _unread;
@@ -390,7 +407,7 @@
     /// </summary>
     private RenderFragment Alert(NotificationView notification) =>
         @<li data-key="@notification.Id">
-            <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
+            <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @Times.At(notification.CreatedAt). @notification.Content</span>
 
             @if (_agents?.FirstOrDefault(agent => agent.Id == notification.AgentId) is { } about)
             {

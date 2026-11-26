@@ -12,7 +12,8 @@
     post. The page is shown to a user who has just proved again who they are, and to nobody else.
     The form is on the page whenever one is posted, whatever was proved by then: a form that is
     not there cannot be answered. Whether the key is stored is for StoreAiKeyAsync to say, which
-    asks again, and asks the provider about the key before it stores it (FR-KEY-3).
+    asks again, and asks the provider about the key before it stores it (FR-KEY-3). Its texts are
+    in KeyPages.
 *@
 
 @if (_slot is not null)
@@ -34,12 +35,12 @@
 
     @if (_slot.Key is { } stored)
     {
-        <p>The key that is stored now is <code>@KeyPages.Masked(stored)</code>. The new key takes its place, and the stored one is gone for good.</p>
+        <p>@KeyPages.AiKeyStoredNow <code>@KeyPages.Masked(stored)</code>. @KeyPages.AiKeyReplaced</p>
     }
 
     @if (_showForm)
     {
-        <p>Calls to @_slot.ProviderName for your agents are made with this key, and are charged to your own account there. When you save it, @_slot.ProviderName is asked whether it takes the key, with a call that only reads, and the key is stored only when it does. The key is stored encrypted. Once it is saved, it is never shown again: you see only its last four characters.</p>
+        <p>@KeyPages.AiKeyExplained(_slot.ProviderName)</p>
 
         @* Said before the key is saved: what the provider is sent with it, and under whose terms (NFR-SEC-8). *@
         <p>@KeyPages.SentTo(_slot.ProviderName)</p>
@@ -48,24 +49,24 @@
             <AntiforgeryToken />
 
             <div class="field">
-                <label for="api-key">API key</label>
+                <label for="api-key">@KeyPages.ApiKey</label>
                 @* The key is never written back into the page, and the browser is asked not to keep it. *@
                 <input id="api-key" name="ApiKey" type="password" autocomplete="off" spellcheck="false" required
                        aria-invalid="@PageFields.Invalid(_problem is not null)"
                        aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("api-key", _problem is not null), "api-key-hint")"
                        autofocus="@(_problem is not null && _notStored is null)" />
-                <p id="api-key-hint" class="field-hint">Paste the key as @_slot.ProviderName gave it to you.</p>
+                <p id="api-key-hint" class="field-hint">@KeyPages.PasteAsGiven(_slot.ProviderName)</p>
                 @if (_problem is { } problem)
                 {
                     <p id="api-key-error" class="field-error">@KeyPages.Says(problem)</p>
                 }
             </div>
 
-            <button type="submit">Save the key</button>
+            <button type="submit">@KeyPages.SaveKey</button>
         </form>
     }
 
-    <p><a href="@WebUiModule.KeysPath">Back to your keys</a></p>
+    <p><a href="@WebUiModule.KeysPath">@KeyPages.BackToKeys</a></p>
 }
 
 @code {
@@ -84,7 +85,7 @@
     [SupplyParameterFromForm]
     private string? ApiKey { get; set; }
 
-    private string Title => _slot is { Key: null } ? $"Add your {_slot.ProviderName} key" : $"Replace your {_slot?.ProviderName} key";
+    private string Title => _slot is null ? string.Empty : KeyPages.StoreTitle(_slot);
 
     protected override async Task OnInitializedAsync()
     {

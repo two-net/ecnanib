@@ -11,6 +11,7 @@ using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Experience;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Notifications;
+using Ecnanib.WebUi.Pages;
 using Ecnanib.WebUi;
 using Ecnanib.WebUi.Live;
 using Ecnanib.WebUi.Pages.Notifications;
@@ -556,7 +557,7 @@ public partial class LivePageTests
             Assert.Empty(ConnectedPart().Matches(page));
 
             // It says since when it is as it is, and leads back to the page that follows.
-            var said = LivePages.PausedAt(Feeding.Morning) + (withPrices.Contains(path) ? $" {LivePages.PausedPrices}" : string.Empty);
+            var said = LivePages.PausedAt(Feeding.Morning, PageTimes.Utc) + (withPrices.Contains(path) ? $" {LivePages.PausedPrices}" : string.Empty);
 
             Assert.Equal((said, path, LivePages.Resume), Assert.Single(PauseOn(page)));
             Assert.Contains("24 November 2026, 09:00:00 UTC", said);

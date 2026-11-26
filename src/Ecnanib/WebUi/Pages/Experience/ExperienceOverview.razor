@@ -19,6 +19,7 @@
     same filter, with its formula (FR-EXP-3, FR-EXP-4). The filter is in the address, and an
     address that names a choice which there is not is answered with "not found". The records
     are asked for by owner, and a model is named by the catalog, which is the same for everyone.
+    Its texts are in ExperiencePages.
 *@
 
 @if (_view is not null && _strengths is not null && _filter is not null)
@@ -29,7 +30,7 @@
 
     <h1>@ExperiencePages.Title</h1>
 
-    <p>Mode: <ModeBadge Mode="@scope.Mode" /> @ExperiencePages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@ExperiencePages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@ExperiencePages.OtherModeLink(scope)</a></p>
+    <p>@ExperiencePages.BadgeLabel <ModeBadge Mode="@scope.Mode" /> @ExperiencePages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@ExperiencePages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@ExperiencePages.OtherModeLink(scope)</a></p>
 
     <p>@ExperiencePages.Explained</p>
 
@@ -37,7 +38,7 @@
 
     <ExperienceFilter Action="@WebUiModule.ExperiencePath" Filter="@_filter" />
 
-    <p>@ExperiencePages.PeriodExplained(scope) @ExperiencePages.CountsFor(_filter.Role)</p>
+    <p>@ExperiencePages.PeriodExplained(scope, Times) @ExperiencePages.CountsFor(_filter.Role)</p>
 
     @if (ExperiencePages.Awaiting(scope) is { } awaiting)
     {
@@ -49,7 +50,7 @@
         <p role="note">@withoutR</p>
     }
 
-    <h2 id="experience-providers">By provider</h2>
+    <h2 id="experience-providers">@ExperiencePages.ByProviderHeading</h2>
 
     @if (_view.Providers.Count == 0)
     {
@@ -60,10 +61,10 @@
         @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
         <div class="track-records" role="region" aria-labelledby="experience-providers" tabindex="0">
             <table>
-                <caption>The track record of each provider in @scope.Mode</caption>
+                <caption>@ExperiencePages.ProvidersCaption(scope.Mode)</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Provider</th>
+                        <th scope="col">@CatalogPages.ProviderHeading</th>
                         <TrackRecordHeadings />
                     </tr>
                 </thead>
@@ -80,7 +81,7 @@
         </div>
     }
 
-    <h2 id="experience-models">By model</h2>
+    <h2 id="experience-models">@ExperiencePages.ByModelHeading</h2>
 
     @if (_view.Models.Count == 0)
     {
@@ -90,11 +91,11 @@
     {
         <div class="track-records" role="region" aria-labelledby="experience-models" tabindex="0">
             <table>
-                <caption>The track record of each model in @scope.Mode</caption>
+                <caption>@ExperiencePages.ModelsCaption(scope.Mode)</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Model</th>
-                        <th scope="col">Provider</th>
+                        <th scope="col">@CatalogPages.ModelHeading</th>
+                        <th scope="col">@CatalogPages.ProviderHeading</th>
                         <TrackRecordHeadings />
                     </tr>
                 </thead>
@@ -125,12 +126,16 @@
     @* The same record across all users, by the same filter (FR-EXP-10). *@
     <p><a href="@BoardPages.Path(_filter)">@BoardPages.Link</a></p>
 
-    <p><a href="@WebUiModule.CatalogPath">Model catalog</a></p>
+    <p><a href="@WebUiModule.CatalogPath">@Screens.Catalog.Name</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@ExperiencePages.AgentsLink</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private TrackRecordFilter? _filter;
     private TrackRecordView? _view;
     private RoleStrengthView? _strengths;

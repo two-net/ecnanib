@@ -13,7 +13,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a page
 | Step | What happens |
 |---|---|
 | 1. The server decides. | `PageTheme.Of`: for a user who is signed in, the theme of their account. For a visitor, the theme that their device saved. Whoever has chosen nothing has System. |
-| 2. The page says it, first of all. | `App.razor` writes `<html lang="en" data-theme="dark">` or `data-theme="light"`, and no attribute for System. Ahead of the stylesheets it also writes `<meta name="color-scheme">` with `dark`, `light`, or `light dark`, which tells the browser what it may paint before a stylesheet is there. |
+| 2. The page says it, first of all. | `App.razor` writes `<html lang="en" data-theme="dark">` or `data-theme="light"`, with the language of the pages from `Screens.Language`, and no attribute for System. Ahead of the stylesheets it also writes `<meta name="color-scheme">` with `dark`, `light`, or `light dark`, which tells the browser what it may paint before a stylesheet is there. |
 | 3. The stylesheet follows. | `:root` has `color-scheme: light dark`, `:root[data-theme="light"]` has `light`, and `:root[data-theme="dark"]` has `dark`. The browser takes its own colours for the page, the text, the links, and the controls from that. |
 
 | Rule | Detail |

@@ -1,6 +1,8 @@
 @using Ecnanib.Experience
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Agents
 @using Ecnanib.WebUi.Pages.Catalog
+@using Ecnanib.WebUi.Pages.Dashboard
 
 @*
     The strength scores of an experience screen: for each model, role, market, and timeframe the
@@ -11,7 +13,7 @@
     the one mode that the page shows (FR-EXP-9, FR-BIN-11), and it has no badge of its own. A
     measure and a score say their sign, so a gain is told from a loss without a colour
     (FR-THM-5). The rows are in the order of the providers and the models, and never of a score:
-    the screen ranks nothing.
+    the screen ranks nothing. Its texts are in ExperiencePages.
 *@
 
 <section class="role-strengths" aria-labelledby="@HeadingId">
@@ -21,7 +23,7 @@
 
     <p><strong>@ExperiencePages.StrengthFormula(View.Damping)</strong> @ExperiencePages.EnoughExplained(View.MinSamples)</p>
 
-    <p>The measure is of the role:</p>
+    <p>@ExperiencePages.MeasuresIntro</p>
 
     <ul>
         <li>@ExperiencePages.AnalystMeasure</li>
@@ -50,16 +52,16 @@
                     <tr>
                         @if (WithModel)
                         {
-                            <th scope="col">Model</th>
-                            <th scope="col">Provider</th>
+                            <th scope="col">@CatalogPages.ModelHeading</th>
+                            <th scope="col">@CatalogPages.ProviderHeading</th>
                         }
 
-                        <th scope="col">Role</th>
-                        <th scope="col">Market</th>
-                        <th scope="col">Timeframe</th>
-                        <th scope="col">Samples</th>
-                        <th scope="col">Measure</th>
-                        <th scope="col">Strength score</th>
+                        <th scope="col">@ExperiencePages.RoleHeading</th>
+                        <th scope="col">@DashboardPages.MarketHeading</th>
+                        <th scope="col">@ExperiencePages.TimeframeHeading</th>
+                        <th scope="col">@ExperiencePages.SamplesHeading</th>
+                        <th scope="col">@ExperiencePages.MeasureHeading</th>
+                        <th scope="col">@ExperiencePages.ScoreHeading</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -78,7 +80,7 @@
                                 <th scope="row">@ExperiencePages.NameOf(slice.Role)</th>
                             }
 
-                            <td>@slice.Market</td>
+                            <td>@AgentPages.NameOf(slice.Market)</td>
                             <td>@slice.Timeframe.Code()</td>
                             <td>@ExperiencePages.Samples(slice)</td>
 
@@ -119,9 +121,7 @@
     public bool WithModel { get; set; } = true;
 
     /// <summary>The name of the table, which says whose slices it holds and in which mode.</summary>
-    private string Caption => WithModel
-        ? $"The strength score of each model in each role in {View.Mode}"
-        : $"The strength score of the model in each role in {View.Mode}";
+    private string Caption => WithModel ? ExperiencePages.StrengthsCaption(View.Mode) : ExperiencePages.ModelStrengthsCaption(View.Mode);
 
     /// <summary>What the scores leave out, each as a note: nothing is left out without a word.</summary>
     private IEnumerable<string> LeftOut() =>

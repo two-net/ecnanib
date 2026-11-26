@@ -403,6 +403,59 @@ public partial class AccessibilityBrowserTests(BrowserOfTheRun run) : IClassFixt
     }
 
     [Fact]
+    public async Task A_device_says_its_time_zone_as_its_user_signs_in_and_the_pages_say_their_times_in_it()
+    {
+        DrivenBrowser.IsAskedFor();
+
+        using var application = new AccountsApplication(listens: true);
+        await application.RegisterVerifiedAsync(Ada);
+
+        var browser = await run.StartedAsync();
+
+        // A device that is not in UTC (NFR-USA-3), in a time zone that a browser and the time
+        // zone database have under one name. Chromium says an older name for some, such as
+        // Asia/Calcutta for Asia/Kolkata: PageTimesTests holds that those are understood.
+        await using var device = await browser.OpenAsync(application.ListeningAt, timeZone: "Asia/Tokyo");
+        var page = await device.NewPageAsync();
+        var said = Listen(page);
+
+        // The script of the times writes what the browser says into the field of the form.
+        await page.GotoAsync(SessionAuthentication.SignInPath);
+        await page.WaitForFunctionAsync("() => document.querySelector('input[data-time-zone]')?.value !== ''", null, new() { Timeout = Soon });
+
+        Assert.Equal("Asia/Tokyo", await page.InputValueAsync("input[data-time-zone]"));
+
+        await SignInAsync(page, Ada);
+
+        // The server keeps it on the device, where no script reads it.
+        var kept = Assert.Single(await device.CookiesAsync(), cookie => cookie.Name == "__Host-ecnanib-time-zone");
+
+        Assert.Equal("Asia%2FTokyo", kept.Value);
+        Assert.True(kept.HttpOnly);
+        Assert.True(kept.Secure);
+        Assert.DoesNotContain("time-zone", await page.EvaluateAsync<string>("() => document.cookie"), StringComparison.Ordinal);
+
+        // The page of the appearance says what the device said, with the device chosen.
+        await page.GotoAsync(WebUiModule.AppearancePath);
+
+        Assert.Contains("its time zone is Asia/Tokyo, which is UTC+9 now.", await page.TextContentAsync("main") ?? string.Empty);
+        Assert.True(await page.IsCheckedAsync("#times-device"));
+
+        // UTC is one choice away, and back: the form carries what the device says now, so the
+        // page that comes back says it still.
+        await page.CheckAsync("#times-utc");
+        await page.ClickAsync("main form:has(#times-utc) button[type=submit]");
+        await page.WaitForSelectorAsync("#times-utc:checked", new() { Timeout = Soon });
+
+        await page.CheckAsync("#times-device");
+        await page.ClickAsync("main form:has(#times-device) button[type=submit]");
+        await page.WaitForSelectorAsync("#times-device:checked", new() { Timeout = Soon });
+
+        Assert.Contains("its time zone is Asia/Tokyo, which is UTC+9 now.", await page.TextContentAsync("main") ?? string.Empty);
+        Assert.Empty(said);
+    }
+
+    [Fact]
     public async Task A_page_that_follows_is_paused_by_its_link_and_follows_again()
     {
         DrivenBrowser.IsAskedFor();

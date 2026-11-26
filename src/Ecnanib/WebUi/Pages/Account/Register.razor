@@ -8,64 +8,65 @@
 
 @*
     Rendered on the server for each request, and never interactive: the password travels in a form
-    post, and not over the connection that an interactive page keeps open.
+    post, and not over the connection that an interactive page keeps open. Its texts are in
+    RegistrationPages.
 *@
 
-<PageTitle>Register</PageTitle>
+<PageTitle>@RegistrationPages.Title</PageTitle>
 
-<h1>Register</h1>
+<h1>@RegistrationPages.Title</h1>
 
 @if (!Registration.IsOpen)
 {
-    <p>Registration is closed. No new accounts are being accepted at the moment.</p>
+    <p>@RegistrationPages.Closed</p>
 }
 else
 {
     @if (_emailNotSent)
     {
-        <p class="form-error" role="alert">We could not send the email. Try again in a few minutes.</p>
+        <p class="form-error" role="alert">@AccountPages.EmailNotSent</p>
     }
     @if (_tooManyAttempts)
     {
-        <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.Registration.Minutes minutes.</p>
+        <p class="form-error" role="alert">@AccountPages.TooManyAttempts(Limits.Registration.Minutes)</p>
     }
 
     <form method="post" @formname="register" @onsubmit="RegisterAsync">
         <AntiforgeryToken />
 
         <div class="field">
-            <label for="email">Email address</label>
+            <label for="email">@AccountPages.EmailLabel</label>
             <input id="email" name="Email" type="email" autocomplete="email" required value="@Email"
                    aria-invalid="@Invalid(RegistrationProblem.EmailInvalid)"
                    aria-describedby="@Describes("email-error", RegistrationProblem.EmailInvalid)"
                    autofocus="@(FirstRefused == "email")" />
             @if (Has(RegistrationProblem.EmailInvalid))
             {
-                <p id="email-error" class="field-error">Enter an email address, such as name@example.com.</p>
+                <p id="email-error" class="field-error">@AccountPages.EnterEmail</p>
             }
         </div>
 
         <div class="field">
-            <label for="password">Password</label>
+            <label for="password">@AccountPages.PasswordLabel</label>
             @* The password is never written back into the page. *@
             <input id="password" name="Password" type="password" autocomplete="new-password" required
                    minlength="@PasswordRules.MinimumLength"
                    aria-invalid="@Invalid(RegistrationProblem.PasswordTooShort, RegistrationProblem.PasswordTooLong)"
                    aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("password", PasswordRefused), "password-hint")"
                    autofocus="@(FirstRefused == "password")" />
-            <p id="password-hint" class="field-hint">At least @PasswordRules.MinimumLength characters. A long phrase is a good password.</p>
+            <p id="password-hint" class="field-hint">@AccountPages.PasswordHint(PasswordRules.MinimumLength)</p>
             @if (Has(RegistrationProblem.PasswordTooShort))
             {
-                <p id="password-error" class="field-error">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
+                <p id="password-error" class="field-error">@AccountPages.PasswordTooShort(PasswordRules.MinimumLength)</p>
             }
             else if (Has(RegistrationProblem.PasswordTooLong))
             {
-                <p id="password-error" class="field-error">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
+                <p id="password-error" class="field-error">@AccountPages.PasswordTooLong(PasswordRules.MaximumLength)</p>
             }
         </div>
 
         <fieldset>
-            <legend>Before you register</legend>
+            <legend>@RegistrationPages.DocumentsLegend</legend>
 
             @foreach (var document in Documents)
             {
@@ -76,20 +77,21 @@ else
                            aria-invalid="@Invalid(document.Problem)"
                            aria-describedby="@Describes(document.Id + "-error", document.Problem)"
                            autofocus="@(FirstRefused == document.Id)" />
+                    @* The words before the link bring the blank that the label begins with: see RegistrationPages.Accept. *@
                     <label for="@document.Id">
-                        I have read and accept the
+                        @RegistrationPages.Accept
                         <a href="@document.Path" target="_blank" rel="noopener">@document.Name (@LegalPages.OpensInNewTab)</a>
-                        (version @document.Version)
+                        (@RegistrationPages.Version(document.Version))
                     </label>
                     @if (Has(document.Problem))
                     {
-                        <p id="@(document.Id)-error" class="field-error">Read and accept the current @document.Name to register.</p>
+                        <p id="@(document.Id)-error" class="field-error">@RegistrationPages.AcceptCurrent(document.Name)</p>
                     }
                 </div>
             }
         </fieldset>
 
-        <button type="submit">Register</button>
+        <button type="submit">@RegistrationPages.Register</button>
     </form>
 }
 

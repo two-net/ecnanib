@@ -6,14 +6,15 @@
     total R, profit factor, largest drawdown in R, and average holding time (FR-EXP-2), with what
     is to be noted about it: that it is a small sample (FR-EXP-11), and how many of its results
     are estimates. A result in R says its sign, so a profit is told from a loss without a colour
-    (FR-THM-5). A record of no trades says that, and no measure.
+    (FR-THM-5). A record of no trades says that, and no measure. Its texts are in
+    ExperiencePages.
 *@
 
 <td>@Record.Trades.ToString(CultureInfo.InvariantCulture)</td>
 
 @if (Record.Trades == 0)
 {
-    <td colspan="7">No closed trade is counted.</td>
+    <td colspan="7">@ExperiencePages.NoneCounted</td>
 }
 else
 {

@@ -1,6 +1,7 @@
 @attribute [Route(WebUiModule.CatalogPath)]
 @attribute [Authorize]
 @using Ecnanib.Catalog
+@using Ecnanib.WebUi.Pages.Experience
 @inject ICatalogModels Models
 
 @*
@@ -9,16 +10,17 @@
     says about it, and each provider with when its catalog was last synced (FR-CAT-10). What a
     provider does not say is written as unknown, and is never guessed or left blank (FR-CAT-4).
     The catalog is the same for every user, so nothing here is asked for by owner. What a
-    provider wrote is written as text, like everything else on a page.
+    provider wrote is written as text, like everything else on a page. Its texts are in
+    CatalogPages.
 *@
 
-<PageTitle>Model catalog</PageTitle>
+<PageTitle>@Screens.Catalog.Name</PageTitle>
 
-<h1>Model catalog</h1>
+<h1>@Screens.Catalog.Name</h1>
 
-<p>These are the models that each AI provider lists as its own. Ecnanib reads the lists from the providers and adds nothing to them: what a provider does not say about a model is shown as unknown.</p>
+<p>@CatalogPages.Explained</p>
 
-<p>A model can be given to an agent when "For agents" says yes, and your own key for its provider can use it. A model that its provider no longer lists stays here as unavailable.</p>
+<p>@CatalogPages.SelectableExplained</p>
 
 @foreach (var provider in _catalog)
 {
@@ -27,36 +29,36 @@
     <section class="catalog-provider">
         <h2 id="@heading">@provider.ProviderName</h2>
 
-        <p>@CatalogPages.Synced(provider)</p>
+        <p>@CatalogPages.Synced(provider, Times)</p>
 
-        @if (CatalogPages.SyncFailed(provider) is { } failed)
+        @if (CatalogPages.SyncFailed(provider, Times) is { } failed)
         {
             <p role="note">@failed</p>
         }
 
         @if (provider.Models.Count == 0)
         {
-            <p>No model of @provider.ProviderName is listed yet.</p>
+            <p>@CatalogPages.NoModels(provider.ProviderName)</p>
         }
         else
         {
             @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
             <div class="catalog-models" role="region" aria-labelledby="@heading" tabindex="0">
                 <table>
-                    <caption>The models of @provider.ProviderName</caption>
+                    <caption>@CatalogPages.ModelsCaption(provider.ProviderName)</caption>
                     <thead>
                         <tr>
-                            <th scope="col">Name</th>
-                            <th scope="col">Identifier</th>
-                            <th scope="col">Status</th>
-                            <th scope="col">For agents</th>
-                            <th scope="col">Live search</th>
-                            <th scope="col">Context</th>
-                            <th scope="col">Output</th>
-                            <th scope="col">Released</th>
-                            <th scope="col">Deprecated</th>
-                            <th scope="col">Retires</th>
-                            <th scope="col">Experience</th>
+                            <th scope="col">@CatalogPages.NameHeading</th>
+                            <th scope="col">@CatalogPages.IdentifierHeading</th>
+                            <th scope="col">@CatalogPages.StatusHeading</th>
+                            <th scope="col">@CatalogPages.ForAgentsHeading</th>
+                            <th scope="col">@CatalogPages.LiveSearchHeading</th>
+                            <th scope="col">@CatalogPages.ContextHeading</th>
+                            <th scope="col">@CatalogPages.OutputHeading</th>
+                            <th scope="col">@CatalogPages.ReleasedHeading</th>
+                            <th scope="col">@CatalogPages.DeprecatedHeading</th>
+                            <th scope="col">@CatalogPages.RetiresHeading</th>
+                            <th scope="col">@CatalogPages.ExperienceHeading</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -65,7 +67,7 @@
                             <tr>
                                 <th scope="row">@(model.DisplayName ?? CatalogPages.Unknown)</th>
                                 <td><code>@model.Identifier</code></td>
-                                <td>@CatalogPages.Status(model)</td>
+                                <td>@CatalogPages.Status(model, Times)</td>
                                 <td>@CatalogPages.YesOrNo(model.Selectable)</td>
                                 <td>@CatalogPages.YesOrNo(model.LiveSearch)</td>
                                 <td>@CatalogPages.Tokens(model.ContextTokens)</td>
@@ -74,7 +76,7 @@
                                 <td>@CatalogPages.Day(model.DeprecatedAt)</td>
                                 <td>@CatalogPages.Day(model.RetiresAt)</td>
                                 @* Named after the model, so that each link says where it leads by itself. *@
-                                <td><a href="@WebUiModule.ModelExperiencePath(model.Id)">Experience of @CatalogPages.NameOf(model)</a></td>
+                                <td><a href="@WebUiModule.ModelExperiencePath(model.Id)">@ExperiencePages.TitleOf(CatalogPages.NameOf(model))</a></td>
                             </tr>
                         }
                     </tbody>
@@ -85,6 +87,10 @@
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private IReadOnlyList<ProviderCatalog> _catalog = [];
 
     [CascadingParameter]

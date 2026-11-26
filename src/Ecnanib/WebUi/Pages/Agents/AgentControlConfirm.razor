@@ -15,7 +15,7 @@
     form of this page is the answer to the question, so it tells StartAsync, PauseAsync, and
     ResumeAsync that its user confirmed. The form is on the page whenever one is posted, whatever
     state the agent is in by then: a form that is sent twice finds the agent where the first one
-    left it, and is answered as the first one was.
+    left it, and is answered as the first one was. Its texts are in AgentStatePages and AgentPages.
 *@
 
 @if (_agent is not null && _control is { } control)
@@ -24,7 +24,7 @@
 
     <h1>@AgentPages.Describe(control) @_agent.Name</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_refused is not null)
     {
@@ -40,12 +40,12 @@
                 }
             </ul>
 
-            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
         }
 
         @if (_keyBlocks || (_roles?.Any(role => AgentPages.IsAboutAKey(role.Problem)) ?? false))
         {
-            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+            <p><a href="@WebUiModule.KeysPath">@AgentPages.KeysLink</a></p>
         }
     }
 
@@ -69,10 +69,14 @@
         <p role="status">@AgentPages.NotOffered(control, _agent.State)</p>
     }
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent as it is" : "State of the agent")</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? AgentStatePages.KeepAsItIs : AgentPages.StateLink)</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private AgentView? _agent;
     private AgentControl? _control;
     private string? _refused;
@@ -176,7 +180,7 @@
 
             case AgentControlOutcome.HaltedForTheDay when result.HaltEnds is { } ends:
                 // Its daily loss limit halted the agent until the next UTC day (FR-RSK-8).
-                _refused = AgentPages.HaltedForTheDay(control, ends);
+                _refused = AgentPages.HaltedForTheDay(control, ends, Times);
                 break;
         }
 

@@ -1,32 +1,80 @@
+using System.Globalization;
 using Ecnanib.DecisionEngine;
 using Ecnanib.RiskGuard;
 
 namespace Ecnanib.WebUi.Pages.Agents;
 
 /// <summary>
-/// What the page of the risk checks of an agent says, in one place: what the Risk Guard is, what
-/// became of a plan, and for every rule what it asks and why it held or did not, with the
-/// numbers (FR-RSK-9). Every rule and every rejection is explained in plain language
+/// The texts of the page of the risk checks of an agent, in one place (NFR-USA-4): what the Risk
+/// Guard is, what became of a plan, and for every rule what it asks and why it held or did not,
+/// with the numbers (FR-RSK-9). Every rule and every rejection is explained in plain language
 /// (NFR-USA-2). See "The page" in docs/risk-guard.md.
 /// </summary>
 public static class RiskCheckPages
 {
     /// <summary>What leads to the page, from the other pages of the agent.</summary>
-    public const string Link = "Risk checks of the agent";
+    public static string Link => "Risk checks of the agent";
+
+    /// <summary>The title and the heading of the page.</summary>
+    public static string TitleOf(string agentName) => $"Risk checks of the agent {agentName}";
+
+    /// <summary>What stands before the badge of the mode of the agent, under the heading of the page.</summary>
+    public static string ModeLabel => "Mode:";
+
+    /// <summary>What leads from the page to the state of the agent.</summary>
+    public static string StateLink => "State of the agent";
+
+    /// <summary>What leads from the page to the settings of the agent.</summary>
+    public static string SettingsLink => "Settings of the agent";
+
+    /// <summary>What leads from the page back to the list of the agents.</summary>
+    public static string BackToAgents => "Back to your agents";
+
+    /// <summary>What the page says above the checks when it does not show every check of the agent.</summary>
+    public static string LatestListed(int listed, int total) =>
+        $"The latest {listed.ToString(CultureInfo.InvariantCulture)} of {total.ToString(CultureInfo.InvariantCulture)} checks, latest first.";
+
+    /// <summary>What the page says above the checks when it shows every check of the agent.</summary>
+    public static string EveryListed => "Every check of the agent's plans, latest first.";
+
+    /// <summary>What stands between the verdict of a check and the badge of the mode that it was made in.</summary>
+    public static string MadeIn => "in";
+
+    /// <summary>
+    /// Which candle the cycle of a check was for, after the badge of its mode, and whether the
+    /// cycle was a test: <c>for the candle that closed at 17 November 2026, 09:00 UTC, in a test cycle</c>.
+    /// </summary>
+    /// <param name="closedAt">When the candle closed, as the page writes a time.</param>
+    /// <param name="kind">What started the cycle of the check.</param>
+    public static string ForCandle(string closedAt, CycleKind kind) => kind == CycleKind.Test
+        ? $"for the candle that closed at {closedAt}, in a test cycle"
+        : $"for the candle that closed at {closedAt}";
+
+    /// <summary>The name of the table of the rules of a check, which is read out and not shown.</summary>
+    public static string RulesCaption => "The rules of the check";
+
+    /// <summary>The heading of the column that names a rule.</summary>
+    public static string RuleHeading => "Rule";
+
+    /// <summary>The heading of the column that says whether a rule held.</summary>
+    public static string OutcomeHeading => "Outcome";
+
+    /// <summary>The heading of the column that says why a rule held or did not.</summary>
+    public static string WhyHeading => "Why";
 
     /// <summary>What the Risk Guard is, in plain language (FR-RSK-3).</summary>
-    public const string Explained =
+    public static string Explained =>
         "Before any order, what the agent's team decided is checked against fixed rules: the Risk Guard. The rules are no AI. " +
         "They are the same in every cycle, and nothing switches them off: no answer of a model, and no setting. A plan that " +
         "would open a position goes on only when every rule holds.";
 
     /// <summary>Why a plan that reduces risk is held to fewer rules (FR-RSK-4).</summary>
-    public const string ReducingRiskExplained =
+    public static string ReducingRiskExplained =>
         "A plan that only closes the position or adjusts its protection is held to the rules of the exchange and to protection " +
         "that only tightens, and to no other rule, so that risk can always be reduced.";
 
     /// <summary>What the page says of an agent that has no check.</summary>
-    public const string NoneYet =
+    public static string NoneYet =>
         "No plan of this agent has been checked yet. A plan is checked when the agent's team decides on something other than " +
         "holding, and the Risk Manager did not veto it.";
 
@@ -196,29 +244,34 @@ public static class RiskCheckPages
             (GuardRule.RewardToRisk, RuleOutcome.Passed) =>
                 $"The take-profit is {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}.",
             (GuardRule.RewardToRisk, RuleOutcome.Failed) when !hasMeasure =>
-                $"The plan has no stop-loss and take-profit on the correct sides of its entry, so it has no ratio. The agent asks for at least {threshold}.",
+                $"The plan has no stop-loss and take-profit on the correct sides of its entry, so it has no ratio. The agent asks for at least {threshold}: {RewardToRiskSetting}",
             (GuardRule.RewardToRisk, RuleOutcome.Failed) =>
-                $"The take-profit is only {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}.",
+                $"The take-profit is only {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}: {RewardToRiskSetting}",
             (GuardRule.RewardToRisk, _) => "The entry is not known: the exchange did not say the current price, or the agent holds no position to reverse.",
 
             (GuardRule.EntryDistance, RuleOutcome.Passed) =>
                 $"The entry is {measured} percent from the current price. The agent allows up to {threshold} percent.",
             (GuardRule.EntryDistance, RuleOutcome.Failed) when !hasMeasure => "The entry price of the plan is no price.",
             (GuardRule.EntryDistance, RuleOutcome.Failed) =>
-                $"The entry is {measured} percent from the current price, which is more than the {threshold} percent that the agent allows.",
+                $"The entry is {measured} percent from the current price, which is more than the {threshold} percent that the agent " +
+                "allows: its maximum entry distance, which is one of its risk settings. No order is placed for an entry that far away.",
             (GuardRule.EntryDistance, _) => "The exchange did not say the current price.",
 
             (GuardRule.PriceStep, RuleOutcome.Passed) when !hasThreshold => "The plan names no price that the exchange holds to a step.",
             (GuardRule.PriceStep, RuleOutcome.Passed) => $"Every price of the plan is a multiple of the price step of the symbol, {threshold}.",
             (GuardRule.PriceStep, RuleOutcome.Failed) when !hasThreshold => $"The price {measured} of the plan is no price.",
-            (GuardRule.PriceStep, RuleOutcome.Failed) => $"The price {measured} is not a multiple of the price step of the symbol, {threshold}.",
+            (GuardRule.PriceStep, RuleOutcome.Failed) =>
+                $"The price {measured} is not a multiple of the price step of the symbol, {threshold}. Binance sets the step, and takes " +
+                "no order off it. The service does not round a price that the team planned, so the plan is rejected.",
             (GuardRule.PriceStep, _) => "The exchange did not say the rules of the symbol.",
 
             (GuardRule.QuantityStep, RuleOutcome.Passed) when !hasThreshold => "The symbol has no quantity step.",
             (GuardRule.QuantityStep, RuleOutcome.Passed) => $"The quantity is a multiple of the quantity step of the symbol, {threshold}.",
             (GuardRule.QuantityStep, RuleOutcome.Failed) when !hasThreshold || result.Measured is <= 0m =>
                 $"The quantity {measured} is no quantity of an order.",
-            (GuardRule.QuantityStep, RuleOutcome.Failed) => $"The quantity {measured} is not a multiple of the quantity step of the symbol, {threshold}.",
+            (GuardRule.QuantityStep, RuleOutcome.Failed) =>
+                $"The quantity {measured} is not a multiple of the quantity step of the symbol, {threshold}. Binance sets the step, and " +
+                "takes no order off it.",
             (GuardRule.QuantityStep, _) when !hasThreshold => "The exchange did not say the rules of the symbol.",
             (GuardRule.QuantityStep, _) => "The quantity of the order is not known.",
 
@@ -228,14 +281,14 @@ public static class RiskCheckPages
                 $"The order is for {measured}. The least quantity of an order in the symbol is {threshold}.",
             (GuardRule.MinimumQuantity, RuleOutcome.Failed) when !hasMeasure => "The order came to no quantity above zero.",
             (GuardRule.MinimumQuantity, RuleOutcome.Failed) =>
-                $"The order is for {measured}, which is less than the least quantity of an order in the symbol, {threshold}.",
+                $"The order is for {measured}, which is less than the least quantity of an order in the symbol, {threshold}. {NeverRaised}",
             (GuardRule.MinimumQuantity, _) when !hasThreshold => "The exchange did not say the rules of the symbol.",
             (GuardRule.MinimumQuantity, _) => "The quantity of the order is not known.",
 
             (GuardRule.MinimumValue, RuleOutcome.Passed) => $"The entry is worth {measured}. The least value of an order in the symbol is {threshold}.",
             (GuardRule.MinimumValue, RuleOutcome.Failed) when !hasMeasure => "The entry has no price or no quantity that makes sense.",
             (GuardRule.MinimumValue, RuleOutcome.Failed) =>
-                $"The entry is worth {measured}, which is less than the least value of an order in the symbol, {threshold}.",
+                $"The entry is worth {measured}, which is less than the least value of an order in the symbol, {threshold}. {NeverRaised}",
             (GuardRule.MinimumValue, _) when !hasThreshold => "The exchange did not say the rules of the symbol.",
             (GuardRule.MinimumValue, _) => "The value of the entry is not known: its quantity or its price is not known.",
 
@@ -256,13 +309,17 @@ public static class RiskCheckPages
             (GuardRule.DailyLossLimit, RuleOutcome.Passed) =>
                 $"The agent has lost {measured} percent of its equity in the UTC day. Its daily loss limit is {threshold} percent.",
             (GuardRule.DailyLossLimit, RuleOutcome.Failed) =>
-                $"The agent has lost {measured} percent of its equity in the UTC day, which reaches its daily loss limit of {threshold} percent.",
+                $"The agent has lost {measured} percent of its equity in the UTC day, which reaches its daily loss limit of {threshold} " +
+                "percent, one of its risk settings. An agent that has reached it opens nothing: the service closes its position, " +
+                "halts it, and resumes it when the next UTC day begins.",
             (GuardRule.DailyLossLimit, _) => "The equity of the agent as the day began is not known.",
 
             (GuardRule.DrawdownLimit, RuleOutcome.Passed) =>
                 $"The equity of the agent is {measured} percent below its peak. Its drawdown limit is {threshold} percent.",
             (GuardRule.DrawdownLimit, RuleOutcome.Failed) =>
-                $"The equity of the agent is {measured} percent below its peak, which reaches its drawdown limit of {threshold} percent.",
+                $"The equity of the agent is {measured} percent below its peak, which reaches its drawdown limit of {threshold} " +
+                "percent, one of its risk settings. An agent that has reached it opens nothing: the service closes its position " +
+                "and halts it, until you resume it.",
             (GuardRule.DrawdownLimit, _) => "The peak equity of the agent is not known.",
 
             (GuardRule.NotStale, RuleOutcome.Passed) =>
@@ -272,13 +329,19 @@ public static class RiskCheckPages
                 $"timeframe, {threshold} seconds. A decision that is stale opens no position.",
 
             (GuardRule.ModePermitted, RuleOutcome.Passed) => "You have a valid Binance key for the environment that the agent trades in.",
-            (GuardRule.ModePermitted, _) => "You have no valid Binance key for the environment that the agent trades in.",
+            (GuardRule.ModePermitted, _) =>
+                "You have no valid Binance key for the environment that the agent trades in. Add the key, or have it checked " +
+                "again, on the page of your keys.",
 
             (GuardRule.MarketPermitted, RuleOutcome.Passed) => "Your Binance key may trade on the market of the agent.",
-            (GuardRule.MarketPermitted, _) => "You have no valid Binance key that may trade on the market of the agent.",
+            (GuardRule.MarketPermitted, _) =>
+                "You have no valid Binance key that may trade on the market of the agent: the key is missing or not valid, or " +
+                "it lacks the permission to trade on that market. The page of your keys says which permissions it has.",
 
             (GuardRule.SymbolPermitted, RuleOutcome.Passed) => "The market has the symbol of the agent, and the exchange takes orders in it.",
-            (GuardRule.SymbolPermitted, RuleOutcome.Failed) => "The market does not have the symbol of the agent now, or the exchange takes no orders in it.",
+            (GuardRule.SymbolPermitted, RuleOutcome.Failed) =>
+                "The market does not have the symbol of the agent now, or the exchange takes no orders in it. An agent is given " +
+                "another symbol on the page of its settings, while it is a draft or is stopped with nothing open.",
             (GuardRule.SymbolPermitted, _) => "The exchange did not say which symbols the market has.",
 
             (GuardRule.NoGlobalHalt, RuleOutcome.Passed) => "No global halt is on.",
@@ -290,7 +353,9 @@ public static class RiskCheckPages
             (GuardRule.LiquidationBuffer, RuleOutcome.Failed) when !hasMeasure =>
                 "The plan has no stop-loss on the correct side of its entry, or its entry price is no price.",
             (GuardRule.LiquidationBuffer, RuleOutcome.Failed) =>
-                $"The estimated liquidation price is only {measured} times as far from the entry as the stop-loss. The agent asks for at least {threshold}.",
+                $"The estimated liquidation price is only {measured} times as far from the entry as the stop-loss. The agent asks for " +
+                $"at least {threshold}: its liquidation buffer, which is one of its risk settings. It keeps the stop-loss well " +
+                "before the price at which Binance would liquidate the position.",
             (GuardRule.LiquidationBuffer, _) => "The leverage of the order is not known, or its entry is not.",
 
             _ => throw new ArgumentOutOfRangeException(nameof(result), result.Rule, "No such rule."),
@@ -299,6 +364,19 @@ public static class RiskCheckPages
 
     /// <summary>What a sentence writes in the place of a number that a check did not store.</summary>
     private const string NotKept = "a number that was not kept";
+
+    /// <summary>
+    /// Whose the least reward-to-risk ratio is, at the end of a sentence that says what the
+    /// agent asks for: a rejection says whose limit a plan did not meet (NFR-USA-2).
+    /// </summary>
+    private const string RewardToRiskSetting = "its minimum reward-to-risk ratio, which is one of its risk settings.";
+
+    /// <summary>
+    /// Whose the least quantity and the least value of an order are, and why an order that is
+    /// below one of them is rejected and not made larger (FR-RSK-5).
+    /// </summary>
+    private const string NeverRaised =
+        "Binance sets it. The service does not raise an order to it, because a larger order would risk more than was approved.";
 
     /// <summary>Why a plan is not held to a rule.</summary>
     private static string NotAsked(GuardRule rule, PlanAction action) => rule switch

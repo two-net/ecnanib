@@ -68,6 +68,11 @@ public class AgentModeSwitchTests
         var page = AgentBrowser.Read(await client.PageAsync(livePage));
 
         Assert.Contains("<h1>Switch the agent Swing to Live</h1>", page);
+
+        // The state of the agent stays as it is, and the page says what that state means (NFR-USA-2).
+        Assert.Contains(
+            $"Its state stays as it is: <strong>Draft</strong>. {AgentPages.Explain(AgentState.Draft)} It trades with real money only once you start it.</p>",
+            AgentBrowser.Read(page));
         Assert.All(AgentPages.LiveRisks, risk => Assert.Contains($"<li>{risk}</li>", page));
         Assert.Contains("<a href=\"/legal/risk-disclosure\" target=\"_blank\" rel=\"noopener\">risk disclosure (opens in a new tab)</a>", page);
         Assert.Contains("<input id=\"live-risk\" name=\"Risk\" type=\"checkbox\" required value=\"confirmed\"", page);

@@ -22,16 +22,17 @@
     mode is under the heading. A cycle of the agent that runs says its steps under the button, as
     it comes to them, over the connection of the page (FR-NTF-2): the form waits for the test
     cycle, and the page that waits shows how far it has come. The page asks for itself again on
-    nothing: it would lose what its form answers. See docs/live-updates.md.
+    nothing: it would lose what its form answers. See docs/live-updates.md. Its texts are in
+    CyclePages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Test cycle of the agent @_agent.Name</PageTitle>
+    <PageTitle>@CyclePages.TestTitleOf(_agent.Name)</PageTitle>
 
-    <h1>Test cycle of the agent @_agent.Name</h1>
+    <h1>@CyclePages.TestTitleOf(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@CyclePages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
     <LivePause />
@@ -50,11 +51,11 @@
                 }
             </ul>
 
-            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">@CyclePages.SettingsLink</a></p>
 
             @if (_roles.Any(role => AgentPages.IsAboutAKey(role.Problem)))
             {
-                <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+                <p><a href="@WebUiModule.KeysPath">@CyclePages.KeysLink</a></p>
             }
         }
     }
@@ -65,14 +66,14 @@
 
     @if (_agent.Mode == TradingMode.Live)
     {
-        <p>The agent is in Live. A test cycle places no order in your real Binance account either.</p>
+        <p>@CyclePages.TestInLive</p>
     }
 
     <p>@CyclePages.TestCosts</p>
 
     <p>@CyclePages.TestStaleLimit</p>
 
-    <p>The agent is <strong>@AgentPages.Describe(_agent.State)</strong>, and a test cycle does not start it.</p>
+    <p>@CyclePages.TestAgentIs <strong>@AgentPages.Describe(_agent.State)</strong>, @CyclePages.TestDoesNotStart @AgentPages.Explain(_agent.State)</p>
 
     <form method="post" @formname="@AgentPages.TestCycleForm" @onsubmit="RunAsync">
         <AntiforgeryToken />
@@ -87,11 +88,11 @@
 
     <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@CyclePages.StateLink</a></p>
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@CyclePages.SettingsLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@CyclePages.BackToAgents</a></p>
 }
 
 @code {

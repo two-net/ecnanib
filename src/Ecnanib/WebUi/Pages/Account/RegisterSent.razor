@@ -3,13 +3,13 @@
 
 @*
     The same page whatever the address was, so that it does not tell whether an address already
-    has an account.
+    has an account. Its texts are in RegistrationPages.
 *@
 
-<PageTitle>Check your email</PageTitle>
+<PageTitle>@AccountPages.CheckYourEmail</PageTitle>
 
-<h1>Check your email</h1>
+<h1>@AccountPages.CheckYourEmail</h1>
 
-<p>We sent a message to the address you entered. Open the link in it to confirm that the address is yours.</p>
+<p>@RegistrationPages.SentExplained</p>
 
-<p>The link works for @((int)EmailVerification.LinkLifetime.TotalHours) hours. If no message arrives, look in your spam folder, or <a href="/register">register again</a> to get a new one.</p>
+<p>@RegistrationPages.LinkWorksFor((int)EmailVerification.LinkLifetime.TotalHours) <a href="/register">@RegistrationPages.RegisterAgainLink</a> @RegistrationPages.GetNewOne</p>

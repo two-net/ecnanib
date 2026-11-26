@@ -28,34 +28,34 @@
         @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
         <div class="agents agent-trade-list" role="region" aria-labelledby="@AgentReportPages.TradesHeadingId" tabindex="0">
             <table>
-                <caption>The closed trades of the agent</caption>
+                <caption>@AgentReportPages.TradesCaption</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Closed</th>
-                        <th scope="col">Mode</th>
-                        <th scope="col">Symbol</th>
-                        <th scope="col">Market</th>
-                        <th scope="col">Side</th>
-                        <th scope="col">Quantity</th>
-                        <th scope="col">Entry price</th>
-                        <th scope="col">Exit price</th>
-                        <th scope="col">How it closed</th>
-                        <th scope="col">Net result</th>
-                        <th scope="col">In R</th>
-                        <th scope="col">Fees</th>
-                        <th scope="col">Funding</th>
-                        <th scope="col">Opened</th>
-                        <th scope="col">Held</th>
+                        <th scope="col">@AgentReportPages.ClosedHeading</th>
+                        <th scope="col">@AgentReportPages.ModeHeading</th>
+                        <th scope="col">@AgentReportPages.SymbolHeading</th>
+                        <th scope="col">@AgentReportPages.MarketHeading</th>
+                        <th scope="col">@AgentReportPages.SideHeading</th>
+                        <th scope="col">@AgentReportPages.QuantityHeading</th>
+                        <th scope="col">@AgentReportPages.EntryPriceHeading</th>
+                        <th scope="col">@AgentReportPages.ExitPriceHeading</th>
+                        <th scope="col">@AgentReportPages.ExitReasonHeading</th>
+                        <th scope="col">@AgentReportPages.NetResult</th>
+                        <th scope="col">@AgentReportPages.InRHeading</th>
+                        <th scope="col">@AgentReportPages.Fees</th>
+                        <th scope="col">@AgentReportPages.Funding</th>
+                        <th scope="col">@AgentReportPages.OpenedHeading</th>
+                        <th scope="col">@AgentReportPages.HeldHeading</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var trade in Trades.Trades)
                     {
                         <tr data-key="@trade.PositionId">
-                            <th scope="row">@PageTimes.At(trade.ClosedAt)</th>
+                            <th scope="row">@Times.At(trade.ClosedAt)</th>
                             <td>@AgentReportPages.ModeOf(trade.Mode)</td>
                             <td><code>@trade.Symbol</code></td>
-                            <td>@trade.Market</td>
+                            <td>@AgentPages.NameOf(trade.Market)</td>
                             <td>@AgentReportPages.Side(trade)</td>
                             <td>@AgentReportPages.Number(trade.Quantity)</td>
                             <td>@AgentReportPages.Number(trade.EntryPrice)</td>
@@ -65,7 +65,7 @@
                             <td>@AgentReportPages.InR(trade)</td>
                             <td>@AgentReportPages.FeesOf(trade)</td>
                             <td>@AgentReportPages.FundingOf(trade)</td>
-                            <td>@PageTimes.At(trade.OpenedAt)</td>
+                            <td>@Times.At(trade.OpenedAt)</td>
                             <td>@AgentReportPages.HeldOf(trade)</td>
                         </tr>
                     }
@@ -86,15 +86,15 @@
         @if (Trades.Pages > 1)
         {
             @* Another page of the list is asked for as a page of its own, so it opens with the focus at its heading (NFR-USA-1). *@
-            <nav class="lesson-pages" aria-label="Pages of trades" data-enhance-nav="false">
+            <nav class="lesson-pages" aria-label="@AgentReportPages.TradesPagesLabel" data-enhance-nav="false">
                 @if (Trades.Page > 1)
                 {
-                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page - 1))">Newer trades</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page - 1))">@AgentReportPages.NewerTrades</a>
                 }
 
                 @if (Trades.Page < Trades.Pages)
                 {
-                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page + 1))">Older trades</a>
+                    <a href="@LivePages.Kept(HttpContext?.Request, WebUiModule.AgentStatePath(AgentId, Trades.Page + 1))">@AgentReportPages.OlderTrades</a>
                 }
             </nav>
         }
@@ -102,6 +102,10 @@
 </section>
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     /// <summary>The agent whose trades they are, which the links to the other pages name.</summary>
     [Parameter, EditorRequired]
     public Guid AgentId { get; set; }

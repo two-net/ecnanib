@@ -8,29 +8,29 @@
     Rendered on the server for each request, and never interactive. Deleting a key takes no proof
     of who the user is: only adding and replacing one do (FR-ACC-4). The form is on the page
     whenever one is posted, whatever is stored by then: a form that is not there cannot be
-    answered.
+    answered. Its texts are in KeyPages.
 *@
 
 @if (_slot is not null)
 {
-    <PageTitle>Delete your Binance keys for @_slot.Environment</PageTitle>
+    <PageTitle>@KeyPages.DeleteTitle(_slot.Environment)</PageTitle>
 
-    <h1>Delete your Binance keys for @_slot.Environment</h1>
+    <h1>@KeyPages.DeleteTitle(_slot.Environment)</h1>
 
     @if (_slot.Key is { } stored)
     {
-        <p>This deletes the API key <code>@KeyPages.Masked(stored)</code> and its secret key, at once and for good. It cannot be undone: to trade in @_slot.Environment again, you add the keys anew.</p>
+        <p>@KeyPages.DeletesExchangeKey <code>@KeyPages.Masked(stored)</code> @KeyPages.ExchangeKeysGone(_slot.Environment)</p>
     }
 
-    <p>An agent that trades in @_slot.Environment cannot run without these keys. It stops and asks for your attention. A position that is open on Binance stays as it is there, with its protective orders.</p>
+    <p>@KeyPages.ExchangeAgentsStop(_slot.Environment)</p>
 
     <form method="post" @formname="@KeyPages.DeleteForm" @onsubmit="DeleteAsync">
         <AntiforgeryToken />
 
-        <button type="submit">Delete the keys</button>
+        <button type="submit">@KeyPages.DeleteKeys</button>
     </form>
 
-    <p><a href="@WebUiModule.KeysPath">Keep the keys</a></p>
+    <p><a href="@WebUiModule.KeysPath">@KeyPages.KeepKeys</a></p>
 }
 
 @code {

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.Tests.BackgroundWork;
+using Ecnanib.WebUi.Pages;
 using Ecnanib.WebUi;
 using Ecnanib.WebUi.Layout;
 using Microsoft.AspNetCore.Components;
@@ -116,7 +117,7 @@ public partial class SessionNoticeTests
             var (left, says) = await LeftAsync(client);
 
             Assert.Equal(300, left);
-            Assert.Equal(SessionPages.At(TimeSpan.FromMinutes(5), Morning + Idle), says);
+            Assert.Equal(SessionPages.At(TimeSpan.FromMinutes(5), Morning + Idle, PageTimes.Utc), says);
         }
 
         Assert.Equal(Morning, Assert.Single(StoredSession.All(application.Database)).LastActiveAt);
@@ -156,7 +157,7 @@ public partial class SessionNoticeTests
 
         Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
         Assert.Equal(2700, left);
-        Assert.Equal(SessionPages.At(Idle, Morning.AddMinutes(44) + Idle), says);
+        Assert.Equal(SessionPages.At(Idle, Morning.AddMinutes(44) + Idle, PageTimes.Utc), says);
         Assert.Equal(Morning.AddMinutes(44), Assert.Single(StoredSession.All(application.Database)).LastActiveAt);
 
         // So the session is there after the moment that it would have ended at, and for the
@@ -268,7 +269,7 @@ public partial class SessionNoticeTests
         // The time of day in UTC, as every page writes a time, and said once: nothing counts down.
         Assert.Equal(
             $"Nothing was done here for a while. To keep your account safe, you will be signed out {left}, at 12:32 UTC, and this page will then ask you to sign in again.",
-            SessionPages.At(TimeSpan.FromSeconds(seconds), at));
+            SessionPages.At(TimeSpan.FromSeconds(seconds), at, PageTimes.Utc));
     }
 
     [Fact]

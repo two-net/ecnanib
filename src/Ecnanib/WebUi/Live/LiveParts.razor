@@ -21,17 +21,24 @@
     @* A page that shows the team at work has it as a pipeline, with each cycle and at rest (FR-ANI-1). *@
     <LiveCycleSteps Cycles="@_shown.Cycles"
                     SaysRest="@View.Shows.HasFlag(LiveShows.Team)"
-                    Team="@(View.Shows.HasFlag(LiveShows.Team) ? View.Team ?? [] : null)" />
+                    Team="@(View.Shows.HasFlag(LiveShows.Team) ? View.Team ?? [] : null)"
+                    Times="@_times" />
 }
 
 @if (View.Shows.HasFlag(LiveShows.Position))
 {
-    <LivePositionView Position="@_shown.Position" Followed="@_shown.Followed" Price="@_shown.Price" QuoteAsset="@View.QuoteAsset" />
+    <LivePositionView Position="@_shown.Position" Followed="@_shown.Followed" Price="@_shown.Price" QuoteAsset="@View.QuoteAsset"
+                      Times="@_times" />
 }
 
 @code {
     private LiveFeed? _feed;
     private LiveState _shown = LiveState.Nothing;
+
+    // The times that the parts write a time in: those of the page, by the name of its time zone,
+    // which travels with the page to its connection. So a part says a time the same as it is
+    // written with the page and over the connection (NFR-USA-3).
+    private PageTimes _times = PageTimes.Utc;
 
     /// <summary>What the page follows, as the page said it when it was last written.</summary>
     [Parameter, EditorRequired]
@@ -58,6 +65,8 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        _times = PageTimes.In(View.TimeZone);
+
         if (_feed is not null && Authentication is not null)
         {
             _feed.UserIs((await Authentication).User);

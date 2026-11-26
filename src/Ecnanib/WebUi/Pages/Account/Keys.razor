@@ -5,6 +5,7 @@
 @using Ecnanib.DecisionEngine
 @using Ecnanib.Platform.Settings
 @using Ecnanib.Shared
+@using Ecnanib.WebUi.Pages.Agents
 @using Ecnanib.WebUi.Pages.Usage
 @inject IStoredKeys StoredKeys
 @inject IAiUsage AiUsage
@@ -17,16 +18,17 @@
     gets (FR-KEY-8). A form of the page asks the provider about a stored key again: the forms
     are on the page whenever one is posted, for the keys that are stored then. Under each key
     for an AI provider the page says its usage: the calls that were made with it, their tokens,
-    and what they are estimated to cost where the price is known (FR-KEY-11).
+    and what they are estimated to cost where the price is known (FR-KEY-11). Its texts are in
+    KeyPages.
 *@
 
-<PageTitle>Your API keys</PageTitle>
+<PageTitle>@KeyPages.Title</PageTitle>
 
-<h1>Your API keys</h1>
+<h1>@KeyPages.Title</h1>
 
-<p>Your agents work with your own keys: one for each AI provider, and one for Binance in each environment. Ecnanib has no key of its own for a decision or an order.</p>
+<p>@KeyPages.Explained</p>
 
-<p>A key is checked with its provider before it is stored, and again every day. It is stored encrypted and is never shown again. After saving, you see only its last four characters. You can replace or delete a key at any time.</p>
+<p>@KeyPages.Kept</p>
 
 @if (_checked is not null)
 {
@@ -40,7 +42,7 @@
         <p role="status">@KeyPages.VerifyFirst</p>
     }
 
-    <h2>AI providers</h2>
+    <h2>@KeyPages.AiProvidersHeading</h2>
 
     @* What the providers are sent under these keys, and under whose terms (NFR-SEC-8). *@
     <p>@KeyPages.SentToProviders</p>
@@ -53,26 +55,26 @@
                 <div>
                     @if (slot.Key is { } key)
                     {
-                        <span>Key <code>@KeyPages.Masked(key)</code>, saved @KeyPages.Saved(key).</span>
-                        <span>@KeyPages.Checked(key, slot.ProviderName)</span>
+                        <span>@KeyPages.Key <code>@KeyPages.Masked(key)</code>, @KeyPages.WasSaved(key, Times)</span>
+                        <span>@KeyPages.Checked(key, slot.ProviderName, Times)</span>
                         @if (_usage.TryGetValue(slot.Provider, out var usage))
                         {
                             <span>@KeyPages.Usage(usage)</span>
                         }
-                        <a href="@WebUiModule.AiKeyPath(slot.Provider)">Replace the @slot.ProviderName key</a>
-                        <a href="@WebUiModule.DeleteAiKeyPath(slot.Provider)">Delete the @slot.ProviderName key</a>
+                        <a href="@WebUiModule.AiKeyPath(slot.Provider)">@KeyPages.ReplaceLink(slot.ProviderName)</a>
+                        <a href="@WebUiModule.DeleteAiKeyPath(slot.Provider)">@KeyPages.DeleteLink(slot.ProviderName)</a>
                         <form method="post" @formname="@KeyPages.CheckAiForm(slot.Provider)" @onsubmit="() => CheckAiKeyAsync(slot)">
                             <AntiforgeryToken />
 
-                            <button type="submit">Check the @slot.ProviderName key again</button>
+                            <button type="submit">@KeyPages.CheckAgain(slot.ProviderName)</button>
                         </form>
                     }
                     else
                     {
-                        <span>No key stored.</span>
+                        <span>@KeyPages.NoKey</span>
                         @if (_state.AddressVerified)
                         {
-                            <a href="@WebUiModule.AiKeyPath(slot.Provider)">Add a @slot.ProviderName key</a>
+                            <a href="@WebUiModule.AiKeyPath(slot.Provider)">@KeyPages.AddLink(slot.ProviderName)</a>
                         }
                     }
                 </div>
@@ -86,30 +88,30 @@
         <p>@KeyPages.UsageExplained <a href="@WebUiModule.UsagePath">@UsagePages.ByDayLink</a></p>
     }
 
-    <h2>Binance</h2>
+    <h2>@KeyPages.BinanceHeading</h2>
 
-    <p>Ecnanib never withdraws, deposits, or transfers funds, and takes no key that can withdraw.</p>
+    <p>@KeyPages.NeverWithdraws</p>
 
     <ul class="keys">
         @foreach (var slot in _state.ExchangeKeys)
         {
             <li>
-                <strong>@slot.Environment</strong>
+                <strong>@AgentPages.NameOf(slot.Environment)</strong>
                 <div>
                     @if (slot.Key is { } key)
                     {
-                        <span>API key <code>@KeyPages.Masked(key)</code>, saved @KeyPages.Saved(key).</span>
-                        <span>@KeyPages.Checked(key, "Binance")</span>
+                        <span>@KeyPages.ApiKey <code>@KeyPages.Masked(key)</code>, @KeyPages.WasSaved(key, Times)</span>
+                        <span>@KeyPages.CheckedByBinance(key, Times)</span>
                         @if (slot.Permissions is { } permissions)
                         {
                             <span>@KeyPages.Trades(permissions)</span>
                         }
-                        <a href="@WebUiModule.ExchangeKeyPath(slot.Environment)">Replace the @slot.Environment key</a>
-                        <a href="@WebUiModule.DeleteExchangeKeyPath(slot.Environment)">Delete the @slot.Environment key</a>
+                        <a href="@WebUiModule.ExchangeKeyPath(slot.Environment)">@KeyPages.ReplaceLink(AgentPages.NameOf(slot.Environment))</a>
+                        <a href="@WebUiModule.DeleteExchangeKeyPath(slot.Environment)">@KeyPages.DeleteLink(AgentPages.NameOf(slot.Environment))</a>
                         <form method="post" @formname="@KeyPages.CheckExchangeForm(slot.Environment)" @onsubmit="() => CheckExchangeKeyAsync(slot)">
                             <AntiforgeryToken />
 
-                            <button type="submit">Check the @slot.Environment key again</button>
+                            <button type="submit">@KeyPages.CheckAgain(AgentPages.NameOf(slot.Environment))</button>
                         </form>
                         @if (slot.Permissions is { IpRestricted: false })
                         {
@@ -119,10 +121,10 @@
                     }
                     else
                     {
-                        <span>No key stored.</span>
+                        <span>@KeyPages.NoKey</span>
                         @if (_state.AddressVerified)
                         {
-                            <a href="@WebUiModule.ExchangeKeyPath(slot.Environment)">Add a @slot.Environment key</a>
+                            <a href="@WebUiModule.ExchangeKeyPath(slot.Environment)">@KeyPages.AddLink(AgentPages.NameOf(slot.Environment))</a>
                         }
                     }
                 </div>
@@ -131,9 +133,13 @@
     </ul>
 }
 
-<p><a href="/account">Back to your account</a></p>
+<p><a href="/account">@AccountPages.BackToAccount</a></p>
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private StoredKeysState? _state;
     private IReadOnlyDictionary<AiProviderCode, KeyUsage> _usage = new Dictionary<AiProviderCode, KeyUsage>();
     private string? _checked;
@@ -159,7 +165,7 @@
         var outcome = await StoredKeys.CheckAiKeyAsync(request, slot.Provider);
 
         // What the provider said, and the keys as they are stored now.
-        _checked = KeyPages.Says(outcome, $"{slot.ProviderName} key");
+        _checked = KeyPages.Says(outcome, KeyPages.AiKeyName(slot.ProviderName));
         await ShowAsync(request);
     }
 
@@ -172,7 +178,7 @@
 
         var outcome = await StoredKeys.CheckExchangeKeyAsync(request, slot.Environment);
 
-        _checked = KeyPages.Says(outcome, $"Binance key for {slot.Environment}");
+        _checked = KeyPages.Says(outcome, KeyPages.ExchangeKeyName(slot.Environment));
         await ShowAsync(request);
     }
 

@@ -433,7 +433,16 @@ public partial class AuditTrailTests
         Assert.Contains("confirmed who they are", log);
         Assert.Contains("set a new password with a reset link", log);
 
-        Assert.All(Enum.GetNames<AuditAction>(), action => Assert.DoesNotContain(action, log));
+        // What the application says, and not what the mapper repeats of a statement that it ran:
+        // a migration that reads the trail names an action in its own text, as AddSetupMarks
+        // does, and the mapper writes the statements of a start out or not as it finds the log
+        // at that moment. Such a statement tells of nothing that a user did, and holds no value
+        // of a row: a value travels as a parameter, which is not written out.
+        var told = string.Join(
+            Environment.NewLine,
+            application.Events().Where(logged => logged.Area != "Microsoft.EntityFrameworkCore.Database.Command"));
+
+        Assert.All(Enum.GetNames<AuditAction>(), action => Assert.DoesNotContain(action, told));
         Assert.DoesNotContain(From, log);
         Assert.DoesNotContain("example.com", log);
     }

@@ -3,10 +3,11 @@
 @*
     The QR code that an authenticator app scans. It is drawn here, on the server, as part of the
     page: the key in it goes to the browser of its user and nowhere else. Black on white whatever
-    the colors of the page are, with the quiet border a scanner needs.
+    the colors of the page are, with the quiet border a scanner needs. Its texts are in
+    TwoFactorPages.
 *@
 
-<svg class="qr-code" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @_size @_size" role="img" aria-label="QR code to scan with your authenticator app">
+<svg class="qr-code" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @_size @_size" role="img" aria-label="@TwoFactorPages.QrCodeLabel">
     <rect width="@_size" height="@_size" fill="#ffffff" />
     <path d="@_path" fill="#000000" />
 </svg>

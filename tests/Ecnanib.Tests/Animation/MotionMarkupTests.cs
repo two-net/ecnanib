@@ -4,6 +4,7 @@ using Ecnanib.ExchangeGateway;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Logging;
 using Ecnanib.WebUi.Animation;
+using Ecnanib.WebUi.Pages;
 using Ecnanib.WebUi.Live;
 using Ecnanib.WebUi.Pages.Agents;
 using Ecnanib.WebUi.Pages.Dashboard;
@@ -110,12 +111,12 @@ public class MotionMarkupTests
 
         var unpriced = new AgentEquity(Guid.NewGuid(), TradingMode.Demo, "USDT", Capital: 1000m, Equity: null, MadeToday: null, Held, Price: null);
 
-        Assert.Null(DashboardPages.PriceFigure(unpriced));
+        Assert.Null(DashboardPages.PriceFigure(unpriced, PageTimes.Utc));
         Assert.Null(DashboardPages.WouldMakeFigure(unpriced));
 
         // And the page says that it is not known, as it did.
         Assert.Equal(DashboardPages.NotKnown, DashboardPages.AmountOrNot(null, "USDT"));
-        Assert.Equal(DashboardPages.NotKnown, DashboardPages.PriceOf(unpriced));
+        Assert.Equal(DashboardPages.NotKnown, DashboardPages.PriceOf(unpriced, PageTimes.Utc));
         Assert.Equal(DashboardPages.NotKnown, DashboardPages.WouldMake(unpriced));
     }
 
@@ -126,20 +127,20 @@ public class MotionMarkupTests
 
         // The price that a symbol last traded at, and the mark price: the number alone is the
         // figure, and when it was read stays as it is written.
-        var traded = LivePages.PriceFigure(LastTraded, price, "USDT");
-        var mark = LivePages.PriceFigure(LastTraded with { Market = Market.Futures, Kind = ExchangePriceKind.Mark }, price, quoteAsset: null);
+        var traded = LivePages.PriceFigure(LastTraded, price, "USDT", PageTimes.Utc);
+        var mark = LivePages.PriceFigure(LastTraded with { Market = Market.Futures, Kind = ExchangePriceKind.Mark }, price, quoteAsset: null, PageTimes.Utc);
 
         Assert.Equal(
             ("BTCUSDT last traded at ", "100250", "100250", " USDT, as of 24 November 2026, 09:00:07 UTC."),
             (traded.Before, traded.Number, traded.Value, traded.After));
-        Assert.Equal(LivePages.Says(LastTraded, price, "USDT"), traded.Text);
+        Assert.Equal(LivePages.Says(LastTraded, price, "USDT", PageTimes.Utc), traded.Text);
         Assert.Equal("The mark price of BTCUSDT is 100250, as of 24 November 2026, 09:00:07 UTC.", mark.Text);
 
         // On the dashboard the price stands first, with when it was read after it.
         var priced = new AgentEquity(Guid.NewGuid(), TradingMode.Demo, "USDT", Capital: 1000m, Equity: 1002.5m, MadeToday: 2.5m, Held, price);
 
-        Assert.Equal(("100250", ", as of 24 November 2026, 09:00:07 UTC"), (DashboardPages.PriceFigure(priced)!.Number, DashboardPages.PriceFigure(priced)!.After));
-        Assert.Equal(DashboardPages.PriceOf(priced), DashboardPages.PriceFigure(priced)!.Text);
+        Assert.Equal(("100250", ", as of 24 November 2026, 09:00:07 UTC"), (DashboardPages.PriceFigure(priced, PageTimes.Utc)!.Number, DashboardPages.PriceFigure(priced, PageTimes.Utc)!.After));
+        Assert.Equal(DashboardPages.PriceOf(priced, PageTimes.Utc), DashboardPages.PriceFigure(priced, PageTimes.Utc)!.Text);
         Assert.Equal(("+2.5", "2.5"), (DashboardPages.WouldMakeFigure(priced)!.Number, DashboardPages.WouldMakeFigure(priced)!.Value));
     }
 
@@ -182,7 +183,7 @@ public class MotionMarkupTests
         // nothing between the number and what is around it.
         Assert.Equal(
             "BTCUSDT last traded at <data class=\"figure\" value=\"100250\">100250</data> USDT, as of 24 November 2026, 09:00:07 UTC.",
-            await WrittenAsync(LivePages.PriceFigure(LastTraded, new WatchedPrice(100_250m, Morning), "USDT"), otherwise: null));
+            await WrittenAsync(LivePages.PriceFigure(LastTraded, new WatchedPrice(100_250m, Morning), "USDT", PageTimes.Utc), otherwise: null));
 
         Assert.Equal(
             "<data class=\"figure\" value=\"-5.99\">-5.99</data> USDT",

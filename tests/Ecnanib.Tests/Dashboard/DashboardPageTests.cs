@@ -13,6 +13,7 @@ using Ecnanib.Tests.Experience;
 using Ecnanib.Tests.LiveUpdates;
 using Ecnanib.Tests.Notifications;
 using Ecnanib.WebUi.Live;
+using Ecnanib.WebUi.Pages.Agents;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Tests.Dashboard;
@@ -157,6 +158,20 @@ public partial class DashboardPageTests
             CardsOf(ofLive));
         Assert.Contains("The agent's loss in the UTC day reached its daily loss limit", ofLive);
         Assert.Contains("The agent is halted until 24 November 2026, 00:00 UTC", ofLive);
+
+        // What each state of the cards means is said once, under the cards of both modes
+        // (NFR-USA-2): the three states that the cards show, and none that they do not show.
+        Assert.Contains("<h2>What the states mean</h2>", page);
+        Assert.All(
+            new[] { AgentState.Draft, AgentState.Running, AgentState.Halted },
+            state =>
+            {
+                Assert.Contains($"<dt>{AgentPages.Describe(state)}</dt>", page);
+                Assert.Contains($"<dd>{AgentPages.Explain(state)}</dd>", page);
+            });
+        Assert.All(
+            new[] { AgentState.Paused, AgentState.AttentionRequired, AgentState.Stopped },
+            state => Assert.DoesNotContain($"<dt>{AgentPages.Describe(state)}</dt>", page));
         Assert.DoesNotContain("You created the agent.", ofDemo);
 
         // The recent decisions, latest first, each leading to the timeline of its cycle. The

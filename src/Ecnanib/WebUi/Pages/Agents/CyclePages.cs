@@ -6,9 +6,11 @@ using Ecnanib.Shared;
 namespace Ecnanib.WebUi.Pages.Agents;
 
 /// <summary>
-/// What the pages of the cycles of an agent say, in one place: how a cycle ended, what each role
-/// was called with and answered, what became of its orders, and why it placed none (FR-CYC-10).
-/// Every outcome is explained in plain language (NFR-USA-2). See "The timeline" in docs/team.md.
+/// The texts of the pages of the cycles of an agent, in one place (NFR-USA-4): the list of its
+/// cycles, the timeline of a cycle, and the page that runs a test cycle. They say how a cycle
+/// ended, what each role was called with and answered, what became of its orders, and why it
+/// placed none (FR-CYC-10). Every outcome is explained in plain language (NFR-USA-2). See "The
+/// timeline" in docs/team.md.
 /// </summary>
 /// <remarks>
 /// What the Risk Guard made of a plan is said by <see cref="RiskCheckPages"/>, on the timeline
@@ -16,102 +18,320 @@ namespace Ecnanib.WebUi.Pages.Agents;
 /// </remarks>
 public static class CyclePages
 {
+    /// <summary>The title and the heading of the list of the cycles of an agent.</summary>
+    public static string TitleOf(string agentName) => $"Cycles of the agent {agentName}";
+
+    /// <summary>The title and the heading of the timeline of a cycle.</summary>
+    public static string TimelineTitleOf(string agentName) => $"Cycle of the agent {agentName}";
+
+    /// <summary>The title and the heading of the page that runs a test cycle.</summary>
+    public static string TestTitleOf(string agentName) => $"Test cycle of the agent {agentName}";
+
+    /// <summary>What stands before the badge of the mode of the agent, under the heading of a page.</summary>
+    public static string ModeLabel => "Mode:";
+
     /// <summary>What leads to the list of the cycles, from the other pages of the agent.</summary>
-    public const string Link = "Cycles of the agent";
+    public static string Link => "Cycles of the agent";
 
     /// <summary>What leads from a cycle of the list to its timeline.</summary>
-    public const string TimelineLink = "Timeline";
+    public static string TimelineLink => "Timeline";
 
     /// <summary>What leads from a check of the Risk Guard to the timeline of its cycle.</summary>
-    public const string TimelineOfCheckLink = "Timeline of the cycle of this check";
+    public static string TimelineOfCheckLink => "Timeline of the cycle of this check";
+
+    /// <summary>What leads from a page of the cycles to the state of the agent.</summary>
+    public static string StateLink => "State of the agent";
+
+    /// <summary>What leads from a page of the cycles to the settings of the agent.</summary>
+    public static string SettingsLink => "Settings of the agent";
+
+    /// <summary>What leads from a page of the cycles back to the list of the agents.</summary>
+    public static string BackToAgents => "Back to your agents";
+
+    /// <summary>What leads to the keys, where a key keeps a role from working in a test cycle.</summary>
+    public static string KeysLink => "Your keys";
 
     /// <summary>What a cycle is, and what is recorded of it, in plain language.</summary>
-    public const string Explained =
+    public static string Explained =>
         "Each time a candle of the agent's timeframe closes while the agent runs, its team runs once: a cycle. Every cycle that " +
         "started is recorded when it ends, however it ends: with a summary of the data that the team decided on, what each role " +
         "answered, what the Risk Guard made of the plan, the orders that were placed, and the outcome. A cycle that made no " +
         "decision, or placed no order, is recorded as well.";
 
     /// <summary>What the list says of an agent that has no cycle.</summary>
-    public const string NoneYet =
+    public static string NoneYet =>
         "No cycle of this agent has been recorded yet. A cycle is recorded when it ends, for an agent that runs when a candle of " +
         "its timeframe closes.";
 
+    /// <summary>What the list says above its table when it does not hold every cycle of the agent.</summary>
+    public static string LatestListed(int listed, int total) => $"The latest {Whole(listed)} of {Whole(total)} cycles, latest first.";
+
+    /// <summary>What the list says above its table when it holds every cycle of the agent.</summary>
+    public static string EveryListed => "Every cycle of the agent, latest first.";
+
+    /// <summary>The name of the table of the cycles, which is read out and not shown.</summary>
+    public static string ListCaption => "The cycles of the agent";
+
+    /// <summary>The heading of the column that says when the candle of a cycle closed.</summary>
+    public static string CandleCloseHeading => "Candle close";
+
+    /// <summary>The heading of the column that says what started a cycle.</summary>
+    public static string KindHeading => "Kind";
+
+    /// <summary>The heading of the column that says the mode that a cycle ran in.</summary>
+    public static string ModeHeading => "Mode";
+
+    /// <summary>The heading of the column that says how a cycle ended.</summary>
+    public static string OutcomeHeading => "Outcome";
+
+    /// <summary>The heading of the column that says what the outcome of a cycle means.</summary>
+    public static string MeaningHeading => "What it means";
+
+    /// <summary>The heading of the column that says how long a cycle took.</summary>
+    public static string TookHeading => "Took";
+
+    /// <summary>The heading of the column that leads to the timeline of a cycle.</summary>
+    public static string RecordHeading => "Record";
+
     /// <summary>What the timeline says above its entries.</summary>
-    public const string TimelineExplained =
+    public static string TimelineExplained =>
         "What happened in this cycle, in the order it happened. The outcome of a cycle is the decision of the agent's team. What " +
         "the Risk Guard made of the plan, and the orders, stand beside it.";
 
+    /// <summary>What stands in bold before what the timeline of a test cycle says under its heading.</summary>
+    public static string TestLabel => "Test cycle.";
+
+    /// <summary>
+    /// What the timeline says of its cycle, before the badge of the mode that the cycle ran in:
+    /// <c>The cycle for the candle that closed at 17 November 2026, 09:00 UTC, in</c>.
+    /// </summary>
+    /// <param name="closedAt">When the candle closed, as the page writes a time.</param>
+    public static string TimelineOf(string closedAt) => $"The cycle for the candle that closed at {closedAt}, in";
+
+    /// <summary>What stands before how a cycle ended, as a word.</summary>
+    public static string OutcomeLabel => "Outcome:";
+
+    /// <summary>The heading of the entry where the candle of a cycle closed.</summary>
+    public static string CandleClosedHeading => "The candle closed";
+
+    /// <summary>Which candle closed, as the summary of the data package of a cycle says it.</summary>
+    public static string CandleClosed(DataPackageSummary package)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+
+        return $"The {package.Timeframe.Code()} candle of {package.Symbol} closed.";
+    }
+
+    /// <summary>What the timeline says in place of that for a cycle that kept no summary of a data package.</summary>
+    public static string CandleOfCycleClosed => "The candle that the cycle is for closed.";
+
+    /// <summary>What the timeline says of the close of the candle of a cycle that a candle close started.</summary>
+    public static string DecidesOnClosedCandles =>
+        "A cycle starts when a candle of the agent's timeframe closes, and decides on closed candles only.";
+
+    /// <summary>What the timeline says of the close of the candle of a test cycle, which is run at any time after it (FR-CYC-12).</summary>
+    public static string TestDecidesOnClosedCandles =>
+        "It was the latest closed candle of the agent's timeframe when the test cycle was run. A cycle decides on closed candles only.";
+
+    /// <summary>The heading of the entry where a cycle that a candle close started began.</summary>
+    public static string StartedHeading => "The cycle started";
+
+    /// <summary>The heading of the entry where a test cycle began.</summary>
+    public static string TestStartedHeading => "The test cycle started";
+
+    /// <summary>What the timeline of a cycle that a candle close started says where the cycle started.</summary>
+    public static string Started =>
+        "The turn of the cycle came. Before the team is called, the orders of the agent are settled with the exchange, and its " +
+        "loss limits are evaluated.";
+
+    /// <summary>The heading of the summary of the data package of a cycle.</summary>
+    public static string PackageHeading => "Data package";
+
     /// <summary>What the data package is, in plain language.</summary>
-    public const string PackageExplained =
+    public static string PackageExplained =>
         "What the team decided on. The system computed the indicators, and no model did. The record keeps this summary, and not " +
         "the candles themselves.";
 
+    /// <summary>The name of the table of the candles and the indicators of a data package, which is read out and not shown.</summary>
+    public static string PackageCaption => "The candles and the indicators of the data package";
+
+    /// <summary>The heading of the column that names what the table says of each series of candles.</summary>
+    public static string LatestCloseHeading => "At the latest close";
+
+    /// <summary>The heading of the column of a series of candles, by the code of its timeframe: <c>1H candles</c>.</summary>
+    public static string CandlesOf(string timeframe) => $"{timeframe} candles";
+
+    /// <summary>The name of the row that says how many closed candles of a series the package held.</summary>
+    public static string PackageCandles => "Closed candles in the package";
+
+    /// <summary>The name of the row that says when the latest candle of a series closed.</summary>
+    public static string PackageThrough => "Through";
+
+    /// <summary>What that row says of a series that had no closed candle.</summary>
+    public static string NoClosedCandle => "no closed candle yet";
+
+    /// <summary>The name of the row that says the price that the latest candle opened at.</summary>
+    public static string LatestOpen => "Open";
+
+    /// <summary>The name of the row that says the highest price of the latest candle.</summary>
+    public static string LatestHigh => "High";
+
+    /// <summary>The name of the row that says the lowest price of the latest candle.</summary>
+    public static string LatestLow => "Low";
+
+    /// <summary>The name of the row that says the price that the latest candle closed at.</summary>
+    public static string LatestClose => "Close";
+
+    /// <summary>The name of the row that says the volume of the latest candle.</summary>
+    public static string LatestVolume => "Volume";
+
+    /// <summary>The name of the row that says how many candles the indicators of a series were computed from.</summary>
+    public static string ComputedFrom => "Candles that the indicators were computed from";
+
+    /// <summary>The name of the row of the simple moving average of 20 candles.</summary>
+    public static string Sma20 => "SMA20";
+
+    /// <summary>The name of the row of the simple moving average of 50 candles.</summary>
+    public static string Sma50 => "SMA50";
+
+    /// <summary>The name of the row of the simple moving average of 200 candles.</summary>
+    public static string Sma200 => "SMA200";
+
+    /// <summary>The name of the row of the exponential moving average of 20 candles.</summary>
+    public static string Ema20 => "EMA20";
+
+    /// <summary>The name of the row of the exponential moving average of 50 candles.</summary>
+    public static string Ema50 => "EMA50";
+
+    /// <summary>The name of the row of the relative strength index of 14 candles.</summary>
+    public static string Rsi14 => "RSI14";
+
+    /// <summary>The name of the row of the average true range of 14 candles.</summary>
+    public static string Atr14 => "ATR14";
+
+    /// <summary>The name of the row of the average volume of 20 candles.</summary>
+    public static string VolumeAverage20 => "Average volume of 20 candles";
+
     /// <summary>What an indicator says when its series had too few candles for it.</summary>
-    public const string NotAvailable = "not available";
+    public static string NotAvailable => "not available";
+
+    /// <summary>What the summary of a data package says of an agent that had no order resting on the exchange.</summary>
+    public static string NoOpenOrders => "Open orders: none.";
+
+    /// <summary>What stands above the orders of the agent that rested on the exchange.</summary>
+    public static string OpenOrdersLabel => "Open orders:";
+
+    /// <summary>
+    /// What a call of a role says of the model that it was made with, after what the role does:
+    /// <c>Model: Claude Sonnet, of Anthropic.</c>
+    /// </summary>
+    public static string CalledWith(RoleCallView call) => $"Model: {Model(call)}.";
+
+    /// <summary>Which versions of the prompt templates the prompt of a call was composed from.</summary>
+    public static string ComposedFrom(IEnumerable<TemplateVersion> templates)
+    {
+        ArgumentNullException.ThrowIfNull(templates);
+
+        return $"Its prompt was composed from {string.Join(", ", templates.Select(Says))}.";
+    }
+
+    /// <summary>The heading of a check of the Risk Guard: what the plan that it checked does.</summary>
+    public static string CheckHeading(PlanAction action) => $"Risk Guard: {RiskCheckPages.Describe(action)}";
+
+    /// <summary>What follows what has become of an order, after a comma: the order is shown as it is now.</summary>
+    public static string AsItIsNow => "as it is now";
+
+    /// <summary>The identifiers of an order: the one that it carries, and the one that Binance knows it by, if any.</summary>
+    public static string Identifiers(CycleOrderView order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        return order.ExchangeOrderId is { } number
+            ? $"It carries the identifier {order.ClientOrderId} at Binance, which knows it as the order {number}."
+            : $"It carries the identifier {order.ClientOrderId}. Binance has said no order number for it.";
+    }
+
+    /// <summary>The heading of the entry that says why a cycle placed no order.</summary>
+    public static string NoOrderHeading => "No order";
+
+    /// <summary>The heading of the entry where a cycle ended, with how it ended.</summary>
+    public static string EndedHeading(CycleKind kind, CycleOutcome outcome) =>
+        kind == CycleKind.Test ? $"The test cycle ended: {Describe(outcome)}" : $"The cycle ended: {Describe(outcome)}";
+
+    /// <summary>How long a cycle ran, after what its outcome means: <c>The cycle ran for 12.5 seconds.</c></summary>
+    public static string RanFor(TimeSpan length) => $"The cycle ran for {Seconds(length)}.";
 
     /// <summary>What leads to the page that runs a test cycle of an agent, and what its button says (FR-CYC-12).</summary>
-    public const string TestLink = "Run a test cycle";
+    public static string TestLink => "Run a test cycle";
 
     /// <summary>What the list of the cycles says of test cycles, beside what a cycle is.</summary>
-    public const string TestsListed =
+    public static string TestsListed =>
         "A test cycle, which you run yourself at any time, is recorded in the same way and is listed here as a test. It places no orders.";
 
     /// <summary>What a test cycle is, in plain language (FR-CYC-12).</summary>
-    public const string TestExplained =
+    public static string TestExplained =>
         "A test cycle runs the team of the agent once, now, on the latest closed candle of its timeframe, in whatever state the " +
         "agent is, so that you see what the team would decide. It is recorded as every cycle is, and marked as a test: with a " +
         "summary of the data that the team decided on, what each role answered, what the Risk Guard made of the plan, and the " +
         "outcome.";
 
     /// <summary>That a test cycle places no order, and changes nothing.</summary>
-    public const string TestPlacesNoOrder =
+    public static string TestPlacesNoOrder =>
         "A test cycle places no order, whatever its team decides and whatever the Risk Guard makes of the plan. It settles no " +
         "order with Binance, moves no stop-loss, closes no position, and evaluates no loss limit, so it halts nothing: " +
         "nothing changes at Binance.";
 
+    /// <summary>What the page that runs a test cycle says of an agent in Live (FR-UI-3).</summary>
+    public static string TestInLive => "The agent is in Live. A test cycle places no order in your real Binance account either.";
+
+    /// <summary>What stands before the state of the agent, in bold, on the page that runs a test cycle.</summary>
+    public static string TestAgentIs => "The agent is";
+
+    /// <summary>What follows the state of the agent there, after a comma.</summary>
+    public static string TestDoesNotStart => "and a test cycle does not start it.";
+
     /// <summary>What a test cycle costs its user (FR-KEY-1, FR-CYC-3).</summary>
-    public const string TestCosts =
+    public static string TestCosts =>
         "It calls the model of each role on your own keys, as every cycle does, so your providers charge you for the calls. The " +
         "Sentiment Analyst searches live where its model can, which may add charges of its provider. A key that a provider " +
         "refuses in a call is checked again, as after every such call, and is marked as not valid when it is refused again.";
 
     /// <summary>How long a test cycle takes, and what the page does meanwhile.</summary>
-    public const string TestTakes =
+    public static string TestTakes =>
         "It takes a minute or two, and this page waits for it: it then shows the test cycle as a timeline. One test cycle of " +
         "yours runs at a time. It is not given up when you leave this page: it is on the list of the cycles of the agent once " +
         "it has ended.";
 
     /// <summary>What the stale limit of a test cycle counts from (FR-CYC-9).</summary>
-    public const string TestStaleLimit =
+    public static string TestStaleLimit =>
         "A decision that completes later than the stale limit of the agent's timeframe opens no position. A cycle that a candle " +
         "close starts counts the limit from that close. A test cycle is run at any time, so it counts the limit from the moment " +
         "you run it.";
 
     /// <summary>What the page says when the team of the agent keeps a test cycle from running (FR-TEAM-1).</summary>
-    public const string TestRolesBlock =
+    public static string TestRolesBlock =>
         "No test cycle was run, and no model was called: a cycle runs once every role of the agent's team has a model that your " +
         "keys can use.";
 
     /// <summary>What the page says when a test cycle of the user runs already.</summary>
-    public const string TestAlreadyRunning =
+    public static string TestAlreadyRunning =>
         "No test cycle was started: a test cycle of yours is running already, and one runs at a time. It is on the list of the " +
         "cycles of its agent once it has ended.";
 
     /// <summary>What the page says when the exchange did not give the candles of a test cycle.</summary>
-    public const string TestNoCandles =
+    public static string TestNoCandles =>
         "No test cycle was run, and no model was called: Binance did not give the candles of the agent's symbol. Try again in a moment.";
 
     /// <summary>What the page says when an error or a stop ended a test cycle and no record of it was found.</summary>
-    public const string TestNotRecorded =
+    public static string TestNotRecorded =>
         "The test cycle ended early, and no record of it was found, so there is nothing to show of it here. If it was stored " +
         "after all, it is on the list of the cycles of the agent. Otherwise, try again.";
 
     /// <summary>What the timeline of a test cycle says under its heading.</summary>
-    public const string TestCycleRan = "You ran this cycle as a test. It placed no orders, whatever its team decided.";
+    public static string TestCycleRan => "You ran this cycle as a test. It placed no orders, whatever its team decided.";
 
     /// <summary>What the timeline of a test cycle says where the cycle started.</summary>
-    public const string TestStarted =
+    public static string TestStarted =>
         "You ran the test cycle. A test cycle settles no order with the exchange and evaluates no loss limit: nothing changes " +
         "at the exchange, and nothing halts the agent. Its team decides on what the records of the agent say it holds.";
 
@@ -225,7 +445,7 @@ public static class CyclePages
               $"{Number(held.EntryPrice)}, with {Resting("a stop-loss", held.StopLoss)} and {Resting("a take-profit", held.TakeProfit)}."
             : "It held no position.";
 
-        return $"The agent traded {package.Symbol} on {package.Market}, on {package.Timeframe.Code()} candles. Its equity was " +
+        return $"The agent traded {package.Symbol} on {AgentPages.NameOf(package.Market)}, on {package.Timeframe.Code()} candles. Its equity was " +
             $"{Number(package.Equity)} {package.QuoteAsset}. {position}";
     }
 
@@ -262,12 +482,12 @@ public static class CyclePages
     }
 
     /// <summary>What Futures adds to a data package, as its summary says it.</summary>
-    public static string Says(FuturesData futures)
+    public static string Says(FuturesData futures, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(futures);
 
         return $"Futures: a mark price of {Number(futures.MarkPrice)}, a funding rate of {Number(futures.FundingRate * 100m)} percent, " +
-            $"the next funding at {PageTimes.At(futures.NextFundingAt)}, and an open interest of {Number(futures.OpenInterest)}.";
+            $"the next funding at {times.At(futures.NextFundingAt)}, and an open interest of {Number(futures.OpenInterest)}.";
     }
 
     /// <summary>A price or a quantity that the system read, with every digit that it has.</summary>

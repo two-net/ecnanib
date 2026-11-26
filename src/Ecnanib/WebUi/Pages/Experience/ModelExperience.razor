@@ -22,28 +22,28 @@
     id in the catalog, and a path that names none is answered with "not found", as an address is
     that names a choice which there is not. A model is never deleted, so the page of one that
     its provider no longer offers stays, and so does the page of one that no trade of the user
-    counts for: it says so. The records are asked for by owner.
+    counts for: it says so. The records are asked for by owner. Its texts are in ExperiencePages.
 *@
 
 @if (_model is not null && _view is not null && _strengths is not null && _filter is not null)
 {
     var scope = _view.Scope;
 
-    <PageTitle>Experience of @CatalogPages.NameOf(_model)</PageTitle>
+    <PageTitle>@ExperiencePages.TitleOf(CatalogPages.NameOf(_model))</PageTitle>
 
-    <h1>Experience of @CatalogPages.NameOf(_model)</h1>
+    <h1>@ExperiencePages.TitleOf(CatalogPages.NameOf(_model))</h1>
 
-    <p>Mode: <ModeBadge Mode="@scope.Mode" /> @ExperiencePages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@ExperiencePages.ModelPath(_model.Id, _filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@ExperiencePages.OtherModeLink(scope)</a></p>
+    <p>@ExperiencePages.BadgeLabel <ModeBadge Mode="@scope.Mode" /> @ExperiencePages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@ExperiencePages.ModelPath(_model.Id, _filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@ExperiencePages.OtherModeLink(scope)</a></p>
 
-    <p>A model of @_model.ProviderName, which names it <code>@_model.Identifier</code>.</p>
+    <p>@ExperiencePages.ModelOfProvider(_model.ProviderName) <code>@_model.Identifier</code>.</p>
 
-    <p>Status in the catalog: @CatalogPages.Status(_model)</p>
+    <p>@ExperiencePages.StatusInCatalog(CatalogPages.Status(_model, Times))</p>
 
     <ExperienceNotes />
 
     <ExperienceFilter Action="@WebUiModule.ModelExperiencePath(_model.Id)" Filter="@_filter" WithRole="false" />
 
-    <p>@ExperiencePages.PeriodExplained(scope) @ExperiencePages.CountsForModel</p>
+    <p>@ExperiencePages.PeriodExplained(scope, Times) @ExperiencePages.CountsForModel</p>
 
     @if (ExperiencePages.Awaiting(scope) is { } awaiting)
     {
@@ -55,7 +55,7 @@
         <p role="note">@withoutR</p>
     }
 
-    <h2 id="model-experience-roles">By role</h2>
+    <h2 id="model-experience-roles">@ExperiencePages.ByRoleHeading</h2>
 
     @if (scope.Trades == 0)
     {
@@ -66,10 +66,10 @@
         @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
         <div class="track-records" role="region" aria-labelledby="model-experience-roles" tabindex="0">
             <table>
-                <caption>The track record of the model in @scope.Mode, by the role that it held</caption>
+                <caption>@ExperiencePages.RolesCaption(scope.Mode)</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Role</th>
+                        <th scope="col">@ExperiencePages.RoleHeading</th>
                         <TrackRecordHeadings />
                     </tr>
                 </thead>
@@ -92,12 +92,16 @@
 
     <RoleStrengthsTable View="@_strengths" Filter="@_filter" HeadingId="model-experience-strengths" WithModel="false" />
 
-    <p><a href="@ExperiencePages.Path(_filter with { Role = null })">Experience of every provider and model</a></p>
+    <p><a href="@ExperiencePages.Path(_filter with { Role = null })">@ExperiencePages.OfEveryModelLink</a></p>
 
-    <p><a href="@WebUiModule.CatalogPath">Back to the model catalog</a></p>
+    <p><a href="@WebUiModule.CatalogPath">@ExperiencePages.BackToCatalogLink</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private CatalogModel? _model;
     private TrackRecordFilter? _filter;
     private ModelTrackRecordView? _view;

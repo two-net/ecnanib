@@ -258,14 +258,17 @@ public partial class LayoutPageTests
         // It has the navigation of the settings above it, as every page of the settings has.
         Assert.Single(SettingsNavigation().Matches(page));
 
-        // Three forms: the button of the bar, the choice of a theme, which is three fields to
-        // tick, and the choice of how much moves, which is two. Nothing is typed. What the
-        // choices do is held by ThemePageTests and MotionPageTests.
+        // Four forms: the button of the bar, the choice of a theme, which is three fields to
+        // tick, the choice of how much moves, which is two, and the choice of the time zone
+        // that the pages write a time in, which is two as well. Nothing is typed: the field of
+        // the last form that carries the time zone of the device is hidden, and a script
+        // writes it. What the choices do is held by ThemePageTests, MotionPageTests, and
+        // TimePageTests.
         var forms = Form().Matches(page);
-        Assert.Equal(3, forms.Count);
+        Assert.Equal(4, forms.Count);
         Assert.Contains("action=\"/sign-out\"", forms[0].Value);
         Assert.Equal(
-            ["system", "dark", "light", "system", "reduced"],
+            ["system", "dark", "light", "system", "reduced", "device", "utc"],
             Input().Matches(page)
                 .Where(input => input.Value.Contains("type=\"radio\"", StringComparison.Ordinal))
                 .Select(input => Regex.Match(input.Value, "value=\"([^\"]*)\"").Groups[1].Value));

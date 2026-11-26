@@ -1,11 +1,11 @@
 @*
     The recovery codes of an account, on the one page view that shows them. The application keeps
-    only their hashes, so it cannot show them a second time.
+    only their hashes, so it cannot show them a second time. Its texts are in TwoFactorPages.
 *@
 
-<h2>Your recovery codes</h2>
+<h2>@TwoFactorPages.CodesHeading</h2>
 
-<p>Keep these codes somewhere safe, away from your phone. If you lose your authenticator app, each of them signs you in once in its place.</p>
+<p>@TwoFactorPages.KeepCodesSafe</p>
 
 <ul class="recovery-codes">
     @foreach (var recoveryCode in Codes)
@@ -14,7 +14,7 @@
     }
 </ul>
 
-<p><strong>They are shown only now.</strong> Write them down or print this page before you leave it.</p>
+<p><strong>@TwoFactorPages.ShownOnlyNow</strong> @TwoFactorPages.WriteThemDown</p>
 
 @code {
     [Parameter, EditorRequired]

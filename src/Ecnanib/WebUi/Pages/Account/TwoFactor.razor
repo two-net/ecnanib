@@ -1,6 +1,5 @@
 @page "/account/two-factor"
 @attribute [Authorize]
-@using System.Globalization
 @using Ecnanib.Accounts
 @using Ecnanib.Platform.Settings
 @inject ITwoFactor TwoFactorAuthentication
@@ -9,72 +8,73 @@
 @*
     Rendered on the server for each request, and never interactive: the password and the code
     travel in a form post. The page has one form, and it is on the page whenever a form is posted,
-    whatever the account says by then: a form that is not there cannot be answered.
+    whatever the account says by then: a form that is not there cannot be answered. Its texts are
+    in TwoFactorPages.
 *@
 
-<PageTitle>Two-factor authentication</PageTitle>
+<PageTitle>@TwoFactorPages.Title</PageTitle>
 
-<h1>Two-factor authentication</h1>
+<h1>@TwoFactorPages.Title</h1>
 
 @switch (_view)
 {
     case View.TurnedOn:
-        <p class="form-done" role="status">Two-factor authentication is on. From now on, signing in takes a code from your authenticator app after your password. Your account was signed out on every other device.</p>
+        <p class="form-done" role="status">@TwoFactorPages.TurnedOn</p>
 
         <RecoveryCodeList Codes="_recoveryCodes" />
 
-        <p><a href="/account">Back to your account</a></p>
+        <p><a href="/account">@AccountPages.BackToAccount</a></p>
         break;
 
     case View.On:
         @if (_outcome is TwoFactorTurnOnOutcome.AlreadyOn)
         {
             @* The form was sent twice, and the answer to the first, which showed the recovery codes, may never have been seen. *@
-            <p class="form-done" role="status">Two-factor authentication was on already, so nothing was changed. If you did not write down your recovery codes, make new ones below.</p>
+            <p class="form-done" role="status">@TwoFactorPages.AlreadyOn</p>
         }
 
-        <p>Two-factor authentication is on@(_state?.Since is { } since ? $", since {since.ToString("d MMMM yyyy", CultureInfo.InvariantCulture)}" : string.Empty). Signing in takes a code from your authenticator app after your password.</p>
+        <p>@TwoFactorPages.IsOn(_state?.Since, Times)</p>
 
-        <p>You have @(_state?.RecoveryCodesLeft ?? 0) of @TwoFactorRules.RecoveryCodeCount recovery codes left.</p>
+        <p>@TwoFactorPages.CodesLeft(_state?.RecoveryCodesLeft ?? 0, TwoFactorRules.RecoveryCodeCount)</p>
 
         <ul>
-            <li><a href="/account/two-factor/recovery-codes">Make new recovery codes</a></li>
-            <li><a href="/account/two-factor/turn-off">Turn off two-factor authentication</a></li>
+            <li><a href="/account/two-factor/recovery-codes">@TwoFactorPages.NewCodesLink</a></li>
+            <li><a href="/account/two-factor/turn-off">@TwoFactorPages.TurnOffTitle</a></li>
         </ul>
         break;
 
     case View.VerifyFirst:
-        <p role="status">Two-factor authentication can be turned on once your email address is verified. Open the link in the email you were sent when you registered.</p>
+        <p role="status">@TwoFactorPages.VerifyFirst</p>
 
-        <p><a href="/account">Back to your account</a></p>
+        <p><a href="/account">@AccountPages.BackToAccount</a></p>
         break;
 
     default:
-        <p>With two-factor authentication, signing in takes a code from an authenticator app on your phone, after your password. Someone who learns your password cannot sign in without your phone.</p>
+        <p>@TwoFactorPages.Explained</p>
 
         @if (_outcome is TwoFactorTurnOnOutcome.KeyNotValid)
         {
-            <p class="form-error" role="alert">This page could not be used any more. Here is a new key: scan it, and enter the code it gives.</p>
+            <p class="form-error" role="alert">@TwoFactorPages.KeyNotValid</p>
         }
 
         @if (_outcome is TwoFactorTurnOnOutcome.TooManyAttempts)
         {
-            <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
+            <p class="form-error" role="alert">@AccountPages.TooManyAttempts(Limits.SignIn.Minutes)</p>
         }
 
         @if (_setup is not null)
         {
             <ol>
                 <li>
-                    <p>Open your authenticator app and scan this QR code.</p>
+                    <p>@TwoFactorPages.Scan</p>
 
                     <AuthenticatorQrCode Text="@_setup.AuthenticatorUri" />
 
-                    <p>If you cannot scan it, type this key into the app instead:</p>
+                    <p>@TwoFactorPages.TypeKey</p>
                     <p><code class="setup-key">@_setup.Key</code></p>
                 </li>
                 <li>
-                    <p>Enter the code that the app shows, and your password.</p>
+                    <p>@TwoFactorPages.EnterCode</p>
                 </li>
             </ol>
 
@@ -85,7 +85,7 @@
                 <input type="hidden" name="SealedKey" value="@_setup.SealedKey" />
 
                 <div class="field">
-                    <label for="code">Code from your authenticator app</label>
+                    <label for="code">@AccountPages.CodeLabel</label>
                     @* A code is never written back into the page. *@
                     <input id="code" name="Code" type="text" inputmode="numeric" autocomplete="one-time-code" required
                            aria-invalid="@PageFields.Invalid(_outcome is TwoFactorTurnOnOutcome.WrongCode)"
@@ -93,12 +93,12 @@
                            autofocus="@(_outcome is TwoFactorTurnOnOutcome.WrongCode)" />
                     @if (_outcome is TwoFactorTurnOnOutcome.WrongCode)
                     {
-                        <p id="code-error" class="field-error">That code is not right. Enter the six digits that the app shows now.</p>
+                        <p id="code-error" class="field-error">@TwoFactorPages.WrongCode</p>
                     }
                 </div>
 
                 <div class="field">
-                    <label for="password">Your password</label>
+                    <label for="password">@AccountPages.YourPasswordLabel</label>
                     @* The password is never written back into the page. *@
                     <input id="password" name="Password" type="password" autocomplete="current-password" required
                            aria-invalid="@PageFields.Invalid(_outcome is TwoFactorTurnOnOutcome.WrongPassword)"
@@ -106,19 +106,23 @@
                            autofocus="@(_outcome is TwoFactorTurnOnOutcome.WrongPassword)" />
                     @if (_outcome is TwoFactorTurnOnOutcome.WrongPassword)
                     {
-                        <p id="password-error" class="field-error">That is not your password.</p>
+                        <p id="password-error" class="field-error">@AccountPages.NotYourPassword</p>
                     }
                 </div>
 
-                <p>Turning it on signs your account out on every other device.</p>
+                <p>@TwoFactorPages.SignsOut</p>
 
-                <button type="submit">Turn on two-factor authentication</button>
+                <button type="submit">@TwoFactorPages.TurnOn</button>
             </form>
         }
         break;
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private enum View
     {
         Setup,

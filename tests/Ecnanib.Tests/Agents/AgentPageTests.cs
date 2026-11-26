@@ -34,6 +34,13 @@ public class AgentPageTests
 
     private static readonly DateTimeOffset Morning = new(2026, 11, 12, 9, 0, 0, TimeSpan.Zero);
 
+    // The seven risk settings of an agent, in the order of the specification (SRS Appendix B).
+    private static readonly AgentField[] RiskSettings =
+    [
+        AgentField.RiskPerTradePercent, AgentField.MinRewardToRisk, AgentField.LeverageCap, AgentField.LiquidationBuffer,
+        AgentField.DailyLossPercent, AgentField.DrawdownPercent, AgentField.MaxEntryDistancePercent,
+    ];
+
     [Fact]
     public async Task A_user_creates_an_agent_which_is_a_draft_in_Demo_with_the_settings_that_were_entered()
     {
@@ -73,6 +80,11 @@ public class AgentPageTests
         Assert.Contains("A whole number from 2 to 8. The default is 4.", form);
         Assert.Contains("1.25 or higher. The default is 1.75.", form);
         Assert.Contains("1.75 or higher. The default is 2.5.", form);
+
+        // What it is stands under its field, before the bounds, as the text classes say it.
+        Assert.All(
+            RiskSettings,
+            setting => Assert.Contains($"class=\"field-hint\">{AgentPages.Explain(setting)} ", AgentBrowser.Read(form)));
 
         // They are the settings of the one profile, and the form names it (FR-RSK-1).
         Assert.Contains("Every agent trades the one profile, Aggressive.", form);
@@ -254,6 +266,47 @@ public class AgentPageTests
         Assert.Equal("BTCUSDT", Stored(application, stored => stored.Symbol));
     }
 
+    [Fact]
+    public void Every_setting_is_explained_in_plain_language_and_a_limit_says_what_follows_when_it_is_reached()
+    {
+        // Every setting of the form has a name and says what it is (NFR-USA-2). The symbol says
+        // its market with it, so its texts take the market: see AgentPages.SymbolsOf.
+        var settings = Enum.GetValues<AgentField>().Where(setting => setting != AgentField.Symbol).ToList();
+
+        Assert.All(settings, setting =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(AgentPages.Label(setting)), $"{setting} has no label.");
+            Assert.EndsWith(".", AgentPages.Explain(setting));
+        });
+        Assert.Equal(settings.Count, settings.Select(AgentPages.Explain).Distinct().Count());
+        Assert.Equal(settings.Count, settings.Select(AgentPages.Label).Distinct().Count());
+
+        // A loss limit says what the service does when it is reached, and when the agent runs
+        // again (FR-RSK-8): by itself after the day of a daily loss limit, and only when its
+        // user resumes it after a drawdown limit.
+        var dailyLoss = AgentPages.Explain(AgentField.DailyLossPercent);
+
+        Assert.Contains("as the UTC day began", dailyLoss);
+        Assert.Contains("the service closes its position and halts it", dailyLoss);
+        Assert.Contains("runs again when the next UTC day begins", dailyLoss);
+
+        var drawdown = AgentPages.Explain(AgentField.DrawdownPercent);
+
+        Assert.Contains("the service closes its position and halts it", drawdown);
+        Assert.Contains("stays halted until you resume it", drawdown);
+
+        // The leverage cap says who chooses the leverage, and what becomes of a position that
+        // would need more (FR-RSK-5).
+        var leverage = AgentPages.Explain(AgentField.LeverageCap);
+
+        Assert.Contains("no model does", leverage);
+        Assert.Contains("the lowest that fits the position within the agent's equity, up to this cap", leverage);
+        Assert.Contains("is made smaller", leverage);
+
+        // And the entry distance says what becomes of a plan beyond it (FR-RSK-4).
+        Assert.Contains("is rejected, and no order is placed", AgentPages.Explain(AgentField.MaxEntryDistancePercent));
+    }
+
     [Theory]
     [InlineData("RiskPerTradePercent", "0.24", "0.25", "4", "4.01", "This setting is from 0.25 to 4 percent.")]
     [InlineData("MinRewardToRisk", "1.24", "1.25", "100", "100.01", "The minimum reward-to-risk ratio is 1.25 or higher, and 100 at most.")]
@@ -316,6 +369,14 @@ public class AgentPageTests
         Assert.Contains("<p>Two more limits are fixed. They are the same for every agent, and cannot be changed:</p>", form);
         Assert.Contains("<li>On Spot, a position is worth at most 100 percent of the agent's equity.</li>", form);
         Assert.Contains("<li>An agent has no more than 1 position open at a time.</li>", form);
+
+        // And the stale limit, which goes by the timeframe and is of the configuration file
+        // (FR-CYC-9): what it is, what a decision past it still does, and the limit of each.
+        Assert.Contains(
+            "<p>One more limit goes by the timeframe, and cannot be changed either: the stale limit. A decision that the team " +
+            "completes later than this after its candle closed opens no position, and can still close one or tighten its " +
+            "protection: 100 seconds on 15m, 200 seconds on 1H, 400 seconds on 4H, and 800 seconds on 1D.</p>",
+            form);
 
         // The risk settings have a field for each of the seven that are an agent's, in the
         // order of the specification, and for nothing else: neither of the two is asked for.

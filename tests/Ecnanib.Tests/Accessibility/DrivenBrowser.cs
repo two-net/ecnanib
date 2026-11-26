@@ -83,12 +83,15 @@ internal sealed class DrivenBrowser : IAsyncDisposable
     /// A browser of its own for one person, with its own cookies, at an application that
     /// listens. It takes the certificate that the application made for the run, has what moves
     /// reduced, so what a check measures stands still, and is as wide as a desk unless told
-    /// otherwise. Nothing of the content security policy is set aside for it.
+    /// otherwise. Nothing of the content security policy is set aside for it. Its device is in
+    /// UTC unless told otherwise: the script of the times says the time zone of the device as
+    /// its person signs in (NFR-USA-3), and a run reads the same on every machine.
     /// </summary>
     /// <param name="address">Where the application listens.</param>
     /// <param name="size">The width and the height of its window.</param>
     /// <param name="dark">Whether the device is set to dark, which a page that says nothing of its theme follows.</param>
-    public async Task<IBrowserContext> OpenAsync(Uri address, ViewportSize? size = null, bool dark = false) =>
+    /// <param name="timeZone">The time zone of the device, as the time zone database names it.</param>
+    public async Task<IBrowserContext> OpenAsync(Uri address, ViewportSize? size = null, bool dark = false, string timeZone = "UTC") =>
         await _browser.NewContextAsync(new BrowserNewContextOptions
         {
             BaseURL = address.ToString(),
@@ -96,6 +99,7 @@ internal sealed class DrivenBrowser : IAsyncDisposable
             ReducedMotion = ReducedMotion.Reduce,
             ColorScheme = dark ? ColorScheme.Dark : ColorScheme.Light,
             ViewportSize = size ?? Desk,
+            TimezoneId = timeZone,
         });
 
     public async ValueTask DisposeAsync()

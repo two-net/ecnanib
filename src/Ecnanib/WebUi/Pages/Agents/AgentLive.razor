@@ -21,16 +21,17 @@
     who has just proved again who they are, and to nobody else, and its form takes the
     confirmation of the risk. The form is on the page whenever one is posted, whatever was proved
     by then: a form that is not there cannot be answered. Whether the agent is switched is for
-    SwitchToLiveAsync to say, which asks all of it again under the lock.
+    SwitchToLiveAsync to say, which asks all of it again under the lock. Its texts are in
+    AgentModePages and AgentPages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Switch the agent @_agent.Name to Live</PageTitle>
+    <PageTitle>@AgentModePages.ToLiveTitle(_agent.Name)</PageTitle>
 
-    <h1>Switch the agent @_agent.Name to Live</h1>
+    <h1>@AgentModePages.ToLiveTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_notSwitched is not null)
     {
@@ -38,17 +39,17 @@
 
         @if (_keyBlocks)
         {
-            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+            <p><a href="@WebUiModule.KeysPath">@AgentPages.KeysLink</a></p>
         }
         else if (_symbolBlocks)
         {
-            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
         }
     }
 
     @if (_showForm)
     {
-        <p>In Live the agent trades in your real Binance account, with your Binance key for Live. Its state stays as it is: <strong>@AgentPages.Describe(_agent.State)</strong>. It trades nothing until you start it.</p>
+        <p>@AgentModePages.LiveExplained <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State) @AgentModePages.NothingUntilStarted</p>
 
         <ul>
             @foreach (var risk in AgentPages.LiveRisks)
@@ -57,12 +58,12 @@
             }
         </ul>
 
-        <p>The <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">risk disclosure (@LegalPages.OpensInNewTab)</a> says this in full.</p>
+        <p>@AgentModePages.RiskInFullBefore <a href="@LegalPages.RiskDisclosurePath" target="_blank" rel="noopener">@LegalPages.NameOf(LegalDocument.RiskDisclosure) (@LegalPages.OpensInNewTab)</a> @AgentModePages.RiskInFull</p>
 
         @if (_agent.ReassignsRoles)
         {
             @* Said where the switch is confirmed: in Live the service changes the models that trade with real money, and asks nobody (FR-TEAM-10, FR-UI-3). *@
-            <p role="note">@AgentPages.ReassignsRolesInLive(Trading.RoleReassignmentDays) <a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p role="note">@AgentPages.ReassignsRolesInLive(Trading.RoleReassignmentDays) <a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
         }
 
         <form method="post" @formname="@AgentPages.SwitchToLiveForm" @onsubmit="SwitchAsync">
@@ -74,22 +75,22 @@
                        aria-invalid="@PageFields.Invalid(_riskNotConfirmed)"
                        aria-describedby="@PageFields.ErrorOf("live-risk", _riskNotConfirmed)"
                        autofocus="@(_riskNotConfirmed && _notSwitched is null)" />
-                <label for="live-risk">I understand that in Live this agent trades with real money in my Binance account, and that I can lose all of the capital I allocated to it.</label>
+                <label for="live-risk">@AgentModePages.ConfirmRiskLabel</label>
                 @if (_riskNotConfirmed)
                 {
                     <p id="live-risk-error" class="field-error">@AgentPages.ConfirmRiskFirst</p>
                 }
             </div>
 
-            <button type="submit">Switch the agent to Live</button>
+            <button type="submit">@AgentPages.SwitchToLive</button>
         </form>
     }
     else if (_notSwitched is null)
     {
-        <p role="status">This agent is in Live.</p>
+        <p role="status">@AgentModePages.AlreadyLive</p>
     }
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent in Demo" : "State of the agent")</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? AgentModePages.KeepInDemo : AgentPages.StateLink)</a></p>
 }
 
 @code {

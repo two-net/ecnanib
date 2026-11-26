@@ -177,7 +177,10 @@ public class DataExportTests
         // not in it, nor is its hash.
         var account = export.GetProperty("account");
         Assert.Equal(
-            ["id", "email", "registeredAt", "emailVerifiedAt", "twoFactor", "theme", "motion", "decisionsReviewedAt", "liveConsideredAt"],
+            [
+                "id", "email", "registeredAt", "emailVerifiedAt", "twoFactor", "theme", "motion", "timeDisplay", "decisionsReviewedAt",
+                "liveConsideredAt",
+            ],
             NamesIn(account));
         Assert.Equal(ada.Id, account.GetProperty("id").GetGuid());
         Assert.Equal(Ada, account.GetProperty("email").GetString());
@@ -192,9 +195,11 @@ public class DataExportTests
         Assert.Equal(TwoFactorRules.RecoveryCodeCount - 1, twoFactor.GetProperty("recoveryCodesLeft").GetInt32());
 
         // The preferences that are stored with the account, each by its name: its theme
-        // (FR-THM-3), and how much of the pages moves (FR-ANI-4).
+        // (FR-THM-3), how much of the pages moves (FR-ANI-4), and which time zone they write
+        // a time in (NFR-USA-3).
         Assert.Equal("System", account.GetProperty("theme").GetString());
         Assert.Equal("System", account.GetProperty("motion").GetString());
+        Assert.Equal("Device", account.GetProperty("timeDisplay").GetString());
 
         // What the user said on the setup checklist of a first-time user, each with when
         // (FR-UI-4): nothing yet, which the file says as it is.

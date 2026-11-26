@@ -6,7 +6,7 @@
     not rely on its colour. Its look is in app.css: a page carries no style of its own.
 *@
 
-<span class="mode-badge @(Mode == TradingMode.Live ? "mode-live" : "mode-demo")">@Mode</span>
+<span class="mode-badge @(Mode == TradingMode.Live ? "mode-live" : "mode-demo")">@AgentPages.NameOf(Mode)</span>
 
 @code {
     /// <summary>The mode that the badge says.</summary>

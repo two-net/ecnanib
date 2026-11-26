@@ -13,15 +13,16 @@
     because a close cannot be undone. Agents places no order: ClosePositionAsync records the
     request and asks whatever keeps positions. The form is on the page whenever one is posted,
     whatever the agent holds by then: a form that is sent twice finds no position the second time.
+    Its texts are in AgentStatePages and AgentPages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Close the position of the agent @_agent.Name</PageTitle>
+    <PageTitle>@AgentStatePages.ClosePositionTitle(_agent.Name)</PageTitle>
 
-    <h1>Close the position of the agent @_agent.Name</h1>
+    <h1>@AgentStatePages.ClosePositionTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_notClosed is not null)
     {
@@ -30,13 +31,13 @@
 
     @if (_closed)
     {
-        <p class="form-done" role="status">The position was closed at market. The agent is @AgentPages.Describe(_agent.State), as it was.</p>
+        <p class="form-done" role="status">@AgentStatePages.Closed(_agent.State)</p>
     }
     else if (_showForm)
     {
-        <p>This closes the agent's open position now, at the market price, and takes its stop-loss and take-profit orders off Binance. A profit or a loss is final, and it cannot be undone.</p>
+        <p>@AgentStatePages.CloseExplained</p>
 
-        <p>The state of the agent stays as it is: <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State)</p>
+        <p>@AgentStatePages.StateStays <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State)</p>
 
         @if (_agent.Mode == TradingMode.Live)
         {
@@ -54,7 +55,7 @@
         <p role="status">@AgentPages.NothingOpen</p>
     }
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm && !_closed ? "Keep the position" : "State of the agent")</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm && !_closed ? AgentStatePages.KeepPositionLink : AgentPages.StateLink)</a></p>
 }
 
 @code {

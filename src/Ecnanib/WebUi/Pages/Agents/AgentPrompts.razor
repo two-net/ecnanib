@@ -19,24 +19,25 @@
     page has no form, and nothing that is posted at it is taken. A template is written as text,
     like everything else on a page. The badge of the mode is under the heading (FR-UI-3). The
     page says what a provider is sent with the prompts, and under whose key and terms (NFR-SEC-8).
+    Its texts are in AgentPages.
 *@
 
 @if (_agent is not null && _templates is not null)
 {
-    <PageTitle>Prompts of the agent @_agent.Name</PageTitle>
+    <PageTitle>@AgentPages.PromptsTitle(_agent.Name)</PageTitle>
 
-    <h1>Prompts of the agent @_agent.Name</h1>
+    <h1>@AgentPages.PromptsTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     <p>@AgentPages.PromptsExplained</p>
 
     <p>@AgentPages.PromptVersionsExplained</p>
 
     @* What goes to a provider with these prompts, and under whose key and terms (NFR-SEC-8). *@
-    <p>@KeyPages.SentToProviders <a href="@WebUiModule.KeysPath">Your keys</a></p>
+    <p>@KeyPages.SentToProviders <a href="@WebUiModule.KeysPath">@AgentPages.KeysLink</a></p>
 
-    <h2>Roles</h2>
+    <h2>@AgentPages.RolePromptsHeading</h2>
 
     <p>@AgentPages.RolePromptsExplained</p>
 
@@ -45,35 +46,35 @@
         <PromptText Name="@AgentPages.Describe(role).Name" Template="@_templates.Roles[role]" />
     }
 
-    <h2>Market</h2>
+    <h2>@AgentPages.MarketPromptHeading</h2>
 
     <p>@AgentPages.MarketPromptExplained</p>
 
-    <PromptText Name="@_agent.Market.ToString()" Template="@_templates.Market" />
+    <PromptText Name="@AgentPages.NameOf(_agent.Market)" Template="@_templates.Market" />
 
-    <h2>Timeframe</h2>
+    <h2>@AgentPages.TimeframePromptHeading</h2>
 
     <p>@AgentPages.TimeframePromptExplained</p>
 
     <PromptText Name="@_agent.Timeframe.Code()" Template="@_templates.Timeframe" />
 
-    <h2>Profile</h2>
+    <h2>@AgentPages.ProfilePromptHeading</h2>
 
     <p>@AgentPages.ProfilePromptExplained</p>
 
     <PromptText Name="@_templates.Profile.Subject" Template="@_templates.Profile" />
 
-    <h2>Lesson</h2>
+    <h2>@AgentPages.LessonPromptHeading</h2>
 
     <p>@AgentPages.LessonPromptExplained <a href="@WebUiModule.LessonsOfAgentPath(_agent.Id)">@LessonPages.OfAgentLink</a></p>
 
     <PromptText Name="@AgentPages.LessonPromptName" Template="@_templates.Lesson" />
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@AgentPages.StateLink</a></p>
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@AgentPages.BackToAgents</a></p>
 }
 
 @code {

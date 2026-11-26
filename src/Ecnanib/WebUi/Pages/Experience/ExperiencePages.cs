@@ -7,53 +7,100 @@ using Microsoft.Extensions.Primitives;
 namespace Ecnanib.WebUi.Pages.Experience;
 
 /// <summary>
-/// What the experience screens say, in one place: the statements that every one of them makes
-/// (FR-EXP-11), how a track record is written (FR-EXP-2), how its filter is named in an address
-/// and read from one, which mode a screen shows and why (FR-EXP-9), and how a strength score is
-/// worked out and written, with its formula (FR-EXP-3, FR-EXP-4). See docs/experience.md.
+/// The texts of the experience screens, in one place (NFR-USA-4): the statements that every one
+/// of them makes (FR-EXP-11), how a track record is written (FR-EXP-2), how its filter is named
+/// in an address and read from one, which mode a screen shows and why (FR-EXP-9), and how a
+/// strength score is worked out and written, with its formula (FR-EXP-3, FR-EXP-4). The board
+/// and the page of a model write their tables with these texts too. See docs/experience.md.
 /// </summary>
 public static class ExperiencePages
 {
     /// <summary>The name of the experience screen, in its heading and in the bar at the top.</summary>
-    public const string Title = "Experience";
+    public static string Title => "Experience";
+
+    /// <summary>
+    /// The heading of the page of a model's experience record, by the name of the model. The
+    /// catalog links each model to that page with the same words, so that the link says where
+    /// it leads.
+    /// </summary>
+    public static string TitleOf(string modelName) => $"Experience of {modelName}";
+
+    /// <summary>What stands before the badge of the mode that a screen shows, on every experience screen and on the board.</summary>
+    public static string BadgeLabel => "Mode:";
 
     /// <summary>What a track record is measured in, which every screen of track records says.</summary>
-    public const string InRExplained =
+    public static string InRExplained =>
         "Every figure is in R: the amount that was risked on a trade, which is the distance from its entry to its stop-loss, times its quantity. "
         + "A trade that made twice what it risked is +2 R, and one that was stopped out lost about 1 R.";
 
     /// <summary>What the experience screen says first: what a track record is, and what it is measured in.</summary>
-    public const string Explained =
+    public static string Explained =>
         "This is how your agents' trades came out for each AI provider and each model. " + InRExplained;
 
     /// <summary>The heading of the statements that every experience screen makes (FR-EXP-11).</summary>
-    public const string StatementsHeading = "What these figures cannot tell";
+    public static string StatementsHeading => "What these figures cannot tell";
 
     /// <summary>That past results do not predict future results (FR-EXP-11).</summary>
-    public const string PastResults = "Past results do not predict future results.";
+    public static string PastResults => "Past results do not predict future results.";
 
     /// <summary>That Demo results differ from Live (FR-EXP-11).</summary>
-    public const string DemoDiffers =
+    public static string DemoDiffers =>
         "Demo results differ from Live results. Demo is Binance's test environment, with no real funds: an order is not filled there as it is on the real exchange.";
 
     /// <summary>That Demo and Live are never added up (FR-EXP-9, FR-BIN-11).</summary>
-    public const string NeverAddedUp = "Results in Demo and results in Live are never added up.";
+    public static string NeverAddedUp => "Results in Demo and results in Live are never added up.";
 
     /// <summary>What is written in place of a measure that a record cannot say.</summary>
-    public const string NotAvailable = "Not available";
+    public static string NotAvailable => "Not available";
 
     /// <summary>What is written for the profit factor of a record that has no losing trade: there is nothing to divide by.</summary>
-    public const string NoLosingTrade = "No losing trade";
+    public static string NoLosingTrade => "No losing trade";
 
     /// <summary>What is written in the notes of a record that has none.</summary>
-    public const string NoNote = "None";
+    public static string NoNote => "None";
 
     /// <summary>The mark of a record that counts fewer trades than the minimum sample (FR-EXP-11).</summary>
-    public const string SmallSample = "Small sample.";
+    public static string SmallSample => "Small sample.";
 
     /// <summary>What a record follows, which says why a trade can leave it.</summary>
-    public const string FollowsPositions =
+    public static string FollowsPositions =>
         "A track record is worked out from the positions that are stored. When you delete an agent, its positions are deleted with it, and its trades leave the record.";
+
+    /// <summary>The heading of the filter of a track record.</summary>
+    public static string FilterHeading => "Which trades are counted";
+
+    /// <summary>The name of the choice of a role, in the filter.</summary>
+    public static string RoleLabel => "Role";
+
+    /// <summary>The choice of the filter that names no role, and the role of a record that is of any of them.</summary>
+    public static string AnyRole => "Any role";
+
+    /// <summary>The name of the choice of a market, in the filter.</summary>
+    public static string MarketLabel => "Market";
+
+    /// <summary>The choice of the filter that names no market.</summary>
+    public static string AnyMarket => "Any market";
+
+    /// <summary>The name of the choice of a timeframe, in the filter.</summary>
+    public static string TimeframeLabel => "Timeframe";
+
+    /// <summary>The choice of the filter that names no timeframe.</summary>
+    public static string AnyTimeframe => "Any timeframe";
+
+    /// <summary>The name of the choice of a mode, in the filter.</summary>
+    public static string ModeLabel => "Mode";
+
+    /// <summary>
+    /// The choice of the filter that names no mode: the screen then shows Live where it has
+    /// enough closed trades, and otherwise Demo (FR-EXP-9).
+    /// </summary>
+    public static string LiveWhereEnough => "Live where there is enough, otherwise Demo";
+
+    /// <summary>The name of the choice of a period, in the filter.</summary>
+    public static string PeriodLabel => "Period";
+
+    /// <summary>The button that sends the filter: the page then shows what was chosen.</summary>
+    public static string Show => "Show";
 
     /// <summary>The name of the choice of a filter in an address: the role.</summary>
     public const string RoleKey = "role";
@@ -112,7 +159,7 @@ public static class ExperiencePages
     public static string NameOf(Role role) => AgentPages.Describe(role).Name;
 
     /// <summary>The role of a record of a model: the role, or that it is any of them.</summary>
-    public static string NameOf(Role? role) => role is { } named ? NameOf(named) : "Any role";
+    public static string NameOf(Role? role) => role is { } named ? NameOf(named) : AnyRole;
 
     /// <summary>
     /// The filter that an address names, or null when it names none: a choice that is none of
@@ -166,7 +213,7 @@ public static class ExperiencePages
 
         return (scope.ModeChosen, scope.Mode) switch
         {
-            (false, _) => $"These are your results in {scope.Mode}, which you chose.",
+            (false, _) => $"These are your results in {AgentPages.NameOf(scope.Mode)}, which you chose.",
             (true, TradingMode.Live) =>
                 $"These are your results in Live: with {Trades(scope.LiveTrades)}, Live has {enough}.",
             (true, _) =>
@@ -184,20 +231,20 @@ public static class ExperiencePages
 
         var other = OtherThan(scope.Mode);
 
-        return $"Show your results in {other}, with {Trades(other == TradingMode.Live ? scope.LiveTrades : scope.DemoTrades)}";
+        return $"Show your results in {AgentPages.NameOf(other)}, with {Trades(other == TradingMode.Live ? scope.LiveTrades : scope.DemoTrades)}";
     }
 
     /// <summary>Which trades a screen counts by when they were closed.</summary>
-    public static string PeriodExplained(TrackRecordScope scope)
+    public static string PeriodExplained(TrackRecordScope scope, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        return PeriodExplained(scope.ClosedFrom);
+        return PeriodExplained(scope.ClosedFrom, times);
     }
 
     /// <summary>Which trades a screen counts by when they were closed, from the moment that its period starts at.</summary>
-    public static string PeriodExplained(DateTimeOffset? closedFrom) => closedFrom is { } from
-        ? $"Counted are the trades that were closed since {PageTimes.At(from)}."
+    public static string PeriodExplained(DateTimeOffset? closedFrom, PageTimes times) => closedFrom is { } from
+        ? $"Counted are the trades that were closed since {times.At(from)}."
         : "Counted are the trades of all time.";
 
     /// <summary>For whom a trade counts on the experience screen, which says why its rows do not add up.</summary>
@@ -207,16 +254,83 @@ public static class ExperiencePages
             + "So the rows do not add up to the number of your trades, and a record says how the teams with a model did, and not what the model did alone.";
 
     /// <summary>For which trades a model has a record on its page.</summary>
-    public const string CountsForModel =
+    public static string CountsForModel =>
         "A trade counts for this model when the model held a role of the team as the position was opened. "
         + "A record says how the teams with the model did, and not what the model did alone.";
+
+    /// <summary>
+    /// Whose model the page of a model is of, before the identifier that its provider names it
+    /// by: <c>A model of Claude, which names it</c>.
+    /// </summary>
+    public static string ModelOfProvider(string providerName) => $"A model of {providerName}, which names it";
+
+    /// <summary>What the page of a model says of whether its provider still offers it, with that status as the catalog writes it.</summary>
+    public static string StatusInCatalog(string status) => $"Status in the catalog: {status}";
+
+    /// <summary>The text of the link that leads from the page of a model to the experience screen.</summary>
+    public static string OfEveryModelLink => "Experience of every provider and model";
+
+    /// <summary>The text of the link that leads from the page of a model back to the catalog.</summary>
+    public static string BackToCatalogLink => "Back to the model catalog";
+
+    /// <summary>The text of the link that leads from the experience screen to the agents.</summary>
+    public static string AgentsLink => "Your agents";
+
+    /// <summary>The heading of the track records of the providers, on the experience screen and on the board.</summary>
+    public static string ByProviderHeading => "By provider";
+
+    /// <summary>The heading of the track records of the models, on the experience screen and on the board.</summary>
+    public static string ByModelHeading => "By model";
+
+    /// <summary>The heading of the track records of a model, on its page: one for each role that it held.</summary>
+    public static string ByRoleHeading => "By role";
+
+    /// <summary>The name of the table of the track records of the providers, which says the mode that they are of.</summary>
+    public static string ProvidersCaption(TradingMode mode) => $"The track record of each provider in {AgentPages.NameOf(mode)}";
+
+    /// <summary>The name of the table of the track records of the models.</summary>
+    public static string ModelsCaption(TradingMode mode) => $"The track record of each model in {AgentPages.NameOf(mode)}";
+
+    /// <summary>The name of the table of the track records of a model, on its page.</summary>
+    public static string RolesCaption(TradingMode mode) =>
+        $"The track record of the model in {AgentPages.NameOf(mode)}, by the role that it held";
+
+    /// <summary>The heading of the column that names the role of a row, in a table of records and in one of strength scores.</summary>
+    public static string RoleHeading => "Role";
+
+    /// <summary>The heading of the closed trades of a track record, which is the first of its measures.</summary>
+    public static string TradesHeading => "Closed trades";
+
+    /// <summary>The heading of the win rate of a track record.</summary>
+    public static string WinRateHeading => "Win rate";
+
+    /// <summary>The heading of the average R of a track record.</summary>
+    public static string AverageRHeading => "Average R";
+
+    /// <summary>The heading of the total R of a track record.</summary>
+    public static string TotalRHeading => "Total R";
+
+    /// <summary>The heading of the profit factor of a track record.</summary>
+    public static string ProfitFactorHeading => "Profit factor";
+
+    /// <summary>The heading of the largest drawdown of a track record.</summary>
+    public static string DrawdownHeading => "Largest drawdown";
+
+    /// <summary>The heading of the average holding time of a track record.</summary>
+    public static string HeldHeading => "Average holding time";
+
+    /// <summary>The heading of what is to be noted about a track record.</summary>
+    public static string NotesHeading => "Notes";
+
+    /// <summary>What the row of a record that counts no trade says in place of its measures.</summary>
+    public static string NoneCounted => "No closed trade is counted.";
 
     /// <summary>What a screen says when it counts no trade.</summary>
     public static string NoTrades(TrackRecordScope scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        return $"No closed trade is counted here in {scope.Mode}.";
+        return $"No closed trade is counted here in {AgentPages.NameOf(scope.Mode)}.";
     }
 
     /// <summary>What the page of a model says when the model has no counted trade of the user.</summary>
@@ -224,7 +338,7 @@ public static class ExperiencePages
     {
         ArgumentNullException.ThrowIfNull(scope);
 
-        return $"Nothing is recorded here about how this model has traded for you in {scope.Mode}. Its track record is shown once a trade of a team with it is closed.";
+        return $"Nothing is recorded here about how this model has traded for you in {AgentPages.NameOf(scope.Mode)}. Its track record is shown once a trade of a team with it is closed.";
     }
 
     /// <summary>
@@ -348,45 +462,66 @@ public static class ExperiencePages
     }
 
     /// <summary>What an estimate is, which a screen says under a table that may mark one.</summary>
-    public const string EstimatesExplained =
+    public static string EstimatesExplained =>
         "A result is an estimate when not all of it is what Binance said: a position that was liquidated or closed at Binance by hand, or a fee that could not be valued. Such a trade is counted all the same.";
 
     /// <summary>The heading of the strength scores on an experience screen.</summary>
-    public const string StrengthHeading = "Strength by role";
+    public static string StrengthHeading => "Strength by role";
 
     /// <summary>What is written for a slice that has fewer samples than the minimum (FR-EXP-4).</summary>
-    public const string NotEnoughData = "Not enough data";
+    public static string NotEnoughData => "Not enough data";
+
+    /// <summary>What stands above the list that says how each role is measured.</summary>
+    public static string MeasuresIntro => "The measure is of the role:";
+
+    /// <summary>The heading of the column that names the timeframe of a slice.</summary>
+    public static string TimeframeHeading => "Timeframe";
+
+    /// <summary>The heading of the sample size of a slice.</summary>
+    public static string SamplesHeading => "Samples";
+
+    /// <summary>The heading of the measure of a slice.</summary>
+    public static string MeasureHeading => "Measure";
+
+    /// <summary>The heading of the strength score of a slice.</summary>
+    public static string ScoreHeading => "Strength score";
+
+    /// <summary>The name of the table of the strength scores of each model, which says the mode that they are of.</summary>
+    public static string StrengthsCaption(TradingMode mode) => $"The strength score of each model in each role in {AgentPages.NameOf(mode)}";
+
+    /// <summary>The name of the table of the strength scores of one model, on its page.</summary>
+    public static string ModelStrengthsCaption(TradingMode mode) => $"The strength score of the model in each role in {AgentPages.NameOf(mode)}";
 
     /// <summary>How an analyst is measured (FR-EXP-3).</summary>
-    public const string AnalystMeasure =
+    public static string AnalystMeasure =>
         "Market Analyst and Sentiment Analyst: the share of the calls that were not neutral whose direction matched the price change "
         + "over the next 4 closed candles, minus 50 percent. It is written in percentage points: +10 is right 60 times in 100. "
         + "A sample is a call that was scored.";
 
     /// <summary>How the Strategist is measured (FR-EXP-3).</summary>
-    public const string StrategistMeasure =
+    public static string StrategistMeasure =>
         "Strategist: the average R of the plans that were executed. A sample is a closed trade.";
 
     /// <summary>How the Risk Manager is measured (FR-EXP-3).</summary>
-    public const string RiskManagerMeasure =
+    public static string RiskManagerMeasure =>
         "Risk Manager: the average R of the plans that it approved, minus the average R that the plans which it vetoed would have produced. "
         + "A sample is a plan that it reviewed and that has a result: an approved one whose trade is closed, or a vetoed one whose shadow trade has ended. "
         + "The measure is said once there is at least one of each.";
 
     /// <summary>What a shadow trade is, and that it places no order (FR-EXP-5).</summary>
-    public const string ShadowTradesExplained =
+    public static string ShadowTradesExplained =>
         "What a vetoed plan would have produced is worked out as a shadow trade: against the candles that closed after it, with its own entry, "
         + "stop-loss, and take-profit and with standard fees, and with the stop-loss taken to be hit first when both fall inside one candle. "
         + "A shadow trade never places an order.";
 
     /// <summary>What the strength scores follow, which says why a sample can leave them.</summary>
-    public const string StrengthsFollow =
+    public static string StrengthsFollow =>
         "A strength score is worked out from the cycles and the positions that are stored. When you delete an agent, they are deleted with it, "
         + "and its calls, its trades, and its shadow trades leave the scores.";
 
     /// <summary>What a strength score is, and of which mode the ones on a screen are.</summary>
     public static string StrengthExplained(TradingMode mode) =>
-        $"A strength score says how well a model did one role, on one market and one timeframe, in {mode}. "
+        $"A strength score says how well a model did one role, on one market and one timeframe, in {AgentPages.NameOf(mode)}. "
         + "It is the measure of the role, damped toward zero for a small sample, so that a few lucky results do not look like strength.";
 
     /// <summary>The formula of the strength score, as a screen shows it, with the damping of the configuration file (FR-EXP-4).</summary>
@@ -399,7 +534,7 @@ public static class ExperiencePages
 
     /// <summary>What a screen says when no slice has a sample.</summary>
     public static string NoStrengths(TradingMode mode) =>
-        $"Nothing is measured here in {mode} yet: no call of an analyst is scored, no plan is executed, and no vetoed plan has a result.";
+        $"Nothing is measured here in {AgentPages.NameOf(mode)} yet: no call of an analyst is scored, no plan is executed, and no vetoed plan has a result.";
 
     /// <summary>
     /// A measure or a score of an analyst, which is a share above or below a half, in percentage

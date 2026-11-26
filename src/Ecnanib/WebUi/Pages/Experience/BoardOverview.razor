@@ -21,7 +21,8 @@
     form of the page leaves the board, or comes back to it: that is the choice of the user who is
     signed in, and of nobody else. A model is named by the catalog, which is the same for
     everyone, and leads nowhere: the page of a model is of the user's own trades. An address
-    that names a choice which there is not is answered with "not found".
+    that names a choice which there is not is answered with "not found". Its texts are in
+    BoardPages, and those that it has in common with the experience screen in ExperiencePages.
 *@
 
 @if (_filter is not null && _contributes is { } contributes)
@@ -35,7 +36,7 @@
     {
         var scope = _view.Scope;
 
-        <p>Mode: <ModeBadge Mode="@scope.Mode" /> @BoardPages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@BoardPages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@BoardPages.OtherModeLink(scope)</a></p>
+        <p>@ExperiencePages.BadgeLabel <ModeBadge Mode="@scope.Mode" /> @BoardPages.ModeExplained(scope) @ExperiencePages.NeverAddedUp <a href="@BoardPages.Path(_filter with { Mode = ExperiencePages.OtherThan(scope.Mode) })">@BoardPages.OtherModeLink(scope)</a></p>
 
         <p>@BoardPages.Explained</p>
 
@@ -45,9 +46,9 @@
 
         <ExperienceFilter Action="@WebUiModule.BoardPath" Filter="@_filter" />
 
-        <p>@ExperiencePages.PeriodExplained(scope.ClosedFrom) @BoardPages.CountsFor(_filter.Role)</p>
+        <p>@ExperiencePages.PeriodExplained(scope.ClosedFrom, Times) @BoardPages.CountsFor(_filter.Role)</p>
 
-        <h2 id="board-providers">By provider</h2>
+        <h2 id="board-providers">@ExperiencePages.ByProviderHeading</h2>
 
         @if (_view.Providers.Count == 0)
         {
@@ -58,10 +59,10 @@
             @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
             <div class="track-records" role="region" aria-labelledby="board-providers" tabindex="0">
                 <table>
-                    <caption>The track record of each provider across all users in @scope.Mode</caption>
+                    <caption>@BoardPages.ProvidersCaption(scope.Mode)</caption>
                     <thead>
                         <tr>
-                            <th scope="col">Provider</th>
+                            <th scope="col">@CatalogPages.ProviderHeading</th>
                             <TrackRecordHeadings />
                         </tr>
                     </thead>
@@ -78,7 +79,7 @@
             </div>
         }
 
-        <h2 id="board-models">By model</h2>
+        <h2 id="board-models">@ExperiencePages.ByModelHeading</h2>
 
         @if (_view.Models.Count == 0)
         {
@@ -88,11 +89,11 @@
         {
             <div class="track-records" role="region" aria-labelledby="board-models" tabindex="0">
                 <table>
-                    <caption>The track record of each model across all users in @scope.Mode</caption>
+                    <caption>@BoardPages.ModelsCaption(scope.Mode)</caption>
                     <thead>
                         <tr>
-                            <th scope="col">Model</th>
-                            <th scope="col">Provider</th>
+                            <th scope="col">@CatalogPages.ModelHeading</th>
+                            <th scope="col">@CatalogPages.ProviderHeading</th>
                             <TrackRecordHeadings />
                         </tr>
                     </thead>
@@ -146,10 +147,14 @@
     @* The records of the user's own trades, by the same filter. *@
     <p><a href="@ExperiencePages.Path(_filter)">@BoardPages.OwnRecordsLink</a></p>
 
-    <p><a href="@WebUiModule.CatalogPath">Model catalog</a></p>
+    <p><a href="@WebUiModule.CatalogPath">@Screens.Catalog.Name</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private TrackRecordFilter? _filter;
     private BoardView? _view;
     private bool? _contributes;

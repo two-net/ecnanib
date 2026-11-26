@@ -86,7 +86,8 @@ public partial class RiskCheckPageTests
                 new ShownRule(
                     "Reward-to-risk ratio",
                     "Does not hold",
-                    "The take-profit is only 1.4 times as far from the entry as the stop-loss. The agent asks for at least 1.5."),
+                    "The take-profit is only 1.4 times as far from the entry as the stop-loss. The agent asks for at least 1.5: its " +
+                    "minimum reward-to-risk ratio, which is one of its risk settings."),
                 new ShownRule("Distance of the entry", "Holds", "The entry is 0 percent from the current price. The agent allows up to 1 percent."),
                 new ShownRule("Price step", "Not known", NoRules),
                 new ShownRule("Quantity step", "Not known", NoRules),
@@ -273,6 +274,28 @@ public partial class RiskCheckPageTests
             // The name of a rule is words as well.
             Assert.DoesNotContain(rule.ToString(), RiskCheckPages.NameOf(rule), StringComparison.Ordinal);
         }
+
+        // A rule that a plan did not meet says more than what was measured (NFR-USA-2): whose
+        // limit it is, which is a risk setting of the agent or a rule of Binance, and what
+        // follows from it or what its user can do. With both numbers, as a check stores them.
+        var failed = (GuardRule rule) => RiskCheckPages.Says(new RuleResult(rule, RuleOutcome.Failed, 1.25m, 2.5m), PlanAction.OpenLong);
+
+        Assert.All(
+            new[] { GuardRule.RewardToRisk, GuardRule.EntryDistance, GuardRule.LiquidationBuffer, GuardRule.DailyLossLimit, GuardRule.DrawdownLimit },
+            rule => Assert.Contains("one of its risk settings", failed(rule)));
+        Assert.All(
+            new[] { GuardRule.PriceStep, GuardRule.QuantityStep, GuardRule.MinimumQuantity, GuardRule.MinimumValue },
+            rule => Assert.Contains("Binance sets", failed(rule)));
+        Assert.Contains("does not round a price that the team planned", failed(GuardRule.PriceStep));
+        Assert.All(
+            new[] { GuardRule.MinimumQuantity, GuardRule.MinimumValue },
+            rule => Assert.Contains("does not raise an order to it", failed(rule)));
+        Assert.Contains("resumes it when the next UTC day begins", failed(GuardRule.DailyLossLimit));
+        Assert.Contains("until you resume it", failed(GuardRule.DrawdownLimit));
+        Assert.All(
+            new[] { GuardRule.ModePermitted, GuardRule.MarketPermitted },
+            rule => Assert.Contains("the page of your keys", failed(rule), StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("on the page of its settings", failed(GuardRule.SymbolPermitted));
 
         // Each outcome and each verdict has a word of its own, and each action a description.
         Assert.Equal(["Holds", "Does not hold", "Not known", "Not asked"], Enum.GetValues<RuleOutcome>().Select(RiskCheckPages.Describe));

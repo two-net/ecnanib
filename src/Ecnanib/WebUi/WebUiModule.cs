@@ -9,6 +9,7 @@ using Ecnanib.Shared;
 using Ecnanib.WebUi.Exports;
 using Ecnanib.WebUi.Layout;
 using Ecnanib.WebUi.Live;
+using Ecnanib.WebUi.Pages;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
@@ -388,7 +389,7 @@ public static class WebUiModule
         // it does, and one second at the least: a session that stands is never said to have
         // ended, because a page that is told so asks for itself anew, which would be activity.
         return sessions.Of(request.User) is { } end
-            ? Results.Json(new SessionLeft(Math.Max(1, (int)end.Left.TotalSeconds), SessionPages.At(end.Left, end.At)))
+            ? Results.Json(new SessionLeft(Math.Max(1, (int)end.Left.TotalSeconds), SessionPages.At(end.Left, end.At, PageTimes.Of(request))))
             : Results.Json(new SessionLeft(0, null));
     }
 

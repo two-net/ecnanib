@@ -5,6 +5,8 @@
 @using Ecnanib.WebUi.Themes
 @inject IThemeChoice Choice
 @inject IMotionChoice MotionChoice
+@inject ITimeDisplayChoice TimeChoice
+@inject TimeProvider Clock
 @inject NavigationManager Navigation
 
 @*
@@ -20,6 +22,13 @@
     their device asks, or reduced (FR-ANI-4). That choice is saved to the account too, and each
     of the two is saved by itself. Nothing is stored for a visitor: their pages move as their
     device asks. See docs/motion.md.
+
+    Under that, in a third form, the user chooses the time zone that the pages write a time in:
+    the one of their device, or UTC (NFR-USA-3). The choice is saved to the account. Which time
+    zone a device is in is the device's to say: the form carries it, as the form of the sign-in
+    does, and saving "This device" keeps it on the device, so a device that changed its time
+    zone need not be signed in on again. The page says which time zone the device has said. See
+    docs/times.md.
 *@
 
 <PageTitle>@Screens.Appearance.Name</PageTitle>
@@ -49,9 +58,24 @@
     <button type="submit">@AppearancePages.SaveMotion</button>
 </form>
 
+<form method="post" @formname="@AppearancePages.TimeForm" @onsubmit="SaveTimeAsync">
+    <AntiforgeryToken />
+    <DeviceTimeZoneField />
+
+    <TimeChoices Chosen="@_display" />
+
+    @* What the device has said, which is what "This device" goes by. *@
+    <p>@(_deviceZone is null ? AppearancePages.DeviceSaysNone : AppearancePages.DeviceSays(_deviceZone, _deviceOffset))</p>
+
+    <button type="submit">@AppearancePages.SaveTime</button>
+</form>
+
 @code {
     private Theme _chosen;
     private Motion _moves;
+    private TimeDisplay _display;
+    private string? _deviceZone;
+    private string _deviceOffset = string.Empty;
     private string? _said;
 
     [CascadingParameter]
@@ -65,6 +89,14 @@
     [SupplyParameterFromForm(Name = AppearancePages.MotionField, FormName = AppearancePages.MotionForm)]
     private string? MotionEntry { get; set; }
 
+    /// <summary>Which time zone the pages write a time in, as the third form spells what was chosen.</summary>
+    [SupplyParameterFromForm(Name = AppearancePages.TimeField, FormName = AppearancePages.TimeForm)]
+    private string? TimeEntry { get; set; }
+
+    /// <summary>What the device says its time zone is, which that form carries, or nothing where no script wrote it.</summary>
+    [SupplyParameterFromForm(Name = DeviceTimeZone.Field, FormName = AppearancePages.TimeForm)]
+    private string? TimeZoneEntry { get; set; }
+
     protected override void OnInitialized()
     {
         // The theme of the account of the session, and how much of its pages moves, as this
@@ -73,6 +105,11 @@
         {
             _chosen = PageTheme.Of(request);
             _moves = PageMotion.Of(request);
+            _display = PageTimeZone.DisplayOf(request);
+
+            // What the device has said, whatever the account says: it is what "This device" goes by.
+            _deviceZone = DeviceTimeZone.NameOf(request.Request);
+            _deviceOffset = PageTimes.In(_deviceZone).OffsetAt(Clock.GetUtcNow());
         }
     }
 
@@ -119,6 +156,37 @@
 
         // The page as it is now, which says what was chosen to the stylesheet, as every page
         // does from then on.
+        Navigation.NavigateTo(WebUiModule.AppearancePath);
+    }
+
+    private async Task SaveTimeAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        if (PageTimeZone.OfWord(TimeEntry) is not { } display)
+        {
+            // A form that names no choice stores nothing, and comes back as it was.
+            _said = AppearancePages.ChooseTime;
+
+            return;
+        }
+
+        // The choice of the user of the session, and of no other: no form names a user.
+        await TimeChoice.SetAsync(request, display);
+
+        // Whoever chooses the device says which time zone it is in now, with the same form: a
+        // device that has moved is not signed in on again for it. A choice of UTC leaves what
+        // the device said as it is.
+        if (display == TimeDisplay.Device)
+        {
+            DeviceTimeZone.Keep(request.Response, TimeZoneEntry);
+        }
+
+        // The page as it is now, by a request that changes nothing: its times are in the time
+        // zone that was chosen, as those of every page are from then on.
         Navigation.NavigateTo(WebUiModule.AppearancePath);
     }
 }

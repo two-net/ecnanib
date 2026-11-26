@@ -50,6 +50,11 @@ namespace Ecnanib.Accounts;
 /// How much of the pages moves for the user on every device they sign in on: as the device asks,
 /// which is what a new account has, or reduced (FR-ANI-4). A preference, as the theme is.
 /// </param>
+/// <param name="timeDisplay">
+/// The time zone that the pages write a time in for the user on every device they sign in on:
+/// the one of the device, which is what a new account has, or UTC (NFR-USA-3). A preference, as
+/// the theme is. Which time zone a device is in is kept on the device, and not here.
+/// </param>
 /// <param name="decisionsReviewedAt">
 /// When the user said, on the setup checklist, that they reviewed what a team of theirs decided,
 /// or null while they have not (FR-UI-4). See <see cref="SetupMark.DecisionsReviewed"/>.
@@ -77,6 +82,7 @@ public sealed class User(
     DateTimeOffset? twoFactorLockedUntil,
     Theme theme,
     Motion motion,
+    TimeDisplay timeDisplay,
     DateTimeOffset? decisionsReviewedAt,
     DateTimeOffset? liveConsideredAt)
 {
@@ -116,6 +122,8 @@ public sealed class User(
 
     public Motion Motion { get; } = motion;
 
+    public TimeDisplay TimeDisplay { get; } = timeDisplay;
+
     public DateTimeOffset? DecisionsReviewedAt { get; } = decisionsReviewedAt;
 
     public DateTimeOffset? LiveConsideredAt { get; } = liveConsideredAt;
@@ -153,6 +161,10 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         // How much moves for the account, as the name of its member. No index, as the theme has none.
         builder.Property(user => user.Motion);
+
+        // Which time zone the pages write a time in for the account, as the name of its member.
+        // No index, as the theme has none.
+        builder.Property(user => user.TimeDisplay);
 
         // What the user said on the setup checklist, each with when. Empty for a new account,
         // and no index: they are read with the account, by its id.

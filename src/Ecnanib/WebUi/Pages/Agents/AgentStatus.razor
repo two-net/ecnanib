@@ -40,7 +40,8 @@
     and its notifications are those of now without a manual refresh. And two parts are written
     to it over its connection as they change: the steps of a cycle of the agent that runs, and
     its open position with the price that it is valued at. A page that answers a form asks for
-    itself again on nothing: what the form answered stays on it. See docs/live-updates.md.
+    itself again on nothing: what the form answered stays on it. See docs/live-updates.md. Its
+    texts are in AgentStatePages and AgentPages.
 
     It is the screen of the agent (FR-RPT-2, FR-UI-2): beside the state and the controls it shows
     the live team status, the current position and its protective orders, an equity curve, the
@@ -63,11 +64,11 @@
 
 @if (_agent is not null)
 {
-    <PageTitle>State of the agent @_agent.Name</PageTitle>
+    <PageTitle>@AgentStatePages.StateTitle(_agent.Name)</PageTitle>
 
-    <h1>State of the agent @_agent.Name</h1>
+    <h1>@AgentStatePages.StateTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> The agent trades <code>@_agent.Symbol</code> on @_agent.Market in @KeyPages.Describe(_agent.Mode).</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentStatePages.AgentTrades <code>@_agent.Symbol</code> @AgentStatePages.WhereItTrades(_agent.Market, _agent.Mode).</p>
 
     @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
     <LivePause Prices="true" />
@@ -86,26 +87,26 @@
                 }
             </ul>
 
-            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
         }
 
         @if (_keyBlocks || (_roles?.Any(role => AgentPages.IsAboutAKey(role.Problem)) ?? false))
         {
-            <p><a href="@WebUiModule.KeysPath">Your keys</a></p>
+            <p><a href="@WebUiModule.KeysPath">@AgentPages.KeysLink</a></p>
         }
     }
 
     @if (_notifications is { Count: > 0 })
     {
-        <h2 id="notifications-heading">Notifications</h2>
+        <h2 id="notifications-heading">@AgentStatePages.NotificationsHeading</h2>
 
-        <p>What the service has to tell you about this agent, latest first.</p>
+        <p>@AgentStatePages.NotificationsExplained</p>
 
         <ul class="agent-notifications" aria-labelledby="notifications-heading">
             @foreach (var notification in _notifications)
             {
                 <li data-key="@notification.Id">
-                    <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @PageTimes.At(notification.CreatedAt). @notification.Content</span>
+                    <span id="@NotificationPages.TextId(notification.Id)"><strong>@NotificationTypes.Describe(notification.Type)</strong>, @Times.At(notification.CreatedAt). @notification.Content</span>
 
                     <form method="post" @formname="@NotificationPages.MarkReadForm(notification.Id)" @onsubmit="() => MarkReadAsync(notification.Id)">
                         <AntiforgeryToken />
@@ -121,14 +122,14 @@
     }
 
     @* The state by its name, so that what moves shows a change of it as one (FR-ANI-3): see docs/motion.md. *@
-    <p data-change="@_agent.State">State: <strong>@AgentPages.Describe(_agent.State)</strong>, since @PageTimes.At(_agent.StateChangedAt). @AgentPages.Explain(_agent.State)</p>
+    <p data-change="@_agent.State">@AgentPages.StateLabel <strong>@AgentPages.Describe(_agent.State)</strong>, @AgentStatePages.Since(Times.At(_agent.StateChangedAt)). @AgentPages.Explain(_agent.State)</p>
 
     <p>@AgentPages.Says(_agent.StateCause)</p>
 
     @if (AgentStates.HaltEnds(_agent.State, _agent.StateCause, _agent.StateChangedAt) is { } ends)
     {
         @* A daily loss limit halts until the next UTC day (FR-RSK-8): the page says when that is. *@
-        <p>@AgentPages.HaltEnds(ends)</p>
+        <p>@AgentPages.HaltEnds(ends, Times)</p>
     }
 
     @* The team of the agent: who decides for it, and what each of them does now (FR-RPT-2, FR-ANI-1). *@
@@ -148,7 +149,7 @@
                  Team="@_team"
                  Since="@_since" />
 
-    <h2>Controls</h2>
+    <h2>@AgentStatePages.ControlsHeading</h2>
 
     @foreach (var control in Moves)
     {
@@ -180,7 +181,7 @@
 
     @if (_agent.HasOpenPosition)
     {
-        <p>The agent has an open position. You can close it at any time, at the market price, in whatever state the agent is.</p>
+        <p>@AgentStatePages.ClosePositionExplained</p>
 
         <p><a href="@WebUiModule.CloseAgentPositionPath(_agent.Id)">@AgentPages.ClosePositionNow</a></p>
     }
@@ -197,15 +198,15 @@
         <AgentDecisions AgentId="@_agent.Id" Decisions="@_decisions" />
     }
 
-    <h2>Mode</h2>
+    <h2>@AgentPages.ModeHeading</h2>
 
     @if (_agent.Mode == TradingMode.Demo)
     {
-        <p>In Demo the agent trades in Binance's test environment, and no money is at stake. In Live it trades in your real Binance account, with real money.</p>
+        <p>@AgentStatePages.ModesExplainedInDemo</p>
     }
     else
     {
-        <p>In Live the agent trades in your real Binance account, with real money. In Demo it trades in Binance's test environment, and no money is at stake.</p>
+        <p>@AgentStatePages.ModesExplainedInLive</p>
     }
 
     @if (!_agent.StructureCanChange)
@@ -214,36 +215,36 @@
     }
     else if (_agent.Mode == TradingMode.Demo)
     {
-        <p><a href="@WebUiModule.SwitchAgentToLivePath(_agent.Id)">Switch the agent to Live</a></p>
+        <p><a href="@WebUiModule.SwitchAgentToLivePath(_agent.Id)">@AgentPages.SwitchToLive</a></p>
     }
     else
     {
-        <p><a href="@WebUiModule.SwitchAgentToDemoPath(_agent.Id)">Switch the agent to Demo</a></p>
+        <p><a href="@WebUiModule.SwitchAgentToDemoPath(_agent.Id)">@AgentPages.SwitchToDemo</a></p>
     }
 
     @if (_history is not null)
     {
-        <h2 id="changes-heading">State changes</h2>
+        <h2 id="changes-heading">@AgentStatePages.ChangesHeading</h2>
 
         @if (_history.Total > _history.Changes.Count)
         {
-            <p>The latest @_history.Changes.Count of @_history.Total changes, latest first.</p>
+            <p>@AgentStatePages.LatestChanges(_history.Changes.Count, _history.Total)</p>
         }
         else
         {
-            <p>Every change of the agent's state, latest first.</p>
+            <p>@AgentStatePages.AllChanges</p>
         }
 
         @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
         <div class="agents agent-changes" role="region" aria-labelledby="changes-heading" tabindex="0">
             <table>
-                <caption>State changes</caption>
+                <caption>@AgentStatePages.ChangesHeading</caption>
                 <thead>
                     <tr>
-                        <th scope="col">When</th>
-                        <th scope="col">Mode</th>
-                        <th scope="col">State</th>
-                        <th scope="col">Why</th>
+                        <th scope="col">@AgentStatePages.WhenHeading</th>
+                        <th scope="col">@AgentPages.ModeHeading</th>
+                        <th scope="col">@AgentPages.StateHeading</th>
+                        <th scope="col">@AgentStatePages.WhyHeading</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -251,7 +252,7 @@
                     {
                         <tr data-key="@change.ChangedAt.UtcTicks">
                             @* The time names its row, as in the other tables. *@
-                            <th scope="row">@PageTimes.At(change.ChangedAt)</th>
+                            <th scope="row">@Times.At(change.ChangedAt)</th>
                             <td><ModeBadge Mode="@change.Mode" /></td>
                             <td>@AgentPages.Describe(change.State)</td>
                             <td>@AgentPages.Says(change.Cause)</td>
@@ -260,9 +261,14 @@
                 </tbody>
             </table>
         </div>
+
+        @* What each state of the table means, under it: a state is explained where it appears (NFR-USA-2). *@
+        <h3>@AgentPages.StatesHeading</h3>
+
+        <AgentStateMeanings States="@StatesOf(_history)" />
     }
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
 
     <p><a href="@WebUiModule.AgentPromptsPath(_agent.Id)">@AgentPages.PromptsLink</a></p>
 
@@ -276,10 +282,14 @@
 
     <p><a href="@WebUiModule.UsageOfAgentPath(_agent.Id)">@Ecnanib.WebUi.Pages.Usage.UsagePages.OfAgentLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@AgentPages.BackToAgents</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     // The controls that this page has a form for. Stopping has a page of its own.
     private static readonly AgentControl[] Moves = [AgentControl.Start, AgentControl.Pause, AgentControl.Resume];
 
@@ -289,6 +299,11 @@
         [LiveSubject.Agent, LiveSubject.Holdings, LiveSubject.Cycle, LiveSubject.Equity, LiveSubject.Notification];
 
     private long _since;
+
+    // The states that the changes of the table show, in the order that the states have: what
+    // each of them means is said under the table.
+    private static IReadOnlyList<AgentState> StatesOf(AgentStateHistory history) =>
+        [.. Enum.GetValues<AgentState>().Where(state => history.Changes.Any(change => change.State == state))];
 
     private AgentView? _agent;
     private AgentReport? _report;
@@ -410,7 +425,7 @@
 
             case AgentControlOutcome.HaltedForTheDay when result.HaltEnds is { } ends:
                 // Its daily loss limit halted the agent until the next UTC day (FR-RSK-8).
-                _refused = AgentPages.HaltedForTheDay(control, ends);
+                _refused = AgentPages.HaltedForTheDay(control, ends, Times);
                 break;
         }
 

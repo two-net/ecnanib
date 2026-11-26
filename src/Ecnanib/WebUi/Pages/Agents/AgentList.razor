@@ -17,14 +17,15 @@
     (FR-UI-3). What a user named an agent is written as text, like everything else on a page.
     The page follows what changes: when an agent of its user, what one holds, or a notification
     of theirs changes, it asks for itself again, so the states and the way to close a position
-    are those of now without a manual refresh (FR-NTF-2). See docs/live-updates.md.
+    are those of now without a manual refresh (FR-NTF-2). See docs/live-updates.md. Its texts
+    are in AgentPages.
 *@
 
-<PageTitle>Your agents</PageTitle>
+<PageTitle>@AgentPages.ListTitle</PageTitle>
 
-<h1 id="agents-heading">Your agents</h1>
+<h1 id="agents-heading">@AgentPages.ListTitle</h1>
 
-<p>An agent trades one symbol on one Binance market, on one timeframe, with the capital and the risk settings you give it. A new agent is a draft in Demo: it trades nothing until it is started. You start, pause, resume, and stop an agent on the page of its state, and switch it between Demo and Live there.</p>
+<p>@AgentPages.ListExplained</p>
 
 @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
 <LivePause />
@@ -38,24 +39,24 @@
 {
     @if (_list.Agents.Count == 0)
     {
-        <p>You have no agent yet.</p>
+        <p>@AgentPages.NoAgentYet</p>
     }
     else
     {
         @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
         <div class="agents" role="region" aria-labelledby="agents-heading" tabindex="0">
             <table>
-                <caption>Your agents</caption>
+                <caption>@AgentPages.ListTitle</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col">Mode</th>
-                        <th scope="col">Market</th>
-                        <th scope="col">Symbol</th>
-                        <th scope="col">Timeframe</th>
-                        <th scope="col">Capital</th>
-                        <th scope="col">State</th>
-                        <th scope="col">Actions</th>
+                        <th scope="col">@AgentPages.Label(AgentField.Name)</th>
+                        <th scope="col">@AgentPages.ModeHeading</th>
+                        <th scope="col">@AgentPages.Label(AgentField.Market)</th>
+                        <th scope="col">@AgentPages.Label(AgentField.Symbol)</th>
+                        <th scope="col">@AgentPages.Label(AgentField.Timeframe)</th>
+                        <th scope="col">@AgentPages.CapitalHeading</th>
+                        <th scope="col">@AgentPages.StateHeading</th>
+                        <th scope="col">@AgentPages.ActionsHeading</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -65,24 +66,24 @@
                         <tr data-key="@agent.Id" data-change="@agent.State">
                             <th scope="row"><a href="@WebUiModule.AgentPath(agent.Id)">@agent.Name</a></th>
                             <td><ModeBadge Mode="@agent.Mode" /></td>
-                            <td>@agent.Market</td>
+                            <td>@AgentPages.NameOf(agent.Market)</td>
                             <td><code>@agent.Symbol</code></td>
                             <td>@agent.Timeframe.Code()</td>
                             <td>@AgentPages.Capital(agent)</td>
                             <td>@AgentPages.Describe(agent.State)</td>
                             <td>
                                 @* Named after the agent, so that each control says what it is for by itself. *@
-                                <a href="@WebUiModule.AgentStatePath(agent.Id)">State of @agent.Name</a>
+                                <a href="@WebUiModule.AgentStatePath(agent.Id)">@AgentPages.StateOf(agent.Name)</a>
                                 @if (agent.HasOpenPosition)
                                 {
-                                    <a href="@WebUiModule.CloseAgentPositionPath(agent.Id)">@AgentPages.ClosePositionNow for @agent.Name</a>
+                                    <a href="@WebUiModule.CloseAgentPositionPath(agent.Id)">@AgentPages.ClosePositionNowFor(agent.Name)</a>
                                 }
                                 <form method="post" @formname="@AgentPages.CloneForm(agent.Id)" @onsubmit="() => CloneAsync(agent)">
                                     <AntiforgeryToken />
 
-                                    <button type="submit">Copy @agent.Name</button>
+                                    <button type="submit">@AgentPages.CopyOf(agent.Name)</button>
                                 </form>
-                                <a href="@WebUiModule.DeleteAgentPath(agent.Id)">Delete @agent.Name</a>
+                                <a href="@WebUiModule.DeleteAgentPath(agent.Id)">@AgentPages.DeleteOf(agent.Name)</a>
                             </td>
                         </tr>
                     }
@@ -90,18 +91,12 @@
             </table>
         </div>
 
-        <h2>What the states mean</h2>
+        <h2>@AgentPages.StatesHeading</h2>
 
-        <dl class="agent-states">
-            @foreach (var state in Enum.GetValues<AgentState>())
-            {
-                <dt>@AgentPages.Describe(state)</dt>
-                <dd>@AgentPages.Explain(state)</dd>
-            }
-        </dl>
+        <AgentStateMeanings />
     }
 
-    <p>You have @_list.Agents.Count of @_list.MaxAgents agents.</p>
+    <p>@AgentPages.Counted(_list.Agents.Count, _list.MaxAgents)</p>
 
     @if (AgentPages.Says(_list.Creation, _list.MaxAgents) is { } notNow)
     {
@@ -109,7 +104,7 @@
     }
     else
     {
-        <p><a href="@WebUiModule.NewAgentPath">Create an agent</a></p>
+        <p><a href="@WebUiModule.NewAgentPath">@AgentPages.CreateLink</a></p>
     }
 
     <LiveUpdates Follows="@Followed" Since="@_since" />

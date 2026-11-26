@@ -5,6 +5,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.LiveUpdates;
 using Ecnanib.Shared;
+using Ecnanib.WebUi.Pages;
 
 namespace Ecnanib.WebUi.Live;
 
@@ -52,6 +53,11 @@ public enum LiveShows
 /// The roles of the team of the agent, each with the model that it was given, for a page that
 /// shows the team at work (FR-ANI-1). What each role does is asked of the cycles that run.
 /// </param>
+/// <param name="TimeZone">
+/// The time zone that the page writes its times in, by its name, or null for UTC (NFR-USA-3):
+/// the parts that are written over the connection say a time as the page does. See
+/// <see cref="PageTimes.ZoneId"/>.
+/// </param>
 /// <remarks>
 /// It travels with the page, sealed by the framework, to the connection that the page makes,
 /// so it holds what can be written as text and read again.
@@ -67,7 +73,8 @@ public sealed record LiveView(
     long Since,
     string Address,
     bool Values = false,
-    IReadOnlyList<LiveRole>? Team = null)
+    IReadOnlyList<LiveRole>? Team = null,
+    string? TimeZone = null)
 {
     /// <summary>
     /// What a page follows, as the request that writes the page makes it. A page that answers
@@ -118,7 +125,8 @@ public sealed record LiveView(
             since,
             request.Path.ToUriComponent() + request.QueryString.ToUriComponent(),
             asked && values,
-            team);
+            team,
+            PageTimes.Of(request.HttpContext).ZoneId);
     }
 }
 

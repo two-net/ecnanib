@@ -63,6 +63,11 @@ public static class AccountsModule
         // is (FR-ANI-4). A request reads it with its session: see SessionAuthentication.MotionClaimType.
         services.AddSingleton<IMotionChoice, StoredMotionChoice>();
 
+        // Which time zone the pages write a time in for a user, which is stored with the account
+        // as the theme is (NFR-USA-3). A request reads it with its session: see
+        // SessionAuthentication.TimeDisplayClaimType.
+        services.AddSingleton<ITimeDisplayChoice, StoredTimeDisplayChoice>();
+
         // What a user said on the setup checklist of a first-time user, which is stored with the
         // account (FR-UI-4). Only the dashboard reads it, so it is read there and not with the
         // session.

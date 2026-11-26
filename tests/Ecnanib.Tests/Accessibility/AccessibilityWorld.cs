@@ -153,7 +153,13 @@ internal sealed class AccessibilityWorld : IDisposable
     /// that open for them. The other browser of the user with two-factor authentication gives
     /// the password, and stays at the page that asks for the code.
     /// </summary>
-    public async Task EnterAsync(Who who, IVisit visit)
+    /// <param name="who">The person.</param>
+    /// <param name="visit">Their browser.</param>
+    /// <param name="timeZone">
+    /// What the device of the person says its time zone is as they sign in, or null for a device
+    /// that says none, whose pages are in UTC (NFR-USA-3).
+    /// </param>
+    public async Task EnterAsync(Who who, IVisit visit, string? timeZone = null)
     {
         var email = who switch
         {
@@ -173,7 +179,16 @@ internal sealed class AccessibilityWorld : IDisposable
         Assert.True(_clock is not null, $"Nobody signs in where registration is closed: a state of that application is of a visitor, and not of {who}.");
 
         await visit.OpenAsync(SessionAuthentication.SignInPath);
-        await visit.SubmitAsync("sign-in", ("Email", email), ("Password", AccountsApplication.Password));
+
+        // The script of the times writes what the device says into the form. Here the test does.
+        if (timeZone is null)
+        {
+            await visit.SubmitAsync("sign-in", ("Email", email), ("Password", AccountsApplication.Password));
+        }
+        else
+        {
+            await visit.SubmitAsync("sign-in", ("Email", email), ("Password", AccountsApplication.Password), ("TimeZone", timeZone));
+        }
 
         var arrives = who == Who.AtTheCode ? SessionAuthentication.SignInCodePath : WebUiModule.HomePath;
 

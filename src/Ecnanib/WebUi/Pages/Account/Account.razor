@@ -7,52 +7,54 @@
 @inject ITwoFactor TwoFactorAuthentication
 @inject IEmailOptIn EmailOptIn
 
-<PageTitle>Your account</PageTitle>
+@* The page of the account itself: what is set for it, with the way to each of its settings. Its texts are in AccountPages. *@
 
-<h1>Your account</h1>
+<PageTitle>@AccountPages.Title</PageTitle>
 
-<p>You are signed in as @HttpContext?.User.Identity?.Name.</p>
+<h1>@AccountPages.Title</h1>
 
-<h2>Two-factor authentication</h2>
+<p>@AccountPages.SignedInAs(HttpContext?.User.Identity?.Name)</p>
+
+<h2>@AccountPages.TwoFactorHeading</h2>
 
 @if (_twoFactor is { IsOn: true })
 {
-    <p>On. Signing in takes a code from your authenticator app after your password. You have @_twoFactor.RecoveryCodesLeft of @TwoFactorRules.RecoveryCodeCount recovery codes left.</p>
+    <p>@AccountPages.TwoFactorOn(_twoFactor.RecoveryCodesLeft, TwoFactorRules.RecoveryCodeCount)</p>
 
-    <p><a href="/account/two-factor">Manage two-factor authentication</a></p>
+    <p><a href="/account/two-factor">@AccountPages.ManageTwoFactorLink</a></p>
 }
 else
 {
-    <p>Off. Signing in takes your password alone.</p>
+    <p>@AccountPages.TwoFactorOff</p>
 
-    <p><a href="/account/two-factor">Turn on two-factor authentication</a></p>
+    <p><a href="/account/two-factor">@AccountPages.TurnOnTwoFactorLink</a></p>
 }
 
-<h2>API keys</h2>
+<h2>@AccountPages.KeysHeading</h2>
 
-<p>Your agents work with your own keys of the AI providers and of Binance. A key is stored encrypted, and after saving you see only its last four characters.</p>
+<p>@AccountPages.KeysExplained</p>
 
-<p><a href="@WebUiModule.KeysPath">Manage your API keys</a></p>
+<p><a href="@WebUiModule.KeysPath">@AccountPages.KeysLink</a></p>
 
-<h2>Notifications</h2>
+<h2>@AccountPages.NotificationsHeading</h2>
 
-<p>The service tells you what matters about your agents and your keys on the page of your <a href="@WebUiModule.NotificationsPath">notifications</a>.</p>
+<p>@AccountPages.NotificationsExplained <a href="@WebUiModule.NotificationsPath">@AccountPages.NotificationsLink</a>.</p>
 
 @* A preference that is stored: whether the user is sent email for critical events (FR-NTF-3). It is chosen on a page of its own. *@
 @if (_emailOn)
 {
-    <p>Email for critical events: on. Your choice is stored with your account, and is in a download.</p>
+    <p>@AccountPages.EmailOn</p>
 
-    <p><a href="@WebUiModule.NotificationEmailPath">Manage email for critical events</a></p>
+    <p><a href="@WebUiModule.NotificationEmailPath">@AccountPages.ManageEmailLink</a></p>
 }
 else
 {
-    <p>Email for critical events: off. Your choice is stored with your account, and is in a download.</p>
+    <p>@AccountPages.EmailOff</p>
 
-    <p><a href="@WebUiModule.NotificationEmailPath">Turn on email for critical events</a></p>
+    <p><a href="@WebUiModule.NotificationEmailPath">@AccountPages.TurnOnEmailLink</a></p>
 }
 
-<h2>Appearance</h2>
+<h2>@AccountPages.AppearanceHeading</h2>
 
 @* Another preference that is stored: the theme of the account (FR-THM-3). It is chosen on a page of its own. *@
 <p>@AppearancePages.Stored(_theme)</p>
@@ -60,17 +62,20 @@ else
 @* And how much of the pages moves (FR-ANI-4), which is chosen on the same page. *@
 <p>@AppearancePages.Stored(_motion)</p>
 
-<p><a href="@WebUiModule.AppearancePath">Choose how the pages look</a></p>
+@* And the time zone that the pages write a time in (NFR-USA-3), which is chosen there too. *@
+<p>@AppearancePages.Stored(_display)</p>
 
-<h2>Your data</h2>
+<p><a href="@WebUiModule.AppearancePath">@AccountPages.AppearanceLink</a></p>
 
-<p>What is stored about you is your email address, when you registered and verified it, the legal documents you accepted, the devices you are signed in on, the security-relevant actions of your account, which keys you stored, and what the service told you. Your password is stored only as a hash, and a key only encrypted: neither is in a download, which names a key by its last four characters.</p>
+<h2>@AccountPages.DataHeading</h2>
+
+<p>@AccountPages.DataExplained</p>
 
 @* The other preference that is stored: whether the user left the board (FR-EXP-10). It is chosen on the board itself. *@
-<p>The closed trades of your agents are counted on the <a href="@WebUiModule.BoardPath">platform-wide board</a>, which adds up the results of all users and names none of them. You can leave the board there. Whether you left it is stored with your account, and is in a download.</p>
+<p>@AccountPages.BoardCounts <a href="@WebUiModule.BoardPath">@AccountPages.BoardLink</a>, @AccountPages.BoardExplained</p>
 
 @* Marked as a download, so that the browser asks for the file once and does not try to show it as a page. *@
-<p><a href="@WebUiModule.ExportPath" download>Download your data</a></p>
+<p><a href="@WebUiModule.ExportPath" download>@AccountPages.DownloadLink</a></p>
 
 @* What the agents of the user traded and decided is not in that download: it is two files of its own (FR-RPT-4). *@
 <p>@ExportFiles.Explained</p>
@@ -79,17 +84,18 @@ else
 
 <p><a href="@WebUiModule.DecisionsExportPath" download>@ExportFiles.DecisionsLink</a></p>
 
-<h2>Delete your account</h2>
+<h2>@AccountPages.DeleteTitle</h2>
 
-<p>Deleting your account removes it and everything that belongs to it, for good. You are asked to confirm that it is you first.</p>
+<p>@AccountPages.DeleteExplained</p>
 
-<p><a href="@WebUiModule.DeleteAccountPath">Delete your account</a></p>
+<p><a href="@WebUiModule.DeleteAccountPath">@AccountPages.DeleteTitle</a></p>
 
 @code {
     private TwoFactorState? _twoFactor;
     private bool _emailOn;
     private Theme _theme;
     private Motion _motion;
+    private TimeDisplay _display;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -105,6 +111,7 @@ else
             // told them when it was signed in.
             _theme = PageTheme.Of(request);
             _motion = PageMotion.Of(request);
+            _display = PageTimeZone.DisplayOf(request);
         }
     }
 }

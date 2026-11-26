@@ -191,5 +191,5 @@ What a run finds is written beside the tests as they were built, to `tests/Ecnan
 - A team at work that is read out less: a screen reader reads a role when it changes, and the step of the cycle with it.
 - The key that sends a form from a field of the editor of an agent presses the first button of the form, as a browser does, which shows the symbols of the market and stores nothing. The button that saves is reached by the keyboard as every button is.
 - A part of the strengths of a role that a screen reader names once: the section and the table that scrolls in it have one name.
-- A time as an element that says its moment to a browser, and times in the time zone of the user (NFR-USA-3).
+- A time as an element that says its moment to a browser, `<time datetime>`. A time is words, in the time zone of the page, with how far that is from UTC: see [times.md](times.md).
 - A notice before a session ends for a page without the script, and a notice before what a user proved again runs out.

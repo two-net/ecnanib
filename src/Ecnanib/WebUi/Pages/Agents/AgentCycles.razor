@@ -21,16 +21,17 @@
     under the heading, and each cycle says the mode it ran in (FR-UI-3, FR-BIN-11). The page
     follows what changes (FR-NTF-2): a cycle that runs says its steps here as it comes to them,
     over the connection of the page, and when a cycle is recorded the page asks for itself
-    again, so the cycle is on the list without a manual refresh. See docs/live-updates.md.
+    again, so the cycle is on the list without a manual refresh. See docs/live-updates.md. Its
+    texts are in CyclePages.
 *@
 
 @if (_agent is not null && _history is not null)
 {
-    <PageTitle>Cycles of the agent @_agent.Name</PageTitle>
+    <PageTitle>@CyclePages.TitleOf(_agent.Name)</PageTitle>
 
-    <h1 id="cycles-heading">Cycles of the agent @_agent.Name</h1>
+    <h1 id="cycles-heading">@CyclePages.TitleOf(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@CyclePages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
     <LivePause />
@@ -50,33 +51,33 @@
     {
         @if (_history.Total > _history.Cycles.Count)
         {
-            <p>The latest @_history.Cycles.Count of @_history.Total cycles, latest first.</p>
+            <p>@CyclePages.LatestListed(_history.Cycles.Count, _history.Total)</p>
         }
         else
         {
-            <p>Every cycle of the agent, latest first.</p>
+            <p>@CyclePages.EveryListed</p>
         }
 
         @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
         <div class="agents agent-cycles" role="region" aria-labelledby="cycles-heading" tabindex="0">
             <table>
-                <caption>The cycles of the agent</caption>
+                <caption>@CyclePages.ListCaption</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Candle close</th>
-                        <th scope="col">Kind</th>
-                        <th scope="col">Mode</th>
-                        <th scope="col">Outcome</th>
-                        <th scope="col">What it means</th>
-                        <th scope="col">Took</th>
-                        <th scope="col">Record</th>
+                        <th scope="col">@CyclePages.CandleCloseHeading</th>
+                        <th scope="col">@CyclePages.KindHeading</th>
+                        <th scope="col">@CyclePages.ModeHeading</th>
+                        <th scope="col">@CyclePages.OutcomeHeading</th>
+                        <th scope="col">@CyclePages.MeaningHeading</th>
+                        <th scope="col">@CyclePages.TookHeading</th>
+                        <th scope="col">@CyclePages.RecordHeading</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var cycle in _history.Cycles)
                     {
                         <tr data-key="@cycle.Id">
-                            <th scope="row">@PageTimes.At(cycle.ClosedAt)</th>
+                            <th scope="row">@Times.At(cycle.ClosedAt)</th>
                             <td><span class="cycle-kind cycle-kind-@(cycle.Kind.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Kind)</span></td>
                             <td><ModeBadge Mode="@cycle.Mode" /></td>
                             <td><span class="cycle-outcome cycle-@(cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Outcome)</span></td>
@@ -90,16 +91,20 @@
         </div>
     }
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@CyclePages.StateLink</a></p>
 
     <p><a href="@WebUiModule.AgentRiskChecksPath(_agent.Id)">@RiskCheckPages.Link</a></p>
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@CyclePages.SettingsLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@CyclePages.BackToAgents</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     // What the page asks for itself again on: a cycle that is recorded, the agent, whose mode
     // the badge says, and the count in the bar.
     private static readonly LiveSubject[] Followed = [LiveSubject.Cycle, LiveSubject.Agent, LiveSubject.Notification];

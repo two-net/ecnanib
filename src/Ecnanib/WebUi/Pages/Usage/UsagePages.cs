@@ -11,50 +11,110 @@ namespace Ecnanib.WebUi.Pages.Usage;
 public static class UsagePages
 {
     /// <summary>The heading of the page, and the text of the link in the bar at the top of every page.</summary>
-    public const string Title = "AI usage";
+    public static string Title => "AI usage";
 
     /// <summary>The text of the link that leads from a page of an agent to its usage.</summary>
-    public const string OfAgentLink = "AI usage of the agent";
+    public static string OfAgentLink => "AI usage of the agent";
 
     /// <summary>The text of the link that leads from the usage of one agent to that of every agent.</summary>
-    public const string OfEveryAgentLink = "AI usage of all your agents";
+    public static string OfEveryAgentLink => "AI usage of all your agents";
 
     /// <summary>The text of the link that leads from the usage of a key to the usage by day.</summary>
-    public const string ByDayLink = "AI usage by day, agent, and provider";
+    public static string ByDayLink => "AI usage by day, agent, and provider";
 
     /// <summary>
     /// What is written in place of a figure that is not known: the tokens of calls that no
     /// provider counted, and the cost of tokens that have no price. Nothing is guessed, and
     /// nothing is left blank or written as zero: either would read as "none".
     /// </summary>
-    public const string Unknown = "Unknown";
+    public static string Unknown => "Unknown";
 
     /// <summary>What the page shows, and whose account the calls are charged to (FR-RPT-3).</summary>
-    public const string Explained =
+    public static string Explained =>
         "These are the calls that the roles of your agents made to AI models: how many there were, how many tokens their " +
         "providers counted for them, and what that is estimated to cost. " +
         "Every call is made with your own key, and is charged to your own account with its provider.";
 
     /// <summary>Which calls are counted, and which are not.</summary>
-    public const string Counted =
+    public static string Counted =>
         "Every call that was made is counted, in a test cycle as in any other, and in Demo as in Live: a provider charges " +
         "the same for each. The calls that write lessons are not recorded, and are not counted here. A day is a UTC day.";
 
     /// <summary>What "Not counted" says, and what the tokens are of.</summary>
-    public const string NotCountedExplained =
+    public static string NotCountedExplained =>
         "\"Not counted\" is how many of the calls their provider counted no tokens for, because the call timed out or failed. " +
         "A provider may charge for such a call all the same. The tokens and the estimated cost are of the other calls.";
 
     /// <summary>What the estimated cost is, and what it is not (FR-CAT-11).</summary>
-    public const string CostExplained =
+    public static string CostExplained =>
         "The cost is an estimate, in US dollars: the tokens at the price of each model, as this service is told that price " +
         "now. Where a model has no price here the cost is \"Unknown\", which is not the same as nothing. " +
         "What a provider charges for live searches is not in it. What you are charged is on your account with the provider.";
 
     /// <summary>That nothing of the usage is kept apart from the calls.</summary>
-    public const string Follows =
+    public static string Follows =>
         "The usage is worked out from the recorded calls, each time it is shown. When an agent is deleted, its calls go " +
         "with it, and so does its usage.";
+
+    /// <summary>The heading of the filter of the usage.</summary>
+    public static string FilterHeading => "Which calls are counted";
+
+    /// <summary>The name of the choice of an agent, in the filter.</summary>
+    public static string AgentLabel => "Agent";
+
+    /// <summary>The choice of the filter that names no agent: the page then shows the usage of every agent.</summary>
+    public static string AllAgents => "All your agents";
+
+    /// <summary>The name of the choice of a period, in the filter.</summary>
+    public static string PeriodLabel => "Period";
+
+    /// <summary>The button that sends the filter: the page then shows what was chosen.</summary>
+    public static string Show => "Show";
+
+    /// <summary>The heading of the usage of each provider.</summary>
+    public static string ByProviderHeading => "By provider";
+
+    /// <summary>The name of the table of the usage of each provider.</summary>
+    public static string ProvidersCaption => "The AI usage of each provider";
+
+    /// <summary>The heading of the usage of each day, agent, and provider.</summary>
+    public static string ByDayHeading => "By day, agent, and provider";
+
+    /// <summary>The name of the table of the usage of each day, agent, and provider.</summary>
+    public static string DaysCaption => "The AI usage of each day, agent, and provider";
+
+    /// <summary>The heading of the column of the UTC day that some calls were made on.</summary>
+    public static string DayHeading => "Day";
+
+    /// <summary>The heading of how many calls were made.</summary>
+    public static string CallsHeading => "Calls";
+
+    /// <summary>The heading of how many of the calls their provider counted no tokens for.</summary>
+    public static string NotCountedHeading => "Not counted";
+
+    /// <summary>The heading of the tokens that went into the models.</summary>
+    public static string TokensInHeading => "Tokens in";
+
+    /// <summary>The heading of the tokens that came out of the models.</summary>
+    public static string TokensOutHeading => "Tokens out";
+
+    /// <summary>The heading of how many live searches the models ran.</summary>
+    public static string LiveSearchesHeading => "Live searches";
+
+    /// <summary>The heading of what the tokens are estimated to cost.</summary>
+    public static string CostHeading => "Estimated cost";
+
+    /// <summary>The name of an agent that was deleted since its calls were read: a cell never says nothing.</summary>
+    public static string DeletedAgent => "An agent that was deleted";
+
+    /// <summary>The text of the link that leads from the usage of one agent to the page of its state.</summary>
+    public static string AgentStateLink => "State of the agent";
+
+    /// <summary>The text of the link that leads from the page to the API keys.</summary>
+    public static string KeysLink => "Your API keys";
+
+    /// <summary>The text of the link that leads from the page to the agents.</summary>
+    public static string AgentsLink => "Your agents";
 
     /// <summary>The heading of the page of the usage of one agent.</summary>
     public static string TitleOf(string agentName) => $"AI usage of {agentName}";
@@ -71,7 +131,7 @@ public static class UsagePages
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(filter);
 
-        return $"The last {Whole(filter.Days)} days: from {PageTimes.Day(view.From)} until now.";
+        return $"The last {Whole(filter.Days)} days: from {PageTimes.UtcDay(view.From)} until now.";
     }
 
     /// <summary>What the page says in place of its tables when no call was made.</summary>

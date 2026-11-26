@@ -7,51 +7,51 @@
 @*
     Rendered on the server for each request, and never interactive: the code travels in a form
     post. The form is on the page whenever one is posted, so that a form which is posted from a
-    page left open is answered.
+    page left open is answered. Its texts are in TwoFactorPages.
 *@
 
-<PageTitle>New recovery codes</PageTitle>
+<PageTitle>@TwoFactorPages.NewCodesTitle</PageTitle>
 
-<h1>New recovery codes</h1>
+<h1>@TwoFactorPages.NewCodesTitle</h1>
 
 @if (_recoveryCodes.Count > 0)
 {
-    <p class="form-done" role="status">Your recovery codes were replaced. The earlier ones no longer work.</p>
+    <p class="form-done" role="status">@TwoFactorPages.CodesReplaced</p>
 
     <RecoveryCodeList Codes="_recoveryCodes" />
 
-    <p><a href="/account/two-factor">Back to two-factor authentication</a></p>
+    <p><a href="/account/two-factor">@TwoFactorPages.BackLink</a></p>
 }
 else
 {
-    <p>This makes @TwoFactorRules.RecoveryCodeCount new recovery codes. The ones you have now stop working, used or not.</p>
+    <p>@TwoFactorPages.MakesNewCodes(TwoFactorRules.RecoveryCodeCount)</p>
 
     @if (_outcome is TwoFactorChangeOutcome.CodesRefused)
     {
-        <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+        <p class="form-error" role="alert">@AccountPages.CodesRefused((int)TwoFactorRules.RefusedFor.TotalMinutes)</p>
     }
 
     <form method="post" @formname="new-recovery-codes" @onsubmit="ReplaceAsync">
         <AntiforgeryToken />
 
         <div class="field">
-            <label for="code">Code from your authenticator app</label>
+            <label for="code">@AccountPages.CodeLabel</label>
             @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
             <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
                    aria-invalid="@PageFields.Invalid(_outcome is TwoFactorChangeOutcome.WrongCode)"
                    aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("code", _outcome is TwoFactorChangeOutcome.WrongCode), "code-hint")"
                    autofocus="@(_outcome is TwoFactorChangeOutcome.WrongCode)" />
-            <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+            <p id="code-hint" class="field-hint">@AccountPages.CodeHint</p>
             @if (_outcome is TwoFactorChangeOutcome.WrongCode)
             {
-                <p id="code-error" class="field-error">That code is not right. A code from the app works once, for about half a minute.</p>
+                <p id="code-error" class="field-error">@AccountPages.CodeNotRight</p>
             }
         </div>
 
-        <button type="submit">Make new recovery codes</button>
+        <button type="submit">@TwoFactorPages.MakeNewCodes</button>
     </form>
 
-    <p><a href="/account/two-factor">Keep the ones you have</a></p>
+    <p><a href="/account/two-factor">@TwoFactorPages.KeepCodesLink</a></p>
 }
 
 @code {

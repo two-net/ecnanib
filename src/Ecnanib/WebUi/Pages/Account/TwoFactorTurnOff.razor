@@ -7,41 +7,41 @@
 @*
     Rendered on the server for each request, and never interactive: the code travels in a form
     post. The form is on the page whatever the account says, so that a form which is posted from a
-    page left open is answered.
+    page left open is answered. Its texts are in TwoFactorPages.
 *@
 
-<PageTitle>Turn off two-factor authentication</PageTitle>
+<PageTitle>@TwoFactorPages.TurnOffTitle</PageTitle>
 
-<h1>Turn off two-factor authentication</h1>
+<h1>@TwoFactorPages.TurnOffTitle</h1>
 
-<p>After this, signing in takes your password alone, and your recovery codes stop working. You can turn it on again at any time, which is also how to move to another phone.</p>
+<p>@TwoFactorPages.TurnOffExplained</p>
 
 @if (_outcome is TwoFactorChangeOutcome.CodesRefused)
 {
-    <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+    <p class="form-error" role="alert">@AccountPages.CodesRefused((int)TwoFactorRules.RefusedFor.TotalMinutes)</p>
 }
 
 <form method="post" @formname="turn-off" @onsubmit="TurnOffAsync">
     <AntiforgeryToken />
 
     <div class="field">
-        <label for="code">Code from your authenticator app</label>
+        <label for="code">@AccountPages.CodeLabel</label>
         @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
         <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
                aria-invalid="@PageFields.Invalid(_outcome is TwoFactorChangeOutcome.WrongCode)"
                aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("code", _outcome is TwoFactorChangeOutcome.WrongCode), "code-hint")"
                autofocus="@(_outcome is TwoFactorChangeOutcome.WrongCode)" />
-        <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+        <p id="code-hint" class="field-hint">@AccountPages.CodeHint</p>
         @if (_outcome is TwoFactorChangeOutcome.WrongCode)
         {
-            <p id="code-error" class="field-error">That code is not right. A code from the app works once, for about half a minute.</p>
+            <p id="code-error" class="field-error">@AccountPages.CodeNotRight</p>
         }
     </div>
 
-    <button type="submit">Turn off two-factor authentication</button>
+    <button type="submit">@TwoFactorPages.TurnOff</button>
 </form>
 
-<p><a href="/account/two-factor">Keep it on</a></p>
+<p><a href="/account/two-factor">@TwoFactorPages.KeepOnLink</a></p>
 
 @code {
     private TwoFactorChangeOutcome? _outcome;

@@ -75,6 +75,7 @@ public interface IExportedPart
 /// <param name="TwoFactor">Where the account stands with two-factor authentication.</param>
 /// <param name="Theme">How the pages look to the user: a preference, which is stored with the account (FR-THM-3).</param>
 /// <param name="Motion">How much of the pages moves for the user: a preference, which is stored with the account (FR-ANI-4).</param>
+/// <param name="TimeDisplay">Which time zone the pages write a time in for the user: a preference, which is stored with the account (NFR-USA-3).</param>
 /// <param name="DecisionsReviewedAt">When the user said, on the setup checklist, that they reviewed decisions, or null while they have not (FR-UI-4).</param>
 /// <param name="LiveConsideredAt">When the user said there that they considered Live, or first switched an agent to Live, or null while they did neither.</param>
 public sealed record ExportedAccount(
@@ -85,6 +86,7 @@ public sealed record ExportedAccount(
     ExportedTwoFactor TwoFactor,
     Theme Theme,
     Motion Motion,
+    TimeDisplay TimeDisplay,
     DateTimeOffset? DecisionsReviewedAt,
     DateTimeOffset? LiveConsideredAt);
 

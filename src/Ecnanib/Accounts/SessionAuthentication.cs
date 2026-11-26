@@ -63,6 +63,13 @@ public static class SessionAuthentication
     public const string MotionClaimType = "ecnanib:motion";
 
     /// <summary>
+    /// The claim that says which time zone the pages write a time in for the user of a request:
+    /// what their account says, by the name of its member (NFR-USA-3). It is read with the
+    /// session on every request, as the theme is.
+    /// </summary>
+    public const string TimeDisplayClaimType = "ecnanib:time-display";
+
+    /// <summary>
     /// The path that a page asks at how long the session of its user has left, before it says
     /// that the session is about to end (NFR-USA-1). A request there is made by the page
     /// itself, and is no activity of its user. See <see cref="ISessionEnd"/>.
@@ -200,6 +207,9 @@ internal sealed class SessionAuthenticationHandler(
 
                 // And how much of them moves. See SignedInUser.MotionOf.
                 new Claim(SessionAuthentication.MotionClaimType, user.Motion.ToString()),
+
+                // And which time zone they write a time in. See SignedInUser.TimeDisplayOf.
+                new Claim(SessionAuthentication.TimeDisplayClaimType, user.TimeDisplay.ToString()),
 
                 // When the session ends if nothing more is done with it, for the page that
                 // says so shortly before. See SignedInUser.SessionEndsOf.

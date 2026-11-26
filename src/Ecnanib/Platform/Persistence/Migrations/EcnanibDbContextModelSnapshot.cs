@@ -237,6 +237,11 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("theme");
 
+                    b.Property<string>("TimeDisplay")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("time_display");
+
                     b.Property<DateTimeOffset?>("TwoFactorEnabledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("two_factor_enabled_at");

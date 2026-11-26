@@ -10,6 +10,7 @@ using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Experience;
 using Ecnanib.Tests.Logging;
 using Ecnanib.WebUi.Live;
+using Ecnanib.WebUi.Pages;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
@@ -1083,6 +1084,46 @@ public class LiveFeedTests
 
         // A page that hands over no team has none, as before.
         Assert.Null(LiveView.Of(request, agentId: null, [], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 7).Team);
+    }
+
+    [Fact]
+    public void The_time_zone_of_a_page_travels_to_its_connection_so_that_its_parts_say_a_time_as_the_page_does()
+    {
+        // A page whose device has said a time zone, in the cookie that the server keeps it in
+        // (NFR-USA-3). The parts that are written over the connection of the page have no
+        // request to ask, so the page says its time zone to them, by its name.
+        var zoned = new DefaultHttpContext().Request;
+        zoned.Method = "GET";
+        zoned.Path = "/dashboard";
+        zoned.Headers.Cookie = "__Host-ecnanib-time-zone=Asia%2FKolkata";
+
+        var view = LiveView.Of(zoned, agentId: null, [LiveSubject.Agent], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 7);
+
+        Assert.Equal("Asia/Kolkata", view.TimeZone);
+
+        // It is text, which is read again as the same time zone on the other side.
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var read = JsonSerializer.Deserialize<LiveView>(JsonSerializer.Serialize(view, options), options);
+
+        Assert.NotNull(read);
+        Assert.Equal("Asia/Kolkata", read.TimeZone);
+
+        var moment = new DateTimeOffset(2026, 11, 24, 9, 0, 7, TimeSpan.Zero);
+
+        Assert.Equal("24 November 2026, 14:30:07 UTC+5:30", PageTimes.In(read.TimeZone).AtSecond(moment));
+
+        // A page in UTC says none, and its parts are in UTC: a device that has said no time
+        // zone, and one whose cookie names none.
+        var plain = new DefaultHttpContext().Request;
+        plain.Method = "GET";
+        plain.Path = "/dashboard";
+
+        Assert.Null(LiveView.Of(plain, agentId: null, [], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 7).TimeZone);
+
+        plain.Headers.Cookie = "__Host-ecnanib-time-zone=..%2Fetc%2Fpasswd";
+
+        Assert.Null(LiveView.Of(plain, agentId: null, [], LiveShows.None, market: null, mode: null, symbol: null, quoteAsset: null, since: 7).TimeZone);
+        Assert.Equal("24 November 2026, 09:00:07 UTC", PageTimes.In(null).AtSecond(moment));
     }
 
     /// <summary>

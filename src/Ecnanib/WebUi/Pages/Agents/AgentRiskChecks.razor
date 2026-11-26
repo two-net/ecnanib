@@ -19,15 +19,16 @@
     (FR-RSK-3). An outcome is said as words, and does not rely on a colour. The badge of the mode
     is under the heading, and each check says the mode it was made in (FR-UI-3, FR-BIN-11). A
     check of a test cycle says that it is one: whatever its verdict, it led to no order (FR-CYC-12).
+    Its texts are in RiskCheckPages.
 *@
 
 @if (_agent is not null && _history is not null)
 {
-    <PageTitle>Risk checks of the agent @_agent.Name</PageTitle>
+    <PageTitle>@RiskCheckPages.TitleOf(_agent.Name)</PageTitle>
 
-    <h1>Risk checks of the agent @_agent.Name</h1>
+    <h1>@RiskCheckPages.TitleOf(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@RiskCheckPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     <p>@RiskCheckPages.Explained</p>
 
@@ -39,11 +40,11 @@
     }
     else if (_history.Total > _history.Checks.Count)
     {
-        <p>The latest @_history.Checks.Count of @_history.Total checks, latest first.</p>
+        <p>@RiskCheckPages.LatestListed(_history.Checks.Count, _history.Total)</p>
     }
     else
     {
-        <p>Every check of the agent's plans, latest first.</p>
+        <p>@RiskCheckPages.EveryListed</p>
     }
 
     @for (var index = 0; index < _history.Checks.Count; index++)
@@ -51,11 +52,10 @@
         var check = _history.Checks[index];
         var heading = $"check-{index + 1}-heading";
 
-        <h2 id="@heading">@PageTimes.At(check.ClosedAt): @RiskCheckPages.Describe(check.Action)</h2>
+        <h2 id="@heading">@Times.At(check.ClosedAt): @RiskCheckPages.Describe(check.Action)</h2>
 
         <p>
-            <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>, in <ModeBadge Mode="@check.Mode" />, for the
-            candle that closed at @PageTimes.At(check.ClosedAt)@(check.Kind == CycleKind.Test ? ", in a test cycle" : string.Empty).
+            <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>, @RiskCheckPages.MadeIn <ModeBadge Mode="@check.Mode" />, @RiskCheckPages.ForCandle(Times.At(check.ClosedAt), check.Kind).
             @RiskCheckPages.Explain(check)
         </p>
 
@@ -68,14 +68,18 @@
 
     <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@RiskCheckPages.StateLink</a></p>
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@RiskCheckPages.SettingsLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@RiskCheckPages.BackToAgents</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private AgentView? _agent;
     private RiskCheckHistory? _history;
 

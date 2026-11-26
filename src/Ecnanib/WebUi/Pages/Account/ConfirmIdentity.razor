@@ -10,29 +10,29 @@
     Where a signed-in user proves again who they are, before a sensitive action. Rendered on the
     server for each request, and never interactive: the password and the code travel in a form
     post. The form is on the page whatever the account says, so that a form which is posted from a
-    page left open is answered.
+    page left open is answered. Its texts are in SignInPages.
 *@
 
-<PageTitle>Confirm that it is you</PageTitle>
+<PageTitle>@SignInPages.ConfirmTitle</PageTitle>
 
-<h1>Confirm that it is you</h1>
+<h1>@SignInPages.ConfirmTitle</h1>
 
-<p>Adding or replacing a key, switching an agent to Live, and deleting your account are done only after you have confirmed that it is you. It then holds for @((int)ReauthenticationRules.HoldsFor.TotalMinutes) minutes, on this browser.</p>
+<p>@SignInPages.ConfirmExplained((int)ReauthenticationRules.HoldsFor.TotalMinutes)</p>
 
 @if (_outcome is ReauthenticationOutcome.CodesRefused)
 {
-    <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes.</p>
+    <p class="form-error" role="alert">@AccountPages.CodesRefused((int)TwoFactorRules.RefusedFor.TotalMinutes)</p>
 }
 @if (_outcome is ReauthenticationOutcome.TooManyAttempts)
 {
-    <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
+    <p class="form-error" role="alert">@AccountPages.TooManyAttempts(Limits.SignIn.Minutes)</p>
 }
 
 <form method="post" @formname="confirm-identity" @onsubmit="ConfirmAsync">
     <AntiforgeryToken />
 
     <div class="field">
-        <label for="password">Your password</label>
+        <label for="password">@AccountPages.YourPasswordLabel</label>
         @* The password is never written back into the page. *@
         <input id="password" name="Password" type="password" autocomplete="current-password" required
                aria-invalid="@PageFields.Invalid(PasswordRefused)"
@@ -40,28 +40,28 @@
                autofocus="@PasswordRefused" />
         @if (PasswordRefused)
         {
-            <p id="password-error" class="field-error">That is not your password.@(_asksForCode ? " The code was used up by this try: enter your password with the next code that the app shows, or with another recovery code." : string.Empty)</p>
+            <p id="password-error" class="field-error">@SignInPages.NotYourPassword(_asksForCode)</p>
         }
     </div>
 
     @if (_asksForCode)
     {
         <div class="field">
-            <label for="code">Code from your authenticator app</label>
+            <label for="code">@AccountPages.CodeLabel</label>
             @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
             <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
                    aria-invalid="@PageFields.Invalid(CodeRefused)"
                    aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("code", CodeRefused), "code-hint")"
                    autofocus="@CodeRefused" />
-            <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+            <p id="code-hint" class="field-hint">@AccountPages.CodeHint</p>
             @if (CodeRefused)
             {
-                <p id="code-error" class="field-error">That code is not right. A code from the app works once, for about half a minute.</p>
+                <p id="code-error" class="field-error">@AccountPages.CodeNotRight</p>
             }
         </div>
     }
 
-    <button type="submit">Confirm</button>
+    <button type="submit">@SignInPages.Confirm</button>
 </form>
 
 @code {

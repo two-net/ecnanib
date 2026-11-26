@@ -3,6 +3,8 @@
 @using Ecnanib.Accounts
 @using Ecnanib.Agents
 @using Ecnanib.DecisionEngine
+@using Ecnanib.WebUi.Pages.Catalog
+@using Ecnanib.WebUi.Pages.Dashboard
 @inject IAiUsage Usage
 @inject IStoredAgents Agents
 @inject NavigationManager Navigation
@@ -17,7 +19,7 @@
     the address names: the choices are in the address, and an address that names a choice which
     there is not is answered with "not found". Demo and Live are added up here, and the page
     says so: a provider charges a key the same in each, so the page has no badge of a mode
-    (FR-BIN-11). The days are UTC days.
+    (FR-BIN-11). The days are UTC days. Its texts are in UsagePages.
 *@
 
 @if (_view is not null && _filter is not null)
@@ -32,14 +34,14 @@
 
     <p>@UsagePages.Counted</p>
 
-    <h2 id="usage-filter-heading">Which calls are counted</h2>
+    <h2 id="usage-filter-heading">@UsagePages.FilterHeading</h2>
 
     @* The page is not interactive, so the form is sent with its button, and by an address. *@
     <form method="get" action="@WebUiModule.UsagePath" class="experience-filter" aria-labelledby="usage-filter-heading">
         <div class="field">
-            <label for="usage-agent">Agent</label>
+            <label for="usage-agent">@UsagePages.AgentLabel</label>
             <select id="usage-agent" name="@WebUiModule.UsageAgentKey">
-                <option value="">All your agents</option>
+                <option value="">@UsagePages.AllAgents</option>
                 @foreach (var agent in _agents)
                 {
                     <option value="@agent.Id" selected="@(_filter.AgentId == agent.Id)">@agent.Name</option>
@@ -48,7 +50,7 @@
         </div>
 
         <div class="field">
-            <label for="usage-period">Period</label>
+            <label for="usage-period">@UsagePages.PeriodLabel</label>
             <select id="usage-period" name="@WebUiModule.UsagePeriodKey">
                 @foreach (var period in Enum.GetValues<UsagePeriod>())
                 {
@@ -57,7 +59,7 @@
             </select>
         </div>
 
-        <button type="submit">Show</button>
+        <button type="submit">@UsagePages.Show</button>
     </form>
 
     <p>@UsagePages.PeriodExplained(_view, _filter)</p>
@@ -68,15 +70,15 @@
     }
     else
     {
-        <h2 id="usage-providers">By provider</h2>
+        <h2 id="usage-providers">@UsagePages.ByProviderHeading</h2>
 
         @* The table is wider than a narrow screen, so it scrolls by itself, also by keyboard. *@
         <div class="track-records" role="region" aria-labelledby="usage-providers" tabindex="0">
             <table>
-                <caption>The AI usage of each provider</caption>
+                <caption>@UsagePages.ProvidersCaption</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Provider</th>
+                        <th scope="col">@CatalogPages.ProviderHeading</th>
                         <UsageHeadings />
                     </tr>
                 </thead>
@@ -92,16 +94,16 @@
             </table>
         </div>
 
-        <h2 id="usage-days">By day, agent, and provider</h2>
+        <h2 id="usage-days">@UsagePages.ByDayHeading</h2>
 
         <div class="track-records" role="region" aria-labelledby="usage-days" tabindex="0">
             <table>
-                <caption>The AI usage of each day, agent, and provider</caption>
+                <caption>@UsagePages.DaysCaption</caption>
                 <thead>
                     <tr>
-                        <th scope="col">Day</th>
-                        <th scope="col">Agent</th>
-                        <th scope="col">Provider</th>
+                        <th scope="col">@UsagePages.DayHeading</th>
+                        <th scope="col">@DashboardPages.AgentHeading</th>
+                        <th scope="col">@CatalogPages.ProviderHeading</th>
                         <UsageHeadings />
                     </tr>
                 </thead>
@@ -109,7 +111,7 @@
                     @foreach (var day in _days)
                     {
                         <tr>
-                            <th scope="row">@PageTimes.Day(day.Day)</th>
+                            <th scope="row">@PageTimes.UtcDay(day.Day)</th>
 
                             @* The agent by the name that its user gave it, which leads to its usage alone. *@
                             <td><a href="@UsagePages.Path(_filter with { AgentId = day.AgentId })">@NameOf(day.AgentId)</a></td>
@@ -130,14 +132,14 @@
 
     @if (_agent is not null)
     {
-        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@UsagePages.AgentStateLink</a></p>
 
         <p><a href="@UsagePages.Path(_filter with { AgentId = null })">@UsagePages.OfEveryAgentLink</a></p>
     }
 
-    <p><a href="@WebUiModule.KeysPath">Your API keys</a></p>
+    <p><a href="@WebUiModule.KeysPath">@UsagePages.KeysLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@UsagePages.AgentsLink</a></p>
 }
 
 @code {
@@ -201,5 +203,5 @@
     }
 
     // The calls of an agent go with it, so every call has an agent that is listed.
-    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : "An agent that was deleted";
+    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : UsagePages.DeletedAgent;
 }

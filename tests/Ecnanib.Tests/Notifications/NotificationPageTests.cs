@@ -61,9 +61,9 @@ public class NotificationPageTests
 
         // Each with what it is about, when it was raised, whether it is read, and what it says:
         // the newest first.
-        Assert.Contains($"<strong>Agent halted</strong>, {PageTimes.At(Morning.AddMinutes(3))}. Read.", page);
-        Assert.Contains($"<strong>Key invalid</strong>, {PageTimes.At(Morning.AddMinutes(2))}. Not read.", page);
-        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.At(Morning.AddMinutes(1))}. Not read.", page);
+        Assert.Contains($"<strong>Agent halted</strong>, {PageTimes.Utc.At(Morning.AddMinutes(3))}. Read.", page);
+        Assert.Contains($"<strong>Key invalid</strong>, {PageTimes.Utc.At(Morning.AddMinutes(2))}. Not read.", page);
+        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.Utc.At(Morning.AddMinutes(1))}. Not read.", page);
         Assert.True(page.IndexOf("The agent was halted.", StringComparison.Ordinal) < page.IndexOf("What happened", StringComparison.Ordinal));
         Assert.True(page.IndexOf("What happened", StringComparison.Ordinal) < page.IndexOf("The first thing", StringComparison.Ordinal));
 
@@ -102,7 +102,7 @@ public class NotificationPageTests
         var page = AgentBrowser.Read(await client.PageAsync(Page));
 
         Assert.Contains("2 notifications, 1 not read, newest first.", page);
-        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.At(Morning.AddMinutes(1))}. Read.", page);
+        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.Utc.At(Morning.AddMinutes(1))}. Read.", page);
 
         // It stays on the page, and has no form any more: sent again, its form is the form of no page.
         Assert.Contains("The first thing that happened.", page);

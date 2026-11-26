@@ -935,6 +935,19 @@ internal static class Browser
         client.SubmitAsync(page, "sign-in", ("Email", email), ("Password", password));
 
     /// <summary>
+    /// Signs in as a browser does whose script wrote the time zone of its device into the form
+    /// (NFR-USA-3), and follows where the answer leads. A sign-in with <see cref="SignInAsync"/>
+    /// says no time zone, as a browser without the script does, and its pages are in UTC.
+    /// </summary>
+    /// <param name="client">The browser.</param>
+    /// <param name="email">The address to sign in with.</param>
+    /// <param name="timeZone">What the device says its time zone is.</param>
+    /// <param name="password">The password to sign in with.</param>
+    public static Task<(string Path, string Page)> SignInFromAsync(
+        this HttpClient client, string email, string timeZone, string password = AccountsApplication.Password) =>
+        client.SubmitAsync(SessionAuthentication.SignInPath, "sign-in", ("Email", email), ("Password", password), ("TimeZone", timeZone));
+
+    /// <summary>
     /// What a request carries in its <c>Accept</c> header when a page asks for an address
     /// without leaving the page that it is, as the framework says it.
     /// </summary>

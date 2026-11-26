@@ -12,7 +12,7 @@
     No user is sent such an email until they choose so here. One form at a time, named for what
     it does: the other is the form of no page until the choice is made. The choice exposes no key
     and moves no money, so the page asks for no proof of identity. An address that is not
-    verified is sent nothing, and the page says so.
+    verified is sent nothing, and the page says so. Its texts are in NotificationPages.
 *@
 
 @if (_state is not null)
@@ -23,7 +23,7 @@
 
     <p>@NotificationPages.EmailExplained</p>
 
-    <p id="critical-heading">The critical events are:</p>
+    <p id="critical-heading">@NotificationPages.CriticalEvents</p>
 
     <ul aria-labelledby="critical-heading">
         @foreach (var kind in Critical)
@@ -65,9 +65,9 @@
         </form>
     }
 
-    <p><a href="@WebUiModule.NotificationsPath">Your notifications</a></p>
+    <p><a href="@WebUiModule.NotificationsPath">@NotificationPages.NotificationsLink</a></p>
 
-    <p><a href="/account">Back to your account</a></p>
+    <p><a href="/account">@AccountPages.BackToAccount</a></p>
 }
 
 @code {

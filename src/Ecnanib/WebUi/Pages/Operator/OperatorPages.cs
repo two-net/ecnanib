@@ -8,15 +8,15 @@ namespace Ecnanib.WebUi.Pages.Operator;
 public static class OperatorPages
 {
     /// <summary>Whom the screen is for.</summary>
-    public const string ForOperators =
+    public static string ForOperators =>
         "This screen is for operators: the users whose email addresses the configuration file lists.";
 
     /// <summary>What the screen is to show, and does not yet.</summary>
-    public const string NotBuiltYet =
+    public static string NotBuiltYet =>
         "What it is to show is not built yet: the health of the scheduler, the depth of the queue, the last catalog sync of " +
         "each provider, the use of the request limits of Binance, the drift of the clock, the sizes of the tables, and the " +
         "rates of errors.";
 
     /// <summary>What the screen holds for now, which is what makes it safe to have before the rest.</summary>
-    public const string OnlyShows = "It shows nothing of any user, and nothing can be done on it.";
+    public static string OnlyShows => "It shows nothing of any user, and nothing can be done on it.";
 }

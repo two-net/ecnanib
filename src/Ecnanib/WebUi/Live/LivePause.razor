@@ -21,12 +21,16 @@
 @if (_paused is { } paused && HttpContext is { } request)
 {
     <p class="live-pause">
-        <span role="status">@(paused ? LivePages.PausedAt(Clock.GetUtcNow()) : LivePages.Follows)@(paused && Prices ? $" {LivePages.PausedPrices}" : string.Empty)</span>
+        <span role="status">@(paused ? LivePages.PausedAt(Clock.GetUtcNow(), Times) : LivePages.Follows)@(paused && Prices ? $" {LivePages.PausedPrices}" : string.Empty)</span>
         <a href="@LivePages.AddressOf(request.Request, !paused)">@(paused ? LivePages.Resume : LivePages.Pause)</a>
     </p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private bool? _paused;
 
     /// <summary>

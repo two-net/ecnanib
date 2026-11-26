@@ -7,42 +7,48 @@
 
 @*
     Rendered on the server for each request, and never interactive: the password travels in a form
-    post, and not over the connection that an interactive page keeps open.
+    post, and not over the connection that an interactive page keeps open. Its texts are in
+    SignInPages.
+
+    The form carries the time zone of the device, which the script of the times writes into it
+    (NFR-USA-3). When the password was right, the page keeps it on the device, so the pages
+    that follow say a time as their user reads the clock. See docs/times.md.
 *@
 
-<PageTitle>Sign in</PageTitle>
+<PageTitle>@SignInPages.Title</PageTitle>
 
-<h1>Sign in</h1>
+<h1>@SignInPages.Title</h1>
 
 @if (_failed)
 {
     @* One answer whatever was wrong, so that it does not tell whether an address has an account. *@
-    <p class="form-error" role="alert">The email address or the password is not right.</p>
+    <p class="form-error" role="alert">@SignInPages.NotRight</p>
 }
 @if (_tooManyAttempts)
 {
     @* The same whatever the password was, and whether or not the address has an account. *@
-    <p class="form-error" role="alert">Too many attempts. Try again in up to @Limits.SignIn.Minutes minutes.</p>
+    <p class="form-error" role="alert">@AccountPages.TooManyAttempts(Limits.SignIn.Minutes)</p>
 }
 
 <form method="post" @formname="sign-in" @onsubmit="SignInAsync">
     <AntiforgeryToken />
+    <DeviceTimeZoneField />
 
     <div class="field">
-        <label for="email">Email address</label>
+        <label for="email">@AccountPages.EmailLabel</label>
         <input id="email" name="Email" type="email" autocomplete="username" required value="@Email" />
     </div>
 
     <div class="field">
-        <label for="password">Password</label>
+        <label for="password">@AccountPages.PasswordLabel</label>
         @* The password is never written back into the page. *@
         <input id="password" name="Password" type="password" autocomplete="current-password" required />
     </div>
 
-    <button type="submit">Sign in</button>
+    <button type="submit">@SignInPages.SignIn</button>
 </form>
 
-<p><a href="/forgot-password">Forgot your password?</a></p>
+<p><a href="/forgot-password">@PasswordPages.ForgotTitle</a></p>
 
 @code {
     private bool _failed;
@@ -56,6 +62,10 @@
 
     [SupplyParameterFromForm]
     private string? Password { get; set; }
+
+    /// <summary>What the device says its time zone is, or nothing where no script wrote it.</summary>
+    [SupplyParameterFromForm(Name = DeviceTimeZone.Field)]
+    private string? TimeZoneEntry { get; set; }
 
     // The form posts to the address of the page, so this is in the query both times.
     [SupplyParameterFromQuery(Name = SessionAuthentication.ReturnUrlParameter)]
@@ -85,12 +95,16 @@
         switch (await SigningIn.SignInAsync(HttpContext, Email ?? string.Empty, Password ?? string.Empty))
         {
             case SignInOutcome.SignedIn:
+                // The device of whoever knew the password says where its user reads the clock.
+                DeviceTimeZone.Keep(HttpContext.Response, TimeZoneEntry);
                 Navigation.NavigateTo(Destination);
                 break;
 
             case SignInOutcome.CodeNeeded:
                 // The account has two-factor authentication. Nobody is signed in yet: the next
-                // page takes the code, and then leads where this one would have.
+                // page takes the code, and then leads where this one would have. The password
+                // was right, so what the device says is kept here: the next form has no field for it.
+                DeviceTimeZone.Keep(HttpContext.Response, TimeZoneEntry);
                 Navigation.NavigateTo(SessionAuthentication.PageWith(SessionAuthentication.SignInCodePath, ReturnUrl));
                 break;
 

@@ -1,0 +1,24 @@
+@using Ecnanib.Agents
+
+@*
+    What the states of an agent mean, as a list (NFR-USA-2): each state by its word, with what
+    it means beside it. A page that shows the states of several agents, or of one agent over
+    time, writes the list under them, so that a state is explained where it appears. A page
+    that shows one state says what it means beside the state itself. The page gives the list
+    its heading, at the level that the page has there. Its texts are in AgentPages, and its
+    look in app.css.
+*@
+
+<dl class="agent-states">
+    @foreach (var state in States)
+    {
+        <dt>@AgentPages.Describe(state)</dt>
+        <dd>@AgentPages.Explain(state)</dd>
+    }
+</dl>
+
+@code {
+    /// <summary>The states that the list explains, in their order. Every state, where a page says none.</summary>
+    [Parameter]
+    public IReadOnlyList<AgentState> States { get; set; } = Enum.GetValues<AgentState>();
+}

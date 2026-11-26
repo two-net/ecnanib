@@ -151,6 +151,22 @@ public class AgentControlTests
             ],
             ChangesOn(AgentBrowser.Read(stopped)));
 
+        // What each state of the table means is said under it (NFR-USA-2): the four that the
+        // changes show, and none that they do not show.
+        var meanings = AgentBrowser.Read(stopped);
+
+        Assert.Contains("<h3>What the states mean</h3>", meanings);
+        Assert.All(
+            new[] { AgentState.Draft, AgentState.Running, AgentState.Paused, AgentState.Stopped },
+            state =>
+            {
+                Assert.Contains($"<dt>{AgentPages.Describe(state)}</dt>", meanings);
+                Assert.Contains($"<dd>{AgentPages.Explain(state)}</dd>", meanings);
+            });
+        Assert.All(
+            new[] { AgentState.Halted, AgentState.AttentionRequired },
+            state => Assert.DoesNotContain($"<dt>{AgentPages.Describe(state)}</dt>", meanings));
+
         // The audit trail has what the user did to the state of the agent, by the id of the
         // agent, with the time and where the request came from (NFR-LOG-7). Creating it is none.
         var events = StoredAuditEvent.All(application.Database)

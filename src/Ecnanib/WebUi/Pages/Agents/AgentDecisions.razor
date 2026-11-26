@@ -31,10 +31,10 @@
         @foreach (var cycle in Decisions)
         {
             <article class="decision" aria-labelledby="@AgentReportPages.Id(cycle, "heading")" data-key="@cycle.Id">
-                <h3 id="@AgentReportPages.Id(cycle, "heading")">@AgentReportPages.DecisionOf(cycle)</h3>
+                <h3 id="@AgentReportPages.Id(cycle, "heading")">@AgentReportPages.DecisionOf(cycle, Times)</h3>
 
                 <p>
-                    In @AgentReportPages.ModeOf(cycle.Mode). Outcome:
+                    @AgentReportPages.InMode(cycle.Mode). @CyclePages.OutcomeLabel
                     <strong class="cycle-outcome cycle-@(cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(cycle.Outcome)</strong>.
                     @CyclePages.Explain(cycle.Outcome, cycle.Kind)
                 </p>
@@ -43,7 +43,7 @@
                 {
                     <h4>@CyclePages.Title(call)</h4>
 
-                    <p>@AgentPages.Describe(call.Role).Job Model: @CyclePages.Model(call).</p>
+                    <p>@AgentPages.Describe(call.Role).Job @CyclePages.CalledWith(call)</p>
 
                     <RoleCallAnswer Call="@call" />
                 }
@@ -52,7 +52,7 @@
                 {
                     var heading = AgentReportPages.Id(cycle, $"check-{check.Sequence}-heading");
 
-                    <h4 id="@heading">Risk Guard: @RiskCheckPages.Describe(check.Action)</h4>
+                    <h4 id="@heading">@CyclePages.CheckHeading(check.Action)</h4>
 
                     <p>
                         <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>.
@@ -76,7 +76,7 @@
                         {
                             <li>
                                 <strong>@CyclePages.Describe(order.Purpose)</strong>. @CyclePages.Says(order)
-                                <span class="order-status">@CyclePages.Describe(order.Status)</span>, as it is now.
+                                <span class="order-status">@CyclePages.Describe(order.Status)</span>, @CyclePages.AsItIsNow.
                                 @CyclePages.Became(order)
                             </li>
                         }
@@ -92,6 +92,10 @@
 </section>
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     /// <summary>The agent whose decisions they are, which the links to its cycles name.</summary>
     [Parameter, EditorRequired]
     public Guid AgentId { get; set; }

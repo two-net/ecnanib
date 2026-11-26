@@ -11,7 +11,7 @@
     (FR-ANI-4), and nothing otherwise: the stylesheet then gives what moves to a device that
     does not ask for reduced motion. See docs/motion.md.
 *@
-<html lang="en" data-theme="@PageTheme.AttributeOf(Theme)" data-motion="@PageMotion.AttributeOf(Motion)">
+<html lang="@Screens.Language" data-theme="@PageTheme.AttributeOf(Theme)" data-motion="@PageMotion.AttributeOf(Motion)">
 
 <head>
     <meta charset="utf-8" />
@@ -28,13 +28,19 @@
 </head>
 
 <body>
-    <Routes />
+    @*
+        The times of the page, which every page and every part of one is handed: each time is
+        written in the time zone of the page (NFR-USA-3). See docs/times.md.
+    *@
+    <CascadingValue Value="@Times" IsFixed="true">
+        <Routes />
+    </CascadingValue>
     <ReconnectModal />
     @* What a page of a user says shortly before its session ends, and nothing for a visitor (NFR-USA-1). *@
     <SessionNotice />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     @*
-        The first of the two scripts of the application itself, for what moves and a stylesheet
+        The first of the three scripts of the application itself, for what moves and a stylesheet
         cannot do alone (FR-ANI-2 to FR-ANI-6). It is a file of this site, which the policy of
         the answer lets a browser run, and it starts once the page is read. A page works without
         it. See docs/motion.md.
@@ -46,6 +52,13 @@
         too, and its session then ends as it always did. See docs/accounts.md.
     *@
     <script type="module" src="@Assets["session.js"]"></script>
+    @*
+        The third, for the time zone of the device (NFR-USA-3): it writes what the browser says
+        its time zone is into the field of a form that asks for it, as the form of the sign-in
+        does. It asks the server nothing and keeps nothing: the server writes every time. A page
+        works without it too, and its times are then in UTC. See docs/times.md.
+    *@
+    <script type="module" src="@Assets["times.js"]"></script>
 </body>
 
 </html>
@@ -66,4 +79,7 @@
 
     /// <summary>How much of the page moves.</summary>
     private Motion Motion => HttpContext is null ? Motion.System : PageMotion.Of(HttpContext);
+
+    /// <summary>The times that the page writes a time in: those of the time zone of its request.</summary>
+    private PageTimes Times => HttpContext is null ? PageTimes.Utc : PageTimes.Of(HttpContext);
 }

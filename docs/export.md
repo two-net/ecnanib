@@ -91,7 +91,7 @@ A file is for a program to read, and for a person in a spreadsheet. `CsvText` is
 | **It is CSV as programs read it.** | A first line with the names of the columns, a comma between two cells, and a carriage return and a line feed at the end of each line. A cell that holds a comma, a quote, or the end of a line stands in quotes, and a quote in it is written twice. |
 | **It is UTF-8, and says so at its start.** | With the byte-order mark, so that a spreadsheet reads a name in any script right. The content type is `text/csv; charset=utf-8`. |
 | **A number has every digit that it has.** | With a point, no sign for thousands, no zeros after the last digit, and no word beside it: the asset is a column of its own. It is the same wherever the file is written and opened. |
-| **A time is in UTC, to the second, and says so:** `2026-11-24T09:00:00Z`. | The time zone of the user is not used: see "Not built yet". |
+| **A time is in UTC, to the second, and says so:** `2026-11-24T09:00:00Z`. | The time zone of the user is not used (NFR-USA-3): a file is the same wherever it is opened, and a program reads it. See "What stays UTC" in [times.md](times.md). |
 | **A member of a fixed set is its name.** | `Demo`, `StopLoss`, `Approved`: the names that the database stores, and not the words of a page. A timeframe is its code. |
 | **What is not known is an empty cell,** and never a nought. | A result that is not recorded yet, a price that no order says, a role that was not called. |
 | **No cell is a formula.** | A spreadsheet works out a cell that starts with `=`, `+`, `-`, or `@`, and skips a tab or the end of a line before one. A name that a user typed, or an answer that a model wrote, may start so. Such a cell is given an apostrophe before it, which a spreadsheet shows as text. A number is written by the service and is given none, so a loss keeps its sign. |
@@ -153,6 +153,5 @@ No test opens a file in a spreadsheet. By hand:
 - Every rule of a check, with what it measured and what it was held to. A decision names the rules that its plan did not pass, and the page of the risk checks shows them all.
 - The equity of an agent over time, the scored calls of its analysts, and the shadow trades of its vetoed plans. The screens show them: see [agent-screen.md](agent-screen.md) and [experience.md](experience.md).
 - The tokens and the time of each call. The page of the AI usage adds them up (FR-RPT-3): see "AI usage" in [team.md](team.md).
-- Times in the time zone of the user (NFR-USA-3). A file is in UTC, and says so.
 - A limit to how often a user asks for a file.
 - Retention: decision records are kept 365 days (NFR-DAT-5), and nothing deletes yet, so a file holds every cycle that was ever recorded.

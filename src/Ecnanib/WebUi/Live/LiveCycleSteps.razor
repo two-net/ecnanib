@@ -34,7 +34,7 @@
         {
             <h2>@(cycle.EndedAt is null ? LivePages.Running(cycle.Kind) : LivePages.Ended(cycle.Kind))</h2>
 
-            <p>@(cycle.EndedAt is { } endedAt ? LivePages.EndedFor(cycle, endedAt) : LivePages.RunningFor(cycle))</p>
+            <p>@(cycle.EndedAt is { } endedAt ? LivePages.EndedFor(cycle, endedAt, Times) : LivePages.RunningFor(cycle, Times))</p>
 
             <ol class="cycle-steps">
                 @for (var step = 0; step < cycle.Steps.Count; step++)
@@ -43,7 +43,7 @@
 
                     @if (step == cycle.Steps.Count - 1 && cycle.EndedAt is null)
                     {
-                        <li class="cycle-step cycle-step-now">@LivePages.Describe(reached.Step): <strong>@LivePages.StepNow(reached.At)</strong></li>
+                        <li class="cycle-step cycle-step-now">@LivePages.Describe(reached.Step): <strong>@LivePages.StepNow(reached.At, Times)</strong></li>
                     }
                     else
                     {
@@ -56,6 +56,14 @@
 }
 
 @code {
+    /// <summary>
+    /// The times of the page, which every time is written in (NFR-USA-3). The part is written
+    /// over the connection of its page, where nothing is handed down from the page: so the
+    /// page hands them to it. See docs/times.md.
+    /// </summary>
+    [Parameter]
+    public PageTimes Times { get; set; } = PageTimes.Utc;
+
     // What the part says when no cycle is there to show: the team at rest, once.
     private static readonly IReadOnlyList<RunningCycle?> Rest = [null];
 

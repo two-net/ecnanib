@@ -62,16 +62,20 @@
         </div>
     </dl>
 
-    <p class="figures-valued">@AgentReportPages.Valued(Equity) @AgentReportPages.ReturnExplained(Equity)</p>
+    <p class="figures-valued">@AgentReportPages.Valued(Equity, Times) @AgentReportPages.ReturnExplained(Equity)</p>
 
     <p class="figures-counted">@AgentReportPages.Counted(Figures, Equity.Mode)</p>
 
-    <p class="figures-drawdown">@AgentReportPages.DrawdownExplained(Report.Curve.LargestDrawdown, Equity.Asset)</p>
+    <p class="figures-drawdown">@AgentReportPages.DrawdownExplained(Report.Curve.LargestDrawdown, Equity.Asset, Times)</p>
 
     <p class="figures-costs">@AgentReportPages.CostsExplained(Figures)</p>
 </section>
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     /// <summary>How the agent has performed.</summary>
     [Parameter, EditorRequired]
     public AgentReport Report { get; set; } = null!;

@@ -49,7 +49,7 @@
     /// A stage after the first, which says whether the work was handed to it: its role has
     /// left waiting. The line into it is drawn through then.
     /// </summary>
-    private string StageOf(Role role) => StateOf(role) == RoleState.Waiting ? "pipeline-stage" : "pipeline-stage stage-handed";
+    private string StageOf(Role role) => LivePages.StageClassOf(handed: StateOf(role) != RoleState.Waiting);
 
     /// <summary>
     /// A role as a card: its name, its model with the provider, and what it does now. When that

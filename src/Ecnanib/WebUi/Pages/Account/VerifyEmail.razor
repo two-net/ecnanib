@@ -4,27 +4,28 @@
 
 @*
     Opening the link only shows this page. The address is verified when the button is pressed,
-    so that a mail scanner that opens every link in a message verifies nothing.
+    so that a mail scanner that opens every link in a message verifies nothing. Its texts are in
+    RegistrationPages.
 *@
 
-<PageTitle>Confirm your email address</PageTitle>
+<PageTitle>@RegistrationPages.VerifyTitle</PageTitle>
 
 <HeadContent>
     @* The address of this page holds the token, so it is not passed on to a page that is linked from here. *@
     <meta name="referrer" content="no-referrer" />
 </HeadContent>
 
-<h1>Confirm your email address</h1>
+<h1>@RegistrationPages.VerifyTitle</h1>
 
 @if (_outcome is EmailVerificationOutcome.Verified)
 {
-    <p class="form-done" role="status">Your email address is confirmed.</p>
-    <p><a href="@SessionAuthentication.SignInPath">Sign in</a></p>
+    <p class="form-done" role="status">@RegistrationPages.Confirmed</p>
+    <p><a href="@SessionAuthentication.SignInPath">@AccountPages.SignInLink</a></p>
 }
 else if (_outcome is EmailVerificationOutcome.LinkNotValid || string.IsNullOrEmpty(Token))
 {
-    <p class="form-error" role="alert">This link does not work any more. It may have been used, replaced by a later one, or be older than @((int)EmailVerification.LinkLifetime.TotalHours) hours.</p>
-    <p><a href="/register">Register again</a> to get a new link.</p>
+    <p class="form-error" role="alert">@RegistrationPages.LinkNotValid((int)EmailVerification.LinkLifetime.TotalHours)</p>
+    <p><a href="/register">@RegistrationPages.RegisterAgain</a> @RegistrationPages.GetNewLink</p>
 }
 else
 {
@@ -33,34 +34,34 @@ else
 
         @if (_outcome is null)
         {
-            <p>Confirm that this email address is yours to finish registering.</p>
+            <p>@RegistrationPages.ConfirmToFinish</p>
         }
         else
         {
             @* The link of an address that was registered again: whoever reads its mail chooses the password. *@
-            <p>This address was registered more than once before it was confirmed. Choose the password of your account now. A password chosen earlier stops working.</p>
+            <p>@RegistrationPages.RegisteredAgain</p>
 
             <div class="field">
-                <label for="password">Password</label>
+                <label for="password">@AccountPages.PasswordLabel</label>
                 @* The password is never written back into the page. *@
                 <input id="password" name="Password" type="password" autocomplete="new-password" required
                        minlength="@PasswordRules.MinimumLength"
                        aria-invalid="@PageFields.Invalid(PasswordRefused)"
                        aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("password", PasswordRefused), "password-hint")"
                        autofocus="@PasswordRefused" />
-                <p id="password-hint" class="field-hint">At least @PasswordRules.MinimumLength characters. A long phrase is a good password.</p>
+                <p id="password-hint" class="field-hint">@AccountPages.PasswordHint(PasswordRules.MinimumLength)</p>
                 @if (_outcome is EmailVerificationOutcome.PasswordTooShort)
                 {
-                    <p id="password-error" class="field-error">Choose a password of at least @PasswordRules.MinimumLength characters.</p>
+                    <p id="password-error" class="field-error">@AccountPages.PasswordTooShort(PasswordRules.MinimumLength)</p>
                 }
                 @if (_outcome is EmailVerificationOutcome.PasswordTooLong)
                 {
-                    <p id="password-error" class="field-error">Choose a password of at most @PasswordRules.MaximumLength characters.</p>
+                    <p id="password-error" class="field-error">@AccountPages.PasswordTooLong(PasswordRules.MaximumLength)</p>
                 }
             </div>
         }
 
-        <button type="submit">Confirm my email address</button>
+        <button type="submit">@RegistrationPages.Confirm</button>
     </form>
 }
 

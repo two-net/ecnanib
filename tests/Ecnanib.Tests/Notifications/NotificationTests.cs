@@ -302,8 +302,8 @@ public class NotificationTests
         // latest first. What it says is written as text, and never as markup.
         Assert.Contains("<h2 id=\"notifications-heading\">Notifications</h2>", markup);
         Assert.Contains(
-            $"<strong>Order or protection failure</strong>, {PageTimes.At(Morning.AddMinutes(2))}. What happened <after> that & more.", page);
-        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.At(Morning.AddMinutes(1))}. The first thing that happened.", page);
+            $"<strong>Order or protection failure</strong>, {PageTimes.Utc.At(Morning.AddMinutes(2))}. What happened <after> that & more.", page);
+        Assert.Contains($"<strong>Order or protection failure</strong>, {PageTimes.Utc.At(Morning.AddMinutes(1))}. The first thing that happened.", page);
         Assert.True(page.IndexOf("What happened", StringComparison.Ordinal) < page.IndexOf("The first thing", StringComparison.Ordinal));
         Assert.Contains("What happened &lt;after&gt; that &amp; more.", markup);
         Assert.DoesNotContain("About the other agent.", page);

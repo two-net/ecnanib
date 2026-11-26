@@ -9,69 +9,131 @@ using Ecnanib.WebUi.Pages.Agents;
 namespace Ecnanib.WebUi.Pages.Dashboard;
 
 /// <summary>
-/// What the dashboard says, in one place (NFR-USA-4): its texts, how it writes an amount, and
-/// the ids of its parts, which are there once for each mode (FR-RPT-1). See docs/dashboard.md.
+/// The texts of the dashboard, in one place (NFR-USA-4): what it says, how it writes an amount,
+/// and the ids of its parts, which are there once for each mode (FR-RPT-1). A table of another
+/// page names its column of agents and its column of markets with the headings here. See
+/// docs/dashboard.md.
 /// </summary>
 public static class DashboardPages
 {
     /// <summary>The name of the dashboard, in its heading and in the bar at the top.</summary>
-    public const string Title = "Dashboard";
+    public static string Title => "Dashboard";
 
     /// <summary>What the dashboard is.</summary>
-    public const string Explained =
+    public static string Explained =>
         "All of your agents at a glance: what they are worth, what they made today, what they hold, how each of them is doing, " +
         "what their teams decided last, and what the service has to tell you.";
 
     /// <summary>That Demo and Live are never added up (FR-BIN-11).</summary>
-    public const string Apart = "Demo and Live are shown apart, each under its own heading, and are never added up.";
+    public static string Apart => "Demo and Live are shown apart, each under its own heading, and are never added up.";
 
     /// <summary>What the figures of the dashboard are, and what they are not.</summary>
-    public const string FiguresExplained =
+    public static string FiguresExplained =>
         "The equity of an agent is the capital that you allocated to it, plus its net profit or loss to date, after fees and " +
         "funding, with what its open position would make at the latest price. Profit and loss today is the equity now, less " +
         "the equity as the UTC day began. Amounts are written to 2 decimal places, and amounts in different assets are never " +
         "added up.";
 
     /// <summary>The name of the total equity of a mode.</summary>
-    public const string TotalEquity = "Total equity";
+    public static string TotalEquity => "Total equity";
 
     /// <summary>The name of what the agents of a mode made in the UTC day.</summary>
-    public const string MadeToday = "Profit and loss today";
+    public static string MadeToday => "Profit and loss today";
 
     /// <summary>What is written in place of a figure that is not known: never a number.</summary>
-    public const string NotKnown = "Not known at the moment";
+    public static string NotKnown => "Not known at the moment";
+
+    /// <summary>What stands before the badge of the mode of a section.</summary>
+    public static string BadgeLabel => "Mode:";
 
     /// <summary>The heading of the open positions of a mode.</summary>
-    public const string PositionsHeading = "Open positions";
+    public static string PositionsHeading => "Open positions";
+
+    /// <summary>
+    /// The heading of a column that names an agent, in a table of any page: the positions and
+    /// the decisions here, and the usage by day on the page of the AI usage.
+    /// </summary>
+    public static string AgentHeading => "Agent";
+
+    /// <summary>The heading of the symbol of a position.</summary>
+    public static string SymbolHeading => "Symbol";
+
+    /// <summary>
+    /// The heading of a column that names a market, in a table of any page: of a position here,
+    /// and of a slice of the strength scores on an experience screen.
+    /// </summary>
+    public static string MarketHeading => "Market";
+
+    /// <summary>The heading of the side of a position: long or short.</summary>
+    public static string SideHeading => "Side";
+
+    /// <summary>The heading of the quantity of a position.</summary>
+    public static string QuantityHeading => "Quantity";
+
+    /// <summary>The heading of the price that a position was entered at.</summary>
+    public static string EntryPriceHeading => "Entry price";
+
+    /// <summary>The heading of the stop-loss that rests for a position.</summary>
+    public static string StopLossHeading => "Stop-loss";
+
+    /// <summary>The heading of the take-profit that rests for a position.</summary>
+    public static string TakeProfitHeading => "Take-profit";
+
+    /// <summary>The heading of what a position would make at the price that it is valued at.</summary>
+    public static string WouldMakeHeading => "Would make now";
+
+    /// <summary>The heading of when a position was opened.</summary>
+    public static string OpenSinceHeading => "Open since";
 
     /// <summary>The heading of the agents of a mode, each with its card.</summary>
-    public const string AgentsHeading = "Agents";
+    public static string AgentsHeading => "Agents";
 
     /// <summary>The heading of the recent decisions of a mode.</summary>
-    public const string DecisionsHeading = "Recent decisions";
+    public static string DecisionsHeading => "Recent decisions";
+
+    /// <summary>The heading of the close of the candle that started a cycle, which leads to the cycle.</summary>
+    public static string CandleCloseHeading => "Candle close";
+
+    /// <summary>The heading of how a cycle ended.</summary>
+    public static string OutcomeHeading => "Outcome";
 
     /// <summary>The heading of the alerts of a mode.</summary>
-    public const string AlertsHeading = "Alerts";
+    public static string AlertsHeading => "Alerts";
 
     /// <summary>The heading of the alerts that are about no mode.</summary>
-    public const string AccountAlertsHeading = "Alerts about your account";
+    public static string AccountAlertsHeading => "Alerts about your account";
 
     /// <summary>What the alerts that are about no mode are.</summary>
-    public const string AccountAlertsExplained =
+    public static string AccountAlertsExplained =>
         "What the service has told you that is about neither Demo nor Live, such as a key of an AI provider, and that you have " +
         "not read, latest first.";
 
     /// <summary>What is written where no stop-loss or no take-profit rests on the exchange for a position: the price alone protects nothing.</summary>
-    public const string NoneRests = "None rests";
+    public static string NoneRests => "None rests";
+
+    /// <summary>The name of the state of an agent, on its card.</summary>
+    public static string StateLabel => "State";
+
+    /// <summary>The name of the equity of an agent, on its card.</summary>
+    public static string EquityLabel => "Equity";
+
+    /// <summary>The name of what an agent made in the UTC day, on its card.</summary>
+    public static string TodayLabel => "Today";
+
+    /// <summary>The name of what an agent holds, on its card.</summary>
+    public static string PositionLabel => "Position";
 
     /// <summary>What a card says of an agent that holds no position.</summary>
-    public const string HoldsNothing = "Holds no position";
+    public static string HoldsNothing => "Holds no position";
+
+    /// <summary>The text of the link that leads from the dashboard to the agents.</summary>
+    public static string AgentsLink => "Your agents";
 
     /// <summary>The heading of the column that says the price that a position is valued at.</summary>
-    public const string PriceHeading = "Valued at";
+    public static string PriceHeading => "Valued at";
 
     /// <summary>Which price a position is valued at, and what "would make now" leaves out, under the table of the positions.</summary>
-    public const string PricesExplained =
+    public static string PricesExplained =>
         "A position on Futures is valued at its mark price, and one on Spot at the price that its symbol last traded at. What " +
         "it would make is before fees and funding.";
 
@@ -79,7 +141,7 @@ public static class DashboardPages
     public static IReadOnlyList<TradingMode> Modes { get; } = [TradingMode.Live, TradingMode.Demo];
 
     /// <summary>The heading of the section of a mode.</summary>
-    public static string Heading(TradingMode mode) => $"Your agents in {mode}";
+    public static string Heading(TradingMode mode) => $"Your agents in {AgentPages.NameOf(mode)}";
 
     /// <summary>What a mode is, under the heading of its section.</summary>
     public static string ModeExplained(TradingMode mode) => mode == TradingMode.Live
@@ -87,31 +149,31 @@ public static class DashboardPages
         : "In Demo your agents trade in Binance's test environment, and no money is at stake.";
 
     /// <summary>What the section of a mode says when its user has no agent in it.</summary>
-    public static string NoAgents(TradingMode mode) => $"You have no agent in {mode}.";
+    public static string NoAgents(TradingMode mode) => $"You have no agent in {AgentPages.NameOf(mode)}.";
 
     /// <summary>What the section of a mode says when none of its agents holds a position.</summary>
-    public static string NoPositions(TradingMode mode) => $"No agent in {mode} holds a position.";
+    public static string NoPositions(TradingMode mode) => $"No agent in {AgentPages.NameOf(mode)} holds a position.";
 
     /// <summary>What the cell of a decision says of an agent that was deleted since: a cell never says nothing (NFR-USA-1).</summary>
-    public const string DeletedAgent = "Deleted agent";
+    public static string DeletedAgent => "Deleted agent";
 
     /// <summary>What the section of a mode says when no cycle was recorded in it.</summary>
-    public static string NoDecisions(TradingMode mode) => $"No team has decided anything in {mode} yet.";
+    public static string NoDecisions(TradingMode mode) => $"No team has decided anything in {AgentPages.NameOf(mode)} yet.";
 
     /// <summary>What the section of a mode says when its user has read everything that is about it.</summary>
-    public static string NoAlerts(TradingMode mode) => $"Nothing about {mode} waits to be read.";
+    public static string NoAlerts(TradingMode mode) => $"Nothing about {AgentPages.NameOf(mode)} waits to be read.";
 
     /// <summary>What the recent decisions of a mode are.</summary>
     public static string DecisionsExplained(TradingMode mode) =>
-        $"The latest cycles that a candle close started in {mode}, latest first, each with how it ended. A test cycle is not " +
-        "among them: it is on the page of the cycles of its agent.";
+        $"The latest cycles that a candle close started in {AgentPages.NameOf(mode)}, latest first, each with how it ended. " +
+        "A test cycle is not among them: it is on the page of the cycles of its agent.";
 
     /// <summary>What the alerts of a mode are, and how many of them the page lists.</summary>
     public static string AlertsExplained(TradingMode mode, UnreadOfMode unread)
     {
         ArgumentNullException.ThrowIfNull(unread);
 
-        return $"What the service has told you about {mode} and you have not read, latest first. {Listed(unread)}".TrimEnd();
+        return $"What the service has told you about {AgentPages.NameOf(mode)} and you have not read, latest first. {Listed(unread)}".TrimEnd();
     }
 
     /// <summary>How many of the notifications that its user has not read a list holds, where it does not hold them all.</summary>
@@ -123,10 +185,10 @@ public static class DashboardPages
     }
 
     /// <summary>The name of the table of the open positions of a mode, which is read out and not shown.</summary>
-    public static string PositionsCaption(TradingMode mode) => $"The open positions of your agents in {mode}";
+    public static string PositionsCaption(TradingMode mode) => $"The open positions of your agents in {AgentPages.NameOf(mode)}";
 
     /// <summary>The name of the table of the recent decisions of a mode.</summary>
-    public static string DecisionsCaption(TradingMode mode) => $"The recent decisions of your agents in {mode}";
+    public static string DecisionsCaption(TradingMode mode) => $"The recent decisions of your agents in {AgentPages.NameOf(mode)}";
 
     /// <summary>
     /// The id of a part of the section of a mode: the section is on the page once for each
@@ -151,7 +213,7 @@ public static class DashboardPages
     /// </summary>
     /// <param name="total">The total.</param>
     /// <param name="equities">The equities that it adds up.</param>
-    public static string Valued(EquityTotal total, IEnumerable<AgentEquity> equities)
+    public static string Valued(EquityTotal total, IEnumerable<AgentEquity> equities, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(total);
         ArgumentNullException.ThrowIfNull(equities);
@@ -159,7 +221,7 @@ public static class DashboardPages
         if (total.Equity is not null)
         {
             return total.PricedAt is { } pricedAt
-                ? $"Open positions are valued at prices as of {PageTimes.AtSecond(pricedAt)}."
+                ? $"Open positions are valued at prices as of {times.AtSecond(pricedAt)}."
                 : "No agent holds a position, so no price is in these figures.";
         }
 
@@ -208,10 +270,10 @@ public static class DashboardPages
     public static PageFigure? SignedFigureOrNot(decimal? amount, string asset) => amount is { } known ? SignedFigure(known, asset) : null;
 
     /// <summary>The market, the symbol, and the timeframe of an agent, as its card says them.</summary>
-    public static string Trades(Market market, Timeframe timeframe) => $"on {market}, {timeframe.Code()}";
+    public static string Trades(Market market, Timeframe timeframe) => $"on {AgentPages.NameOf(market)}, {timeframe.Code()}";
 
     /// <summary>The state of an agent, with since when, as its card says it.</summary>
-    public static string StateOf(AgentState state, DateTimeOffset since) => $"{AgentPages.Describe(state)}, since {PageTimes.At(since)}";
+    public static string StateOf(AgentState state, DateTimeOffset since, PageTimes times) => $"{AgentPages.Describe(state)}, since {times.At(since)}";
 
     /// <summary>
     /// Whether the card of an agent says why the agent is in its state: an agent that is halted,
@@ -255,20 +317,20 @@ public static class DashboardPages
     }
 
     /// <summary>The price that an open position is valued at, with when it was read, or that it is not known.</summary>
-    public static string PriceOf(AgentEquity equity)
+    public static string PriceOf(AgentEquity equity, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(equity);
 
-        return PriceFigure(equity)?.Text ?? NotKnown;
+        return PriceFigure(equity, times)?.Text ?? NotKnown;
     }
 
     /// <summary>That price as a figure, with when it was read after it, or null when it is not known.</summary>
-    public static PageFigure? PriceFigure(AgentEquity equity)
+    public static PageFigure? PriceFigure(AgentEquity equity, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(equity);
 
         return equity.Price is { } price
-            ? PageFigure.Of(AgentPages.Number(price.Price), after: $", as of {PageTimes.AtSecond(price.ReadAt)}")
+            ? PageFigure.Of(AgentPages.Number(price.Price), after: $", as of {times.AtSecond(price.ReadAt)}")
             : null;
     }
 

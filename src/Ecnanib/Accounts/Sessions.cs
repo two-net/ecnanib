@@ -17,12 +17,23 @@ namespace Ecnanib.Accounts;
 /// How much of the pages moves for the user, as the account says it now (FR-ANI-4). It is read
 /// with the session, as the theme is.
 /// </param>
+/// <param name="TimeDisplay">
+/// The time zone that the pages write a time in for the user, as the account says it now
+/// (NFR-USA-3). It is read with the session, as the theme is.
+/// </param>
 /// <param name="EndsAt">
 /// When the session ends if nothing more is done with it: the period of inactivity after the
 /// time that is stored for it now. A page says so to its user shortly before (NFR-USA-1).
 /// </param>
 internal sealed record SessionUser(
-    Guid SessionId, Guid Id, string Email, bool IsVerified, Theme Theme, Motion Motion, DateTimeOffset EndsAt);
+    Guid SessionId,
+    Guid Id,
+    string Email,
+    bool IsVerified,
+    Theme Theme,
+    Motion Motion,
+    TimeDisplay TimeDisplay,
+    DateTimeOffset EndsAt);
 
 /// <summary>
 /// What a request is to the session that it carries: whether finding the session for it is
@@ -388,7 +399,7 @@ internal sealed class Sessions(
         }
 
         return new SessionUser(
-            found.Id, found.UserId, found.Email, found.IsVerified, found.Theme, found.Motion, lastActiveAt + _idle);
+            found.Id, found.UserId, found.Email, found.IsVerified, found.Theme, found.Motion, found.TimeDisplay, lastActiveAt + _idle);
 
         Task<FoundSession?> ReadAsync() =>
             context.Set<Session>()
@@ -398,13 +409,27 @@ internal sealed class Sessions(
                     session => session.UserId,
                     user => user.Id,
                     (session, user) => new FoundSession(
-                        session.Id, session.LastActiveAt, user.Id, user.Email, user.EmailVerifiedAt != null, user.Theme, user.Motion))
+                        session.Id,
+                        session.LastActiveAt,
+                        user.Id,
+                        user.Email,
+                        user.EmailVerifiedAt != null,
+                        user.Theme,
+                        user.Motion,
+                        user.TimeDisplay))
                 .SingleOrDefaultAsync(cancellationToken);
     }
 
     /// <summary>A session as it was read, with the account it belongs to.</summary>
     private sealed record FoundSession(
-        Guid Id, DateTimeOffset LastActiveAt, Guid UserId, string Email, bool IsVerified, Theme Theme, Motion Motion);
+        Guid Id,
+        DateTimeOffset LastActiveAt,
+        Guid UserId,
+        string Email,
+        bool IsVerified,
+        Theme Theme,
+        Motion Motion,
+        TimeDisplay TimeDisplay);
 
     /// <summary>
     /// Whether a session of a user stands: it was not ended, and is not past its period of

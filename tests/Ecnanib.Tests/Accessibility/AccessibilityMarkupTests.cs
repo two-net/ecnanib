@@ -14,12 +14,28 @@ internal sealed record CapturedState(ScreenState State, string Path, IDocument P
 /// of a class: the worlds are built and the states are gone through when the first test asks,
 /// in the order of the list, each person on a browser of their own.
 /// </summary>
-public sealed class AccessibilityPages : IDisposable
+/// <remarks>
+/// The people of the worlds sign in on devices that say no time zone, so their pages are in
+/// UTC. A class that derives from this one has them sign in on devices that say one, and
+/// reaches the same states in that time zone: see <c>TimeZoneCoverageTests</c>.
+/// </remarks>
+public class AccessibilityPages : IDisposable
 {
     private readonly List<AccessibilityWorld> _worlds = [];
     private readonly Lazy<Task<IReadOnlyList<CapturedState>>> _captured;
+    private readonly string? _timeZone;
 
-    public AccessibilityPages() => _captured = new(CaptureAsync);
+    public AccessibilityPages()
+        : this(timeZone: null)
+    {
+    }
+
+    /// <param name="timeZone">What the device of each person says its time zone is, or null for devices that say none.</param>
+    protected AccessibilityPages(string? timeZone)
+    {
+        _timeZone = timeZone;
+        _captured = new(CaptureAsync);
+    }
 
     /// <summary>Every state of the list as it was reached, in the order of the list.</summary>
     internal Task<IReadOnlyList<CapturedState>> AllAsync() => _captured.Value;
@@ -30,6 +46,8 @@ public sealed class AccessibilityPages : IDisposable
         {
             world.Dispose();
         }
+
+        GC.SuppressFinalize(this);
     }
 
     private async Task<IReadOnlyList<CapturedState>> CaptureAsync()
@@ -52,7 +70,7 @@ public sealed class AccessibilityPages : IDisposable
             if (!visits.TryGetValue((state.In, state.As), out var visit))
             {
                 visit = new ReadVisit(world.CreateClient());
-                await world.EnterAsync(state.As, visit);
+                await world.EnterAsync(state.As, visit, _timeZone);
 
                 visits[(state.In, state.As)] = visit;
             }

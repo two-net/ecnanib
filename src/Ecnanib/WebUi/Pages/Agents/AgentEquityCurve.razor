@@ -38,12 +38,16 @@
                 </svg>
             }
 
-            <figcaption id="equity-caption">@AgentReportPages.Says(Curve, Asset)</figcaption>
+            <figcaption id="equity-caption">@AgentReportPages.Says(Curve, Asset, Times)</figcaption>
         </figure>
     }
 </section>
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     // The picture, in its own units: the browser fits it to the width of the page.
     private const int Width = 600;
     private const int Height = 200;

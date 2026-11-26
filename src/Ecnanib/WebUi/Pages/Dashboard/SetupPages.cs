@@ -10,33 +10,33 @@ namespace Ecnanib.WebUi.Pages.Dashboard;
 public static class SetupPages
 {
     /// <summary>The heading of the checklist.</summary>
-    public const string Heading = "Getting started";
+    public static string Heading => "Getting started";
 
     /// <summary>The id of that heading, which names the section of the checklist.</summary>
     public const string HeadingId = "setup-heading";
 
     /// <summary>What the checklist is, and when it goes away.</summary>
-    public const string Explained =
+    public static string Explained =>
         "Four steps lead from an empty account to a Demo agent whose decisions you have reviewed, and then to your own choice " +
         "about Live. This list goes away once the last two steps are done.";
 
     /// <summary>What a step that is done says, as a word (FR-THM-5).</summary>
-    public const string DoneWord = "Done";
+    public static string DoneWord => "Done";
 
     /// <summary>What a step that is not done says, as a word.</summary>
-    public const string NotDoneWord = "Not done yet";
+    public static string NotDoneWord => "Not done yet";
 
     /// <summary>The text of the link to the API keys.</summary>
-    public const string KeysLink = "Go to your API keys";
+    public static string KeysLink => "Go to your API keys";
 
     /// <summary>The text of the link to the form of a new agent.</summary>
-    public const string AgentLink = "Create an agent";
+    public static string AgentLink => "Create an agent";
 
     /// <summary>The text of the link to the agents, where one is switched to Live.</summary>
-    public const string AgentsLink = "Go to your agents";
+    public static string AgentsLink => "Go to your agents";
 
     /// <summary>The text of the link to the risk disclosure.</summary>
-    public const string RiskLink = "Read the risk disclosure";
+    public static string RiskLink => "Read the risk disclosure";
 
     /// <summary>
     /// The name of the form that marks the decisions as reviewed. Neither name starts as the
@@ -48,10 +48,10 @@ public static class SetupPages
     public const string ConsideredForm = "setup-considered";
 
     /// <summary>The button that marks the decisions as reviewed.</summary>
-    public const string MarkReviewed = "Mark as reviewed";
+    public static string MarkReviewed => "Mark as reviewed";
 
     /// <summary>The button that marks Live as considered.</summary>
-    public const string MarkConsidered = "I have considered Live";
+    public static string MarkConsidered => "I have considered Live";
 
     /// <summary>How many of the steps are done.</summary>
     public static string Counted(int done)

@@ -5,40 +5,41 @@
 
 @*
     The second step of signing in, for an account with two-factor authentication. Rendered on the
-    server for each request, and never interactive: the code travels in a form post.
+    server for each request, and never interactive: the code travels in a form post. Its texts
+    are in SignInPages.
 *@
 
-<PageTitle>Enter your code</PageTitle>
+<PageTitle>@SignInPages.CodeTitle</PageTitle>
 
-<h1>Enter your code</h1>
+<h1>@SignInPages.CodeTitle</h1>
 
 @if (_outcome is SignInCodeOutcome.CodesRefused)
 {
-    <p class="form-error" role="alert">Too many wrong codes were entered. No code is accepted for the next @((int)TwoFactorRules.RefusedFor.TotalMinutes) minutes. Then sign in again.</p>
+    <p class="form-error" role="alert">@SignInPages.CodesRefused((int)TwoFactorRules.RefusedFor.TotalMinutes)</p>
 }
 
 <form method="post" @formname="sign-in-code" @onsubmit="CompleteAsync">
     <AntiforgeryToken />
 
     <div class="field">
-        <label for="code">Code from your authenticator app</label>
+        <label for="code">@AccountPages.CodeLabel</label>
         @* One field for both kinds of code, so it is not limited to digits. A code is never written back into the page. *@
         <input id="code" name="Code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required
                aria-invalid="@PageFields.Invalid(CodeRefused)"
                aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("code", CodeRefused), "code-hint")"
                autofocus="@CodeRefused" />
-        <p id="code-hint" class="field-hint">If you have lost the app, enter one of your recovery codes instead.</p>
+        <p id="code-hint" class="field-hint">@AccountPages.CodeHint</p>
         @if (CodeRefused)
         {
             @* Under the field, as on the other pages that take a code, and read out with it: the field has the focus again. *@
-            <p id="code-error" class="field-error">That code is not right. A code from the app works once, for about half a minute.</p>
+            <p id="code-error" class="field-error">@AccountPages.CodeNotRight</p>
         }
     </div>
 
-    <button type="submit">Sign in</button>
+    <button type="submit">@SignInPages.SignIn</button>
 </form>
 
-<p><a href="@SignInPage">Start again with your password</a></p>
+<p><a href="@SignInPage">@SignInPages.StartAgainLink</a></p>
 
 @code {
     private SignInCodeOutcome? _outcome;

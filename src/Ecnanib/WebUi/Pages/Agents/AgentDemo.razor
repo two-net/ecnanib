@@ -13,16 +13,17 @@
     a draft, or is stopped with no open position or orders, and only where its market has its
     symbol in Demo, which SwitchToDemoAsync asks again under the lock. The form is on the page
     whenever one is posted, whatever the agent is by then: a form that is sent twice finds the
-    agent in Demo the second time, and is answered as the first one was.
+    agent in Demo the second time, and is answered as the first one was. Its texts are in
+    AgentModePages and AgentPages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Switch the agent @_agent.Name to Demo</PageTitle>
+    <PageTitle>@AgentModePages.ToDemoTitle(_agent.Name)</PageTitle>
 
-    <h1>Switch the agent @_agent.Name to Demo</h1>
+    <h1>@AgentModePages.ToDemoTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_notSwitched is not null)
     {
@@ -30,28 +31,28 @@
 
         @if (_symbolBlocks)
         {
-            <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+            <p><a href="@WebUiModule.AgentPath(_agent.Id)">@AgentPages.SettingsLink</a></p>
         }
     }
 
     @if (_showForm)
     {
-        <p>In Demo the agent trades in Binance's test environment, with your Binance key for Demo, and no money is at stake. Its state stays as it is: <strong>@AgentPages.Describe(_agent.State)</strong>. What it did in Live stays labeled as Live.</p>
+        <p>@AgentModePages.DemoExplained <strong>@AgentPages.Describe(_agent.State)</strong>. @AgentPages.Explain(_agent.State) @AgentModePages.LiveStaysLabeled</p>
 
-        <p>Switching it to Live again takes your confirmation of the risk, and a fresh proof of who you are.</p>
+        <p>@AgentModePages.BackToLiveExplained</p>
 
         <form method="post" @formname="@AgentPages.SwitchToDemoForm" @onsubmit="SwitchAsync">
             <AntiforgeryToken />
 
-            <button type="submit">Switch the agent to Demo</button>
+            <button type="submit">@AgentPages.SwitchToDemo</button>
         </form>
     }
     else if (_notSwitched is null)
     {
-        <p role="status">This agent is in Demo.</p>
+        <p role="status">@AgentModePages.AlreadyDemo</p>
     }
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? "Keep the agent in Live" : "State of the agent")</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@(_showForm ? AgentModePages.KeepInLive : AgentPages.StateLink)</a></p>
 }
 
 @code {

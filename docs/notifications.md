@@ -93,7 +93,7 @@ That the user could not be told, because the notification could not be stored, i
 
 ## The pages
 
-Every page is rendered on the server for each request, for the user who is signed in, and a visitor is sent to sign in. What a notification says is written as text, and never as markup (NFR-SEC-4). The times are UTC.
+Every page is rendered on the server for each request, for the user who is signed in, and a visitor is sent to sign in. What a notification says is written as text, and never as markup (NFR-SEC-4). When a notification was raised is written in the time zone of the page (NFR-USA-3): see [times.md](times.md). An email says it in UTC.
 
 **A notification shows without a manual refresh on a page that follows what changes** (FR-NTF-2): the page of the notifications, the dashboard, the list of the agents, and the pages of the state and the cycles of an agent. The database says when a notification of a user is raised, read, or removed, and such a page asks for itself again, so its list, its section, and the count in its bar are those of now. Nothing of a notification is written over the connection of a page. See [live-updates.md](live-updates.md).
 

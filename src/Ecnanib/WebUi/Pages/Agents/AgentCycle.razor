@@ -23,27 +23,28 @@
     (FR-CYC-12). It is run at any time after the close of its candle, so its entries say how long
     after its start they happened. An order is shown as it is now, so the page follows what the
     agent holds (FR-NTF-2): when an order of the agent changes, the page asks for itself again.
-    Nothing is written to it over its connection. See docs/live-updates.md.
+    Nothing is written to it over its connection. See docs/live-updates.md. Its texts are in
+    CyclePages.
 *@
 
 @if (_agent is not null && _cycle is not null)
 {
-    <PageTitle>Cycle of the agent @_agent.Name</PageTitle>
+    <PageTitle>@CyclePages.TimelineTitleOf(_agent.Name)</PageTitle>
 
-    <h1>Cycle of the agent @_agent.Name</h1>
+    <h1>@CyclePages.TimelineTitleOf(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@CyclePages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @* That the page follows what changes, with what pauses it: see LivePause (NFR-USA-1). *@
     <LivePause />
 
     @if (IsTest)
     {
-        <p class="cycle-kind cycle-kind-test"><strong>Test cycle.</strong> @CyclePages.TestCycleRan</p>
+        <p class="cycle-kind cycle-kind-test"><strong>@CyclePages.TestLabel</strong> @CyclePages.TestCycleRan</p>
     }
 
     <p>
-        The cycle for the candle that closed at @PageTimes.At(_cycle.ClosedAt), in <ModeBadge Mode="@_cycle.Mode" />. Outcome:
+        @CyclePages.TimelineOf(Times.At(_cycle.ClosedAt)) <ModeBadge Mode="@_cycle.Mode" />. @CyclePages.OutcomeLabel
         <strong class="cycle-outcome cycle-@(_cycle.Outcome.ToString().ToLowerInvariant())">@CyclePages.Describe(_cycle.Outcome)</strong>.
         @CyclePages.Explain(_cycle.Outcome, _cycle.Kind)
     </p>
@@ -57,21 +58,21 @@
             <li class="timeline-entry timeline-@entry.Kind">
                 @if (entry.Timed)
                 {
-                    <p class="timeline-time">@PageTimes.AtSecond(entry.At), @After(entry)</p>
+                    <p class="timeline-time">@Times.AtSecond(entry.At), @After(entry)</p>
                 }
 
                 @switch (entry.What)
                 {
                     case Closed:
-                        <h2>The candle closed</h2>
+                        <h2>@CyclePages.CandleClosedHeading</h2>
 
                         <p>
                             @(_cycle.DataPackage is { } closed
-                                ? $"The {closed.Timeframe.Code()} candle of {closed.Symbol} closed."
-                                : "The candle that the cycle is for closed.")
+                                ? CyclePages.CandleClosed(closed)
+                                : CyclePages.CandleOfCycleClosed)
                             @(IsTest
-                                ? "It was the latest closed candle of the agent's timeframe when the test cycle was run. A cycle decides on closed candles only."
-                                : "A cycle starts when a candle of the agent's timeframe closes, and decides on closed candles only.")
+                                ? CyclePages.TestDecidesOnClosedCandles
+                                : CyclePages.DecidesOnClosedCandles)
                         </p>
 
                         break;
@@ -79,24 +80,21 @@
                     case Started:
                         @if (IsTest)
                         {
-                            <h2>The test cycle started</h2>
+                            <h2>@CyclePages.TestStartedHeading</h2>
 
                             <p>@CyclePages.TestStarted</p>
                         }
                         else
                         {
-                            <h2>The cycle started</h2>
+                            <h2>@CyclePages.StartedHeading</h2>
 
-                            <p>
-                                The turn of the cycle came. Before the team is called, the orders of the agent are settled with the
-                                exchange, and its loss limits are evaluated.
-                            </p>
+                            <p>@CyclePages.Started</p>
                         }
 
                         break;
 
                     case DataPackageSummary package:
-                        <h2 id="package-heading">Data package</h2>
+                        <h2 id="package-heading">@CyclePages.PackageHeading</h2>
 
                         <p>@CyclePages.PackageExplained</p>
 
@@ -107,13 +105,13 @@
                         @* The table scrolls by itself on a narrow screen, also by keyboard, as the list of agents does. *@
                         <div class="agents package-series" role="region" aria-labelledby="package-heading" tabindex="0">
                             <table>
-                                <caption>The candles and the indicators of the data package</caption>
+                                <caption>@CyclePages.PackageCaption</caption>
                                 <thead>
                                     <tr>
-                                        <th scope="col">At the latest close</th>
+                                        <th scope="col">@CyclePages.LatestCloseHeading</th>
                                         @foreach (var series in package.Series)
                                         {
-                                            <th scope="col">@series.Timeframe candles</th>
+                                            <th scope="col">@CyclePages.CandlesOf(series.Timeframe)</th>
                                         }
                                     </tr>
                                 </thead>
@@ -124,7 +122,7 @@
                                             <th scope="row">@name</th>
                                             @foreach (var series in package.Series)
                                             {
-                                                <td>@value(series)</td>
+                                                <td>@value(series, Times)</td>
                                             }
                                         </tr>
                                     }
@@ -134,11 +132,11 @@
 
                         @if (package.Orders.Count == 0)
                         {
-                            <p class="package-orders">Open orders: none.</p>
+                            <p class="package-orders">@CyclePages.NoOpenOrders</p>
                         }
                         else
                         {
-                            <p class="package-orders">Open orders:</p>
+                            <p class="package-orders">@CyclePages.OpenOrdersLabel</p>
 
                             <ul>
                                 @foreach (var resting in package.Orders)
@@ -150,13 +148,13 @@
 
                         @if (package.Futures is { } futures)
                         {
-                            <p class="package-futures">@CyclePages.Says(futures)</p>
+                            <p class="package-futures">@CyclePages.Says(futures, Times)</p>
                         }
 
                         break;
 
                     case NoPackage:
-                        <h2>Data package</h2>
+                        <h2>@CyclePages.PackageHeading</h2>
 
                         <p>@CyclePages.NoPackage(_cycle.Outcome)</p>
 
@@ -165,7 +163,7 @@
                     case RoleCallView call:
                         <h2>@CyclePages.Title(call)</h2>
 
-                        <p>@AgentPages.Describe(call.Role).Job Model: @CyclePages.Model(call).</p>
+                        <p>@AgentPages.Describe(call.Role).Job @CyclePages.CalledWith(call)</p>
 
                         @* How it ended and what it answered, as the screen of the agent shows it too. *@
                         <RoleCallAnswer Call="@call" />
@@ -174,7 +172,7 @@
 
                         @if (call.Templates.Count > 0)
                         {
-                            <p class="call-templates">Its prompt was composed from @string.Join(", ", call.Templates.Select(CyclePages.Says)).</p>
+                            <p class="call-templates">@CyclePages.ComposedFrom(call.Templates)</p>
                         }
 
                         break;
@@ -182,7 +180,7 @@
                     case RiskCheckView check:
                         var heading = $"check-{entry.Number}-heading";
 
-                        <h2 id="@heading">Risk Guard: @RiskCheckPages.Describe(check.Action)</h2>
+                        <h2 id="@heading">@CyclePages.CheckHeading(check.Action)</h2>
 
                         <p>
                             <strong class="guard-verdict">@RiskCheckPages.Describe(check.Verdict)</strong>.
@@ -199,29 +197,25 @@
                         <p>@CyclePages.Says(order)</p>
 
                         <p>
-                            <strong class="order-status">@CyclePages.Describe(order.Status)</strong>, as it is now.
+                            <strong class="order-status">@CyclePages.Describe(order.Status)</strong>, @CyclePages.AsItIsNow.
                             @CyclePages.Became(order)
                         </p>
 
-                        <p class="order-ids">
-                            @(order.ExchangeOrderId is { } number
-                                ? $"It carries the identifier {order.ClientOrderId} at Binance, which knows it as the order {number}."
-                                : $"It carries the identifier {order.ClientOrderId}. Binance has said no order number for it.")
-                        </p>
+                        <p class="order-ids">@CyclePages.Identifiers(order)</p>
 
                         break;
 
                     case NoOrder:
-                        <h2>No order</h2>
+                        <h2>@CyclePages.NoOrderHeading</h2>
 
                         <p class="no-order">@CyclePages.NoOrder(_cycle)</p>
 
                         break;
 
                     case Ended:
-                        <h2>@(IsTest ? "The test cycle ended" : "The cycle ended"): @CyclePages.Describe(_cycle.Outcome)</h2>
+                        <h2>@CyclePages.EndedHeading(_cycle.Kind, _cycle.Outcome)</h2>
 
-                        <p>@CyclePages.Explain(_cycle.Outcome, _cycle.Kind) The cycle ran for @CyclePages.Seconds(_cycle.EndedAt - _cycle.StartedAt).</p>
+                        <p>@CyclePages.Explain(_cycle.Outcome, _cycle.Kind) @CyclePages.RanFor(_cycle.EndedAt - _cycle.StartedAt)</p>
 
                         break;
                 }
@@ -231,38 +225,42 @@
 
     <p><a href="@WebUiModule.AgentCyclesPath(_agent.Id)">@CyclePages.Link</a></p>
 
-    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+    <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@CyclePages.StateLink</a></p>
 
     <p><a href="@WebUiModule.AgentRiskChecksPath(_agent.Id)">@RiskCheckPages.Link</a></p>
 
-    <p><a href="@WebUiModule.AgentPath(_agent.Id)">Settings of the agent</a></p>
+    <p><a href="@WebUiModule.AgentPath(_agent.Id)">@CyclePages.SettingsLink</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Back to your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@CyclePages.BackToAgents</a></p>
 
     <LiveUpdates AgentId="@_agent.Id" Follows="@Followed" Since="@_since" />
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     // What the table of a data package says of each series, row by row: the candles that the
     // package held, the latest of them, and the indicators at its close.
-    private static readonly (string Name, Func<SeriesSummary, string> Value)[] Measures =
+    private static readonly (string Name, Func<SeriesSummary, PageTimes, string> Value)[] Measures =
     [
-        ("Closed candles in the package", series => AgentPages.Number(series.Candles)),
-        ("Through", series => series.Latest is { } latest ? PageTimes.At(latest.ClosedAt) : "no closed candle yet"),
-        ("Open", series => CyclePages.Value(series.Latest?.Open)),
-        ("High", series => CyclePages.Value(series.Latest?.High)),
-        ("Low", series => CyclePages.Value(series.Latest?.Low)),
-        ("Close", series => CyclePages.Value(series.Latest?.Close)),
-        ("Volume", series => CyclePages.Value(series.Latest?.Volume)),
-        ("Candles that the indicators were computed from", series => AgentPages.Number(series.ComputedFrom)),
-        ("SMA20", series => CyclePages.Indicator(series.Indicators.Sma20)),
-        ("SMA50", series => CyclePages.Indicator(series.Indicators.Sma50)),
-        ("SMA200", series => CyclePages.Indicator(series.Indicators.Sma200)),
-        ("EMA20", series => CyclePages.Indicator(series.Indicators.Ema20)),
-        ("EMA50", series => CyclePages.Indicator(series.Indicators.Ema50)),
-        ("RSI14", series => CyclePages.Indicator(series.Indicators.Rsi14)),
-        ("ATR14", series => CyclePages.Indicator(series.Indicators.Atr14)),
-        ("Average volume of 20 candles", series => CyclePages.Indicator(series.Indicators.VolumeAverage20)),
+        (CyclePages.PackageCandles, (series, times) => AgentPages.Number(series.Candles)),
+        (CyclePages.PackageThrough, (series, times) => series.Latest is { } latest ? times.At(latest.ClosedAt) : CyclePages.NoClosedCandle),
+        (CyclePages.LatestOpen, (series, times) => CyclePages.Value(series.Latest?.Open)),
+        (CyclePages.LatestHigh, (series, times) => CyclePages.Value(series.Latest?.High)),
+        (CyclePages.LatestLow, (series, times) => CyclePages.Value(series.Latest?.Low)),
+        (CyclePages.LatestClose, (series, times) => CyclePages.Value(series.Latest?.Close)),
+        (CyclePages.LatestVolume, (series, times) => CyclePages.Value(series.Latest?.Volume)),
+        (CyclePages.ComputedFrom, (series, times) => AgentPages.Number(series.ComputedFrom)),
+        (CyclePages.Sma20, (series, times) => CyclePages.Indicator(series.Indicators.Sma20)),
+        (CyclePages.Sma50, (series, times) => CyclePages.Indicator(series.Indicators.Sma50)),
+        (CyclePages.Sma200, (series, times) => CyclePages.Indicator(series.Indicators.Sma200)),
+        (CyclePages.Ema20, (series, times) => CyclePages.Indicator(series.Indicators.Ema20)),
+        (CyclePages.Ema50, (series, times) => CyclePages.Indicator(series.Indicators.Ema50)),
+        (CyclePages.Rsi14, (series, times) => CyclePages.Indicator(series.Indicators.Rsi14)),
+        (CyclePages.Atr14, (series, times) => CyclePages.Indicator(series.Indicators.Atr14)),
+        (CyclePages.VolumeAverage20, (series, times) => CyclePages.Indicator(series.Indicators.VolumeAverage20)),
     ];
 
     // What the page asks for itself again on: what the agent holds, which its orders are, the

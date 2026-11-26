@@ -121,8 +121,8 @@ public class NotificationEmailTests
 
         Assert.Equal(Ada, message.To);
         Assert.Equal($"{Service}: 2 critical events", message.Subject);
-        Assert.Contains($"Agent halted, {PageTimes.At(Morning.AddMinutes(1))}\n{Halted}\n", message.TextBody);
-        Assert.Contains($"Liquidation warning, {PageTimes.At(Morning.AddMinutes(3))}\n{Warned}\n", message.TextBody);
+        Assert.Contains($"Agent halted, {PageTimes.Utc.At(Morning.AddMinutes(1))}\n{Halted}\n", message.TextBody);
+        Assert.Contains($"Liquidation warning, {PageTimes.Utc.At(Morning.AddMinutes(3))}\n{Warned}\n", message.TextBody);
         Assert.True(message.TextBody.IndexOf(Halted, StringComparison.Ordinal) < message.TextBody.IndexOf(Warned, StringComparison.Ordinal));
 
         // What is no critical event is not in it.

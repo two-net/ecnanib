@@ -8,41 +8,42 @@
     Rendered on the server for each request, and never interactive. The page is shown to a user
     who has just proved again who they are, and to nobody else. The form is on the page whenever
     one is posted, whatever the account says by then: a form that is not there cannot be answered.
-    Whether the account is deleted is for DeleteAsync to say, which asks again.
+    Whether the account is deleted is for DeleteAsync to say, which asks again. Its texts are in
+    AccountPages.
 *@
 
-<PageTitle>Delete your account</PageTitle>
+<PageTitle>@AccountPages.DeleteTitle</PageTitle>
 
-<h1>Delete your account</h1>
+<h1>@AccountPages.DeleteTitle</h1>
 
 @if (_agentsNotStopped)
 {
-    <p class="form-error" role="alert">One of your agents is not stopped. Stop every agent first, and then delete your account.</p>
+    <p class="form-error" role="alert">@AccountPages.AgentsNotStopped</p>
 }
 
 @if (_showForm)
 {
-    <p>This deletes your account and everything that belongs to it, at once and for good:</p>
+    <p>@AccountPages.Deletes</p>
 
     <ul>
-        <li>your email address and your password,</li>
-        <li>two-factor authentication and its recovery codes,</li>
-        <li>the keys of the AI providers and of Binance that you stored,</li>
-        <li>the record of the legal documents you accepted,</li>
-        <li>the record of the security-relevant actions of your account,</li>
-        <li>and your sign-in on this and on every other device.</li>
+        <li>@AccountPages.DeletesAddress</li>
+        <li>@AccountPages.DeletesTwoFactor</li>
+        <li>@AccountPages.DeletesKeys</li>
+        <li>@AccountPages.DeletesDocuments</li>
+        <li>@AccountPages.DeletesActions</li>
+        <li>@AccountPages.DeletesSignIns</li>
     </ul>
 
-    <p>It cannot be undone. If you want a copy of what is stored about you, <a href="@WebUiModule.ExportPath" download>download your data</a> first.</p>
+    <p>@AccountPages.CannotBeUndone <a href="@WebUiModule.ExportPath" download>@AccountPages.DownloadFirstLink</a> @AccountPages.DownloadFirst</p>
 
     <form method="post" @formname="delete-account" @onsubmit="DeleteAsync">
         <AntiforgeryToken />
 
-        <button type="submit">Delete my account</button>
+        <button type="submit">@AccountPages.Delete</button>
     </form>
 }
 
-<p><a href="/account">Keep my account</a></p>
+<p><a href="/account">@AccountPages.KeepLink</a></p>
 
 @code {
     private bool _showForm;

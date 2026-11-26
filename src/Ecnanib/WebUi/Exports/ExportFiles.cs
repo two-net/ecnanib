@@ -27,15 +27,15 @@ public static class ExportFiles
     public const string ContentType = "text/csv; charset=utf-8";
 
     /// <summary>What the two downloads are, above their links.</summary>
-    public const string Explained =
+    public static string Explained =>
         "The trades and the decisions of your agents are downloads of their own, as CSV files that a spreadsheet opens. " +
         "Each holds every agent of yours, and each row says whether it is of Demo or of Live.";
 
     /// <summary>The words of the link to the file of the trades.</summary>
-    public const string TradesLink = "Download your trades (CSV)";
+    public static string TradesLink => "Download your trades (CSV)";
 
     /// <summary>The words of the link to the file of the decisions.</summary>
-    public const string DecisionsLink = "Download your decisions (CSV)";
+    public static string DecisionsLink => "Download your decisions (CSV)";
 
     // With the mark that says so at its start: a spreadsheet reads a name in any script right.
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: true);

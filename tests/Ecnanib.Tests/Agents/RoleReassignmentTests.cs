@@ -7,6 +7,7 @@ using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.Experience;
 using Ecnanib.WebUi.Pages.Agents;
+using Ecnanib.WebUi.Pages;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Tests.Agents;
@@ -171,7 +172,7 @@ public class RoleReassignmentTests
         // And the form of its settings says when the service last did it, and until when it does not again.
         var form = AgentBrowser.Read(await client.PageAsync(AgentBrowser.AgentPage(agent)));
 
-        Assert.Contains($"<p role=\"note\">{AgentPages.RolesLastReassigned(Morning, Days)}</p>", form);
+        Assert.Contains($"<p role=\"note\">{AgentPages.RolesLastReassigned(Morning, Days, PageTimes.Utc)}</p>", form);
         Assert.Contains("on 17 November 2026, 09:20 UTC, and reassigns none again before 22 November 2026, 09:20 UTC.", form);
     }
 

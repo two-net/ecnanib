@@ -151,6 +151,17 @@ internal static class ComponentRules
             "Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions::SqlQueryRaw",
             "Microsoft.EntityFrameworkCore.RelationalQueryableExtensions::FromSqlRaw",
 
+            // The time zone of the machine that the application runs on, and its local time. It
+            // is the time zone of no user: a time is written in the time zone of its page, which
+            // the device of its user said, or in UTC (NFR-USA-3). See docs/times.md.
+            "System.TimeZoneInfo::get_Local",
+            "System.DateTime::get_Now",
+            "System.DateTime::get_Today",
+            "System.DateTime::ToLocalTime",
+            "System.DateTimeOffset::get_Now",
+            "System.DateTimeOffset::get_LocalDateTime",
+            "System.DateTimeOffset::ToLocalTime",
+
             // Text that a page writes as markup. Everything else a page writes is encoded, so
             // what a person typed is shown as text and is never run (NFR-SEC-4).
             "Microsoft.AspNetCore.Components.MarkupString::",

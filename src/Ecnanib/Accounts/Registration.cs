@@ -231,12 +231,15 @@ internal sealed class Registration(
         // And its pages move as that device asks (FR-ANI-4).
         var motion = nameof(Motion.System);
 
+        // And they write a time in the time zone of that device (NFR-USA-3).
+        var timeDisplay = nameof(TimeDisplay.Device);
+
         // Whoever inserts the row has the address. Of two requests for one address at the same
         // time, the second waits here, and then finds the account of the first.
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes, theme, motion)
-            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0, {theme}, {motion})
+            INSERT INTO users (id, email, password_hash, registered_at, email_verification_token_hash, email_verification_expires_at, email_verification_sets_password, two_factor_failed_codes, theme, motion, time_display)
+            VALUES ({id}, {email}, {passwordHash}, {now}, {tokenHash}, {expiresAt}, FALSE, 0, {theme}, {motion}, {timeDisplay})
             ON CONFLICT (email) DO NOTHING
             """,
             cancellationToken);

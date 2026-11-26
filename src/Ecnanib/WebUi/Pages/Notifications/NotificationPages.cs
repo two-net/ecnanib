@@ -12,19 +12,19 @@ namespace Ecnanib.WebUi.Pages.Notifications;
 public static class NotificationPages
 {
     /// <summary>The heading of the page of the notifications, and the text of the link to it.</summary>
-    public const string Title = "Notifications";
+    public static string Title => "Notifications";
 
     /// <summary>The heading of the page a user opts in to email for critical events on.</summary>
-    public const string EmailTitle = "Email for critical events";
+    public static string EmailTitle => "Email for critical events";
 
     /// <summary>The text of the link that leads from a page of an agent to every notification of its user.</summary>
-    public const string AllLink = "All your notifications";
+    public static string AllLink => "All your notifications";
 
     /// <summary>The text of the button that marks a notification as read.</summary>
-    public const string MarkRead = "Mark as read";
+    public static string MarkRead => "Mark as read";
 
     /// <summary>The text of the button that marks every notification as read.</summary>
-    public const string MarkAll = "Mark all as read";
+    public static string MarkAll => "Mark all as read";
 
     /// <summary>The name of the form that marks every notification as read.</summary>
     public const string MarkAllForm = "mark-all-read";
@@ -39,44 +39,66 @@ public static class NotificationPages
     public const string EmailOffForm = "email-off";
 
     /// <summary>The text of the button that opts a user in to email for critical events.</summary>
-    public const string EmailOn = "Send me email for critical events";
+    public static string EmailOn => "Send me email for critical events";
 
     /// <summary>The text of the button that opts a user out of it.</summary>
-    public const string EmailOff = "Stop the email for critical events";
+    public static string EmailOff => "Stop the email for critical events";
 
     /// <summary>What the page of the notifications is (FR-NTF-1).</summary>
-    public const string Explained =
+    public static string Explained =>
         "What the service has to tell you: a position that was opened or closed, an agent that was halted or waits for you, " +
         "a key that is invalid, a model that is unavailable, an order or a protection that failed, records that did not match " +
         "Binance, and a position that approaches liquidation. A notification stays here once you have read it.";
 
     /// <summary>What the page says to a user who has been told nothing.</summary>
-    public const string None = "The service has told you nothing yet.";
+    public static string None => "The service has told you nothing yet.";
 
     /// <summary>What a notification that its user has not read says of itself.</summary>
-    public const string NotRead = "Not read.";
+    public static string NotRead => "Not read.";
 
     /// <summary>What a notification that its user has read says of itself.</summary>
-    public const string Read = "Read.";
+    public static string Read => "Read.";
 
     /// <summary>What email for critical events is, and that it is the user's own choice (FR-NTF-3).</summary>
-    public const string EmailExplained =
+    public static string EmailExplained =>
         "The service tells you what matters on the page of your notifications. You can have the critical events sent to you by " +
         "email as well: those that stop an agent from trading, or that put money at risk. No email of this kind is sent unless " +
         "you choose so here, and you can turn it off again at any time.";
 
     /// <summary>What an email holds, as the page that turns it on says.</summary>
-    public const string EmailHolds =
+    public static string EmailHolds =>
         "An email says what the notification says, with the symbol and the mode of the agent. It holds no key and no password. " +
         "Events that happen close together are sent in one message.";
 
     /// <summary>What the page says to a user who has not opted in.</summary>
-    public const string EmailIsOff = "Off. You are sent no email for critical events.";
+    public static string EmailIsOff => "Off. You are sent no email for critical events.";
 
     /// <summary>What the page says to a user whose address is not verified: no email goes to it.</summary>
-    public const string AddressNotVerified =
+    public static string AddressNotVerified =>
         "Your email address is not verified yet, and no email of this kind is sent to an address that is not. " +
         "Open the link in the message that was sent to you when you registered.";
+
+    /// <summary>What the page of the email for critical events says over the list of them. The list is named by it.</summary>
+    public static string CriticalEvents => "The critical events are:";
+
+    /// <summary>The text of the link that leads from the page of the email for critical events to the notifications themselves.</summary>
+    public static string NotificationsLink => "Your notifications";
+
+    /// <summary>The text of the link that leads from a notification to the page of its agent, by the name that its user gave it.</summary>
+    /// <param name="name">The name of the agent.</param>
+    public static string AgentLink(string name) => $"State of the agent {name}";
+
+    /// <summary>The name of the links to the other pages of the notifications, as a screen reader says it.</summary>
+    public static string PagesNavigation => "Pages of notifications";
+
+    /// <summary>The text of the link to the page of the notifications before this one, which are newer.</summary>
+    public static string NewerLink => "Newer notifications";
+
+    /// <summary>The text of the link to the page of the notifications after this one, which are older.</summary>
+    public static string OlderLink => "Older notifications";
+
+    /// <summary>The text of the link that leads from the page of the notifications to the agents.</summary>
+    public static string AgentsLink => "Your agents";
 
     /// <summary>The text of the link to the page of the notifications in the bar at the top of every page, with how many are not read.</summary>
     public static string Link(int unread) => unread > 0 ? $"{Title} ({Count(unread)})" : Title;
@@ -107,6 +129,9 @@ public static class NotificationPages
 
         return $"Page {Count(list.Page)} of {Count(list.Pages)}";
     }
+
+    /// <summary>What the page says over the notifications: how many there are, in which order, and which page this is.</summary>
+    public static string Listed(NotificationList list) => $"{Counted(list)}, newest first. {PageOf(list)}.";
 
     /// <summary>What the page says to a user who opted in: that it is on, and where an email goes.</summary>
     public static string EmailIsOn(string? address) =>

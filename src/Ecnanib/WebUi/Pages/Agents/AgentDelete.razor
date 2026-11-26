@@ -10,16 +10,16 @@
     instead. An agent is deleted only while it is a draft, or is stopped with no open position
     or orders, which DeleteAsync asks again. The form is on the page whenever one is posted,
     whatever is stored by then: a form that is sent twice finds no agent the second time, and is
-    answered as the first one was.
+    answered as the first one was. Its texts are in AgentStatePages and AgentPages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Delete the agent @_agent.Name</PageTitle>
+    <PageTitle>@AgentStatePages.DeleteTitle(_agent.Name)</PageTitle>
 
-    <h1>Delete the agent @_agent.Name</h1>
+    <h1>@AgentStatePages.DeleteTitle(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@AgentPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_notDeleted is not null)
     {
@@ -28,7 +28,7 @@
 
     @if (_agent.StructureCanChange)
     {
-        <p>This deletes the agent and its settings, at once and for good. It cannot be undone.</p>
+        <p>@AgentStatePages.DeleteExplained</p>
     }
     else if (_notDeleted is null)
     {
@@ -41,19 +41,16 @@
     <form method="post" @formname="@AgentPages.DeleteForm" @onsubmit="DeleteAsync">
         <AntiforgeryToken />
 
-        <button type="submit">Delete the agent</button>
+        <button type="submit">@AgentStatePages.Delete</button>
     </form>
 }
 
 @if (_agent is not null)
 {
-    <p><a href="@WebUiModule.AgentsPath">Keep the agent</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@AgentStatePages.KeepAgent</a></p>
 }
 
 @code {
-    private const string StopFirst = "This agent is not stopped. Stop it before you delete it.";
-    private const string CloseFirst = "This agent has an open position or open orders. Close them before you delete it.";
-
     private AgentView? _agent;
     private string? _notDeleted;
     private bool _showForm;
@@ -103,11 +100,11 @@
         switch (await Agents.DeleteAsync(request, Id))
         {
             case DeleteAgentOutcome.NotStopped:
-                _notDeleted = StopFirst;
+                _notDeleted = AgentStatePages.StopFirst;
                 break;
 
             case DeleteAgentOutcome.HoldsPosition:
-                _notDeleted = CloseFirst;
+                _notDeleted = AgentStatePages.CloseFirst;
                 break;
 
             default:
@@ -117,5 +114,5 @@
         }
     }
 
-    private static string NotNow(AgentView agent) => AgentStates.IsActive(agent.State) ? StopFirst : CloseFirst;
+    private static string NotNow(AgentView agent) => AgentStates.IsActive(agent.State) ? AgentStatePages.StopFirst : AgentStatePages.CloseFirst;
 }

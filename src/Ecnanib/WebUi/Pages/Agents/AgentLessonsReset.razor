@@ -16,16 +16,16 @@
     user is not found, like one that does not exist. The form is on the page whenever one is
     posted, whatever is stored by then: a form that is sent twice finds no lesson the second
     time, and is answered as the first one was. The badge of the agent's mode is under the
-    heading (FR-UI-3).
+    heading (FR-UI-3). Its texts are in LessonPages.
 *@
 
 @if (_agent is not null)
 {
-    <PageTitle>Reset the lessons of the agent @_agent.Name</PageTitle>
+    <PageTitle>@LessonPages.ResetTitleOf(_agent.Name)</PageTitle>
 
-    <h1>Reset the lessons of the agent @_agent.Name</h1>
+    <h1>@LessonPages.ResetTitleOf(_agent.Name)</h1>
 
-    <p>Mode: <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
+    <p>@LessonPages.ModeLabel <ModeBadge Mode="@_agent.Mode" /> @AgentPages.TradesIn(_agent.Mode)</p>
 
     @if (_list is not null)
     {

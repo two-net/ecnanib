@@ -72,6 +72,23 @@ public static class SignedInUser
     }
 
     /// <summary>
+    /// The time zone that the pages write a time in for the account that a user is signed in to,
+    /// or null when they are not signed in: the one of their device, or UTC (NFR-USA-3). It is
+    /// what the account said when the request was signed in, which is on every request.
+    /// </summary>
+    /// <param name="user">The user of a request, or of the connection of an interactive page.</param>
+    public static TimeDisplay? TimeDisplayOf(ClaimsPrincipal user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        return user.Identity is { IsAuthenticated: true }
+            && Enum.TryParse<TimeDisplay>(user.FindFirstValue(SessionAuthentication.TimeDisplayClaimType), out var display)
+            && Enum.IsDefined(display)
+            ? display
+            : null;
+    }
+
+    /// <summary>
     /// When the session that a user is signed in with ends if nothing more is done with it, or
     /// null when they are not signed in. It is what the session said when the request was
     /// signed in, which is on every request: what another window of the same browser did since

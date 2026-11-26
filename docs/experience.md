@@ -421,7 +421,7 @@ The pages are rendered on the server for each request, and none is interactive. 
 | **The page of a model that no trade of the user counts for is there.** | It says that nothing is recorded for the user in that mode. The catalog links every model to its page, so it is not "not found". A path that names no model of the catalog is. |
 | **The records are asked for by owner.** | A page hands `ITrackRecords` the user who is signed in. The catalog is the same for everyone, and the page of a model has one address for every user: each sees the record of their own trades there. The board alone is of every user, and names none: see "The page of the board". |
 | **What a provider wrote is shown as text.** | The name of a model, like everything else on a page (NFR-SEC-4). |
-| The times are UTC. | As on the other pages. |
+| The times are in the time zone of the page (NFR-USA-3). | As on the other pages: see [times.md](times.md). |
 
 The texts of the screens are in `ExperiencePages`, in one place, with how a filter is named in an address and read from one.
 
@@ -642,4 +642,3 @@ A run that completed something says how much, as information, and a run that com
 - The board for a visitor. It is for a signed-in user, as every experience screen is.
 - Keeping the trades of an agent that is deleted. The specification keeps positions indefinitely (NFR-DAT-5), and deleting an agent deletes its positions: see "The record of an order" in [orders.md](orders.md). A track record follows the positions, so it loses those trades.
 - A track record by symbol, by agent, or by exit reason. A trade says none of them to Experience.
-- Times in the user's own time zone (NFR-USA-3). The pages write a time through `PageTimes`, in UTC.

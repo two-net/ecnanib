@@ -355,9 +355,23 @@ The public landing page presents the four-provider team with an animated illustr
 
 The UI meets WCAG 2.1 AA, is fully operable by keyboard, and labels controls for screen readers (NFR-USA-1). It is of the Web UI, and no component of its own: a page is made of the elements that a browser knows, and what was added to them is in one place each. What takes the focus when a page opens is a selector that the layout names, `Screens.FocusOnLoad`: the heading of the page, or what a form was answered with. What a field says of itself when a form refused it is `PageFields`. What has the focus of the keyboard is outlined by one rule of the stylesheet, in the colour of the text of its page.
 
-Two things were built for it that reach beyond a page. A session ends after a period of inactivity, and a page of a user says so shortly before, in a dialog with a button that says they are still there: when the session ends is told to a request as it is signed in, by Accounts with `ISessionEnd`, and the second script of the application, `wwwroot/session.js`, asks the server before it shows the dialog, which is no activity. And a page that follows what changes can be paused by a choice of its address: it then makes no connection, and is written once, as every page is before its connection is made.
+Two things were built for it that reach beyond a page. A session ends after a period of inactivity, and a page of a user says so shortly before, in a dialog with a button that says they are still there: when the session ends is told to a request as it is signed in, by Accounts with `ISessionEnd`, and a script of the application, `wwwroot/session.js`, asks the server before it shows the dialog, which is no activity. And a page that follows what changes can be paused by a choice of its address: it then makes no connection, and is written once, as every page is before its connection is made.
 
 Every state of every screen is on one list, `AccessibilityRules.cs` in the tests, which is held to the routes of the pages. Each run of the tests asks for every state and holds its markup to the rules of that list. A run that is told to drives a browser over the same list, with axe in both themes and a walk with the keyboard: that is the check of a release. Accessibility adds no table and no column. `ComponentRules.cs` is unchanged. See [accessibility.md](accessibility.md).
+
+## Texts
+
+The UI is in English, and text is kept separate from code so that other languages can be added (NFR-USA-4). It is of the Web UI, and no component of its own: a page holds no words of its own, and asks a text class for each, a static class beside the pages that it serves. A text is a property or a method of such a class, and never a constant, which the compiler would copy into the page. What a member of an enum is called is a text too: `AgentPages.NameOf`. The rule is `TextRules.cs` in the tests, which reads what was compiled of every component, as the dependency rules read the assembly, and finds each literal that is handed over as text. Risk settings, agent states, and Risk Guard rejections are explained in plain language where they appear (NFR-USA-2), with texts of the same classes: a setting and a rejection say what follows from them, and a page that shows states says what each means.
+
+No second language is built, and nothing chooses one. What a notification says is written when it is raised, and stored as it was written. Texts add no table and no column. `ComponentRules.cs` is unchanged. See [texts.md](texts.md).
+
+## Times
+
+Times are shown in the user's local time zone, with UTC available (NFR-USA-3). The choice of an account is of Accounts: `TimeDisplay`, the `time_display` column of `users`, and `ITimeDisplayChoice`, which the Web UI calls from the page of the appearance. It says whether the pages are in the time zone of the device, which a new account has, or in UTC, and a request is told it as it is signed in, as the theme is. Which time zone a device is in is of the Web UI, and is kept on the device: the third script of the application, `wwwroot/times.js`, writes what the browser says into a hidden field of the form of the sign-in, and `DeviceTimeZone` keeps it in a cookie that the server alone reads.
+
+The server writes every time. `PageTimes` is handed to every page with the time zone of its request, and there is no way to write a time without it, so no page writes one in a time zone of its own. A part that is written over the connection of its page is told the time zone by the page, by its name. Each time says how far its time zone is from UTC. Timestamps are stored in UTC as before (NFR-DAT-8), and an email and a file to keep are in UTC.
+
+Times add one column and no table. `ComponentRules.cs` forbids the time zone and the local time of the machine, and is otherwise unchanged. See [times.md](times.md).
 
 ## Logging
 

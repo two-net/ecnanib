@@ -47,7 +47,7 @@ public partial class TeamIllustrationPageTests
         // for it, and its job as the form of an agent says it. Every role is done, and the work
         // was handed to each stage: it is the picture of a cycle that has gone through.
         Assert.Equal(Illustration("Claude", "Grok", "GPT", "Gemini"), figure);
-        Assert.Equal(HomePages.TeamCaption, Caption);
+        Assert.Equal(Caption, HomePages.TeamCaption);
 
         // It is under what the page says of the team, and above what is at stake.
         Assert.True(page.IndexOf(HomePages.Who, StringComparison.Ordinal) < page.IndexOf(figure[..40], StringComparison.Ordinal));

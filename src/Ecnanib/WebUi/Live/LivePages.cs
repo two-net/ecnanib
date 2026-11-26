@@ -17,30 +17,30 @@ namespace Ecnanib.WebUi.Live;
 public static class LivePages
 {
     /// <summary>The heading of the position of an agent.</summary>
-    public const string PositionHeading = "Position";
+    public static string PositionHeading => "Position";
 
     /// <summary>What the page says of an agent that holds no position.</summary>
-    public const string NoPosition = "The agent holds no position.";
+    public static string NoPosition => "The agent holds no position.";
 
     /// <summary>What a step that a cycle has left behind says.</summary>
-    public const string StepDone = "done";
+    public static string StepDone => "done";
 
     /// <summary>
     /// What the screen of an agent says of its team while no cycle of the agent runs
     /// (FR-RPT-2). The state of the agent, which the page says above it, says whether the team
     /// is called at the next close.
     /// </summary>
-    public const string AtRest = "The team is at rest: no cycle of the agent runs at the moment.";
+    public static string AtRest => "The team is at rest: no cycle of the agent runs at the moment.";
 
     /// <summary>The heading of a cycle that runs, which says what started it.</summary>
     public static string Running(CycleKind kind) => kind == CycleKind.Test ? "A test cycle is running" : "A cycle is running";
 
     /// <summary>What a cycle that runs is for, and since when it runs.</summary>
-    public static string RunningFor(RunningCycle cycle)
+    public static string RunningFor(RunningCycle cycle, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(cycle);
 
-        var runs = $"It is for the candle that closed at {PageTimes.At(cycle.ClosedAt)}, and started at {PageTimes.AtSecond(cycle.StartedAt)}.";
+        var runs = $"It is for the candle that closed at {times.At(cycle.ClosedAt)}, and started at {times.AtSecond(cycle.StartedAt)}.";
 
         return cycle.Kind == CycleKind.Test
             ? $"{runs} You ran it as a test: it places no orders. Its steps are listed as it comes to them, and its timeline shows the rest when it has ended."
@@ -62,17 +62,17 @@ public static class LivePages
     };
 
     /// <summary>What the step that a cycle is at says: <c>now, since 15 November 2026, 09:20:07 UTC</c>.</summary>
-    public static string StepNow(DateTimeOffset since) => $"now, since {PageTimes.AtSecond(since)}";
+    public static string StepNow(DateTimeOffset since, PageTimes times) => $"now, since {times.AtSecond(since)}";
 
     /// <summary>The heading of a cycle that ended a moment ago, which says what started it.</summary>
     public static string Ended(CycleKind kind) => kind == CycleKind.Test ? "A test cycle has ended" : "A cycle has ended";
 
     /// <summary>What a cycle that ended a moment ago was for, and when it ended.</summary>
-    public static string EndedFor(RunningCycle cycle, DateTimeOffset endedAt)
+    public static string EndedFor(RunningCycle cycle, DateTimeOffset endedAt, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(cycle);
 
-        var ended = $"It was for the candle that closed at {PageTimes.At(cycle.ClosedAt)}, and ended at {PageTimes.AtSecond(endedAt)}.";
+        var ended = $"It was for the candle that closed at {times.At(cycle.ClosedAt)}, and ended at {times.AtSecond(endedAt)}.";
 
         return cycle.Kind == CycleKind.Test
             ? $"{ended} You ran it as a test: it placed no orders. Its timeline shows the rest."
@@ -103,17 +103,23 @@ public static class LivePages
     };
 
     /// <summary>
+    /// The names that the stylesheet knows a stage of the pipeline by: <c>pipeline-stage</c>,
+    /// with <c>stage-handed</c> once the work was handed to it.
+    /// </summary>
+    public static string StageClassOf(bool handed) => handed ? "pipeline-stage stage-handed" : "pipeline-stage";
+
+    /// <summary>
     /// The open position of an agent in a sentence. On the Futures market it says the side: a
     /// position of the Spot market is of what the agent bought.
     /// </summary>
-    public static string Says(OpenPosition position)
+    public static string Says(OpenPosition position, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(position);
 
         var side = position.Market == Market.Futures ? (position.Side == PositionSide.Long ? "A long position" : "A short position") : "A position";
 
         return $"{side} of {AgentPages.Number(position.Quantity)} in {position.Symbol}, entered at {AgentPages.Number(position.EntryPrice)} " +
-            $"{position.QuoteAsset}, open since {PageTimes.At(position.OpenedAt)}.";
+            $"{position.QuoteAsset}, open since {times.At(position.OpenedAt)}.";
     }
 
     /// <summary>
@@ -137,20 +143,20 @@ public static class LivePages
     }
 
     /// <summary>A price that is followed, with when Binance was asked for it.</summary>
-    public static string Says(LivePrice followed, WatchedPrice price, string? quoteAsset) =>
-        PriceFigure(followed, price, quoteAsset).Text;
+    public static string Says(LivePrice followed, WatchedPrice price, string? quoteAsset, PageTimes times) =>
+        PriceFigure(followed, price, quoteAsset, times).Text;
 
     /// <summary>
     /// That sentence with the price as a figure that counts when it changes (FR-ANI-2). The
     /// words before it and after it are the ones of <see cref="Says(LivePrice, WatchedPrice, string?)"/>.
     /// </summary>
-    public static PageFigure PriceFigure(LivePrice followed, WatchedPrice price, string? quoteAsset)
+    public static PageFigure PriceFigure(LivePrice followed, WatchedPrice price, string? quoteAsset, PageTimes times)
     {
         ArgumentNullException.ThrowIfNull(followed);
         ArgumentNullException.ThrowIfNull(price);
 
         var asset = quoteAsset is null ? string.Empty : $" {quoteAsset}";
-        var read = $"{asset}, as of {PageTimes.AtSecond(price.ReadAt)}.";
+        var read = $"{asset}, as of {times.AtSecond(price.ReadAt)}.";
 
         return followed.Kind == ExchangePriceKind.Mark
             ? PageFigure.Of(AgentPages.Number(price.Price), $"The mark price of {followed.Symbol} is ", read)
@@ -175,7 +181,7 @@ public static class LivePages
         UnrealizedFigure(position, price)?.Text ?? NothingMade;
 
     /// <summary>What the page says of a position that would make nothing and lose nothing: it has no figure.</summary>
-    public const string NothingMade = "At that price the position would make nothing and lose nothing, before fees and funding.";
+    public static string NothingMade => "At that price the position would make nothing and lose nothing, before fees and funding.";
 
     /// <summary>
     /// That sentence with what the position would make as a figure that counts when it changes
@@ -210,23 +216,23 @@ public static class LivePages
     public const string Paused = "paused";
 
     /// <summary>What a page that follows says of itself, beside the link that pauses it.</summary>
-    public const string Follows = "This page follows what changes, and updates by itself.";
+    public static string Follows => "This page follows what changes, and updates by itself.";
 
     /// <summary>The link that pauses a page that follows.</summary>
-    public const string Pause = "Pause live updates";
+    public static string Pause => "Pause live updates";
 
     /// <summary>The link that has a paused page follow again.</summary>
-    public const string Resume = "Resume live updates";
+    public static string Resume => "Resume live updates";
 
     /// <summary>
     /// What a paused page adds where it shows prices: a price is read for a page that follows
     /// it, and for no other, so a paused page may have none.
     /// </summary>
-    public const string PausedPrices = "No price is read for a paused page, so a price may be said to be not known.";
+    public static string PausedPrices => "No price is read for a paused page, so a price may be said to be not known.";
 
     /// <summary>What a page that is paused says of itself, beside the link that has it follow again: since when it is as it is.</summary>
-    public static string PausedAt(DateTimeOffset at) =>
-        $"Live updates are paused. This page shows what was so at {PageTimes.AtSecond(at)}, and does not change by itself.";
+    public static string PausedAt(DateTimeOffset at, PageTimes times) =>
+        $"Live updates are paused. This page shows what was so at {times.AtSecond(at)}, and does not change by itself.";
 
     /// <summary>
     /// Whether an address asks for its page paused: true for <c>?live=paused</c>, and false for

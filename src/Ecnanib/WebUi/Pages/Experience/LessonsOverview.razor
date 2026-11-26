@@ -21,7 +21,7 @@
     every experience screen states (FR-EXP-11). A lesson says its mode as a word: the page shows
     lessons of both modes, and has no badge (FR-BIN-11). What a model wrote is written as text,
     like everything else on a page (NFR-SEC-4). An address that names a choice which there is not
-    is answered with "not found". The times are UTC.
+    is answered with "not found". The times are UTC. Its texts are in LessonPages.
 *@
 
 @if (_list is not null)
@@ -56,7 +56,7 @@
     }
     else
     {
-        <p>@LessonPages.Lessons(_list.Written), the most recently closed first. @LessonPages.PageOf(_list).</p>
+        <p>@LessonPages.Listed(_list.Written) @LessonPages.PageOf(_list).</p>
 
         <section class="lessons" aria-labelledby="lessons-heading">
             @foreach (var lesson in _list.Lessons)
@@ -65,20 +65,20 @@
                     <h2 id="@LessonPages.HeadingId(lesson.Id)">@LessonPages.HeadingOf(lesson)</h2>
 
                     @* The agent by the name that its user gave it, and the mode of the trade as a word. *@
-                    <p>Agent <a href="@WebUiModule.LessonsOfAgentPath(lesson.AgentId)">@NameOf(lesson.AgentId)</a>, in @LessonPages.ModeOf(lesson). Closed @PageTimes.At(lesson.ClosedAt).</p>
+                    <p>@LessonPages.AgentLabel <a href="@WebUiModule.LessonsOfAgentPath(lesson.AgentId)">@NameOf(lesson.AgentId)</a>, @LessonPages.TradedIn(lesson) @LessonPages.ClosedAt(Times.At(lesson.ClosedAt))</p>
 
                     <dl>
-                        <dt>Setup</dt>
+                        <dt>@LessonPages.SetupLabel</dt>
                         <dd>@lesson.Setup</dd>
-                        <dt>Expected</dt>
+                        <dt>@LessonPages.ExpectedLabel</dt>
                         <dd>@lesson.Expected</dd>
-                        <dt>What happened</dt>
+                        <dt>@LessonPages.HappenedLabel</dt>
                         <dd>@lesson.Happened</dd>
-                        <dt>Takeaway</dt>
+                        <dt>@LessonPages.TakeawayLabel</dt>
                         <dd>@lesson.Takeaway</dd>
                         @if (lesson.Tags.Count > 0)
                         {
-                            <dt>About</dt>
+                            <dt>@LessonPages.TagsLabel</dt>
                             <dd>@LessonPages.Tags(lesson)</dd>
                         }
                     </dl>
@@ -92,7 +92,7 @@
                             <form method="post" @formname="@LessonPages.DisableForm(lesson.Id)" @onsubmit="() => SetEnabledAsync(lesson, enabled: false)">
                                 <AntiforgeryToken />
 
-                                <button type="submit">Disable the @LessonPages.NameOf(lesson)</button>
+                                <button type="submit">@LessonPages.DisableLesson(lesson, Times)</button>
                             </form>
                         }
                         else
@@ -100,11 +100,11 @@
                             <form method="post" @formname="@LessonPages.EnableForm(lesson.Id)" @onsubmit="() => SetEnabledAsync(lesson, enabled: true)">
                                 <AntiforgeryToken />
 
-                                <button type="submit">Enable the @LessonPages.NameOf(lesson)</button>
+                                <button type="submit">@LessonPages.EnableLesson(lesson, Times)</button>
                             </form>
                         }
 
-                        <a href="@WebUiModule.DeleteAgentLessonPath(lesson.AgentId, lesson.Id)">Delete the @LessonPages.NameOf(lesson)</a>
+                        <a href="@WebUiModule.DeleteAgentLessonPath(lesson.AgentId, lesson.Id)">@LessonPages.DeleteLesson(lesson, Times)</a>
                     </div>
                 </article>
             }
@@ -113,15 +113,15 @@
         @if (_list.Pages > 1)
         {
             @* Another page of the list is asked for as a page of its own, so it opens with the focus at its heading (NFR-USA-1). *@
-            <nav class="lesson-pages" aria-label="Pages of lessons" data-enhance-nav="false">
+            <nav class="lesson-pages" aria-label="@LessonPages.PagesLabel" data-enhance-nav="false">
                 @if (_list.Page > 1)
                 {
-                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page - 1)">Newer lessons</a>
+                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page - 1)">@LessonPages.NewerLessons</a>
                 }
 
                 @if (_list.Page < _list.Pages)
                 {
-                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page + 1)">Older lessons</a>
+                    <a href="@WebUiModule.LessonsOfAgentPath(_agent?.Id, _list.Page + 1)">@LessonPages.OlderLessons</a>
                 }
             </nav>
         }
@@ -129,19 +129,23 @@
 
     @if (_agent is not null)
     {
-        <p><a href="@WebUiModule.ResetAgentLessonsPath(_agent.Id)">@LessonPages.Reset of @_agent.Name</a></p>
+        <p><a href="@WebUiModule.ResetAgentLessonsPath(_agent.Id)">@LessonPages.ResetOf(_agent.Name)</a></p>
 
-        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">State of the agent</a></p>
+        <p><a href="@WebUiModule.AgentStatePath(_agent.Id)">@LessonPages.StateLink</a></p>
 
         <p><a href="@WebUiModule.LessonsPath">@LessonPages.OfEveryAgentLink</a></p>
     }
 
     <p><a href="@WebUiModule.ExperiencePath">@ExperiencePages.Title</a></p>
 
-    <p><a href="@WebUiModule.AgentsPath">Your agents</a></p>
+    <p><a href="@WebUiModule.AgentsPath">@LessonPages.AgentsLink</a></p>
 }
 
 @code {
+    /// <summary>The times of the page: every time is written in its time zone (NFR-USA-3). See docs/times.md.</summary>
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
     private LessonList? _list;
     private AgentView? _agent;
     private IReadOnlyDictionary<Guid, string> _names = new Dictionary<Guid, string>();
@@ -197,7 +201,7 @@
     }
 
     // The lessons of an agent go with it, so every lesson has an agent that is listed.
-    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : "of this lesson";
+    private string NameOf(Guid agentId) => _names.TryGetValue(agentId, out var name) ? name : LessonPages.UnnamedAgent;
 
     private async Task SetEnabledAsync(LessonView lesson, bool enabled)
     {

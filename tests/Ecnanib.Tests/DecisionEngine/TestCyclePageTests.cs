@@ -64,7 +64,9 @@ public partial class TestCyclePageTests
         Assert.Contains(CyclePages.TestCosts, read);
         Assert.Contains(CyclePages.TestTakes, read);
         Assert.Contains(CyclePages.TestStaleLimit, read);
-        Assert.Contains("The agent is <strong>Draft</strong>, and a test cycle does not start it.", read);
+        // The state of the agent is said with what it means (NFR-USA-2).
+        Assert.Contains(
+            $"The agent is <strong>Draft</strong>, and a test cycle does not start it. {AgentPages.Explain(AgentState.Draft)}</p>", read);
 
         // One form of its own, with one button, and the token against request forgery.
         Assert.Single(Form().Matches(page), form => form.Value.Contains(AgentBrowser.TestCyclePage(agent), StringComparison.Ordinal));

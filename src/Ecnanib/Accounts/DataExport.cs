@@ -33,6 +33,7 @@ internal sealed class DataExport(
                 user.TwoFactorEnabledAt,
                 user.Theme,
                 user.Motion,
+                user.TimeDisplay,
                 user.DecisionsReviewedAt,
                 user.LiveConsideredAt,
             })
@@ -91,6 +92,7 @@ internal sealed class DataExport(
                 new ExportedTwoFactor(account.TwoFactorEnabledAt is not null, account.TwoFactorEnabledAt, recoveryCodesLeft),
                 account.Theme,
                 account.Motion,
+                account.TimeDisplay,
                 account.DecisionsReviewedAt,
                 account.LiveConsideredAt),
             acceptances,

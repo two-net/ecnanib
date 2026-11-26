@@ -23,37 +23,37 @@ public sealed record Screen(string Name, string Path, params string[] Under);
 public static class Screens
 {
     /// <summary>The name of the service, which leads to the start page from every page.</summary>
-    public const string SiteName = "Ecnanib";
+    public static string SiteName => "Ecnanib";
 
     /// <summary>The text of the link that leads past the bar, which is the first of every page.</summary>
-    public const string SkipLink = "Skip to the content";
+    public static string SkipLink => "Skip to the content";
 
     /// <summary>The id of the part of a page that holds its content, which that link leads to.</summary>
     public const string ContentId = "content";
 
     /// <summary>What opens and closes the navigation on a narrow screen.</summary>
-    public const string Menu = "Menu";
+    public static string Menu => "Menu";
 
     /// <summary>The name of the navigation of the bar, as a screen reader says it.</summary>
-    public const string MainNavigation = "Main";
+    public static string MainNavigation => "Main";
 
     /// <summary>The name of the navigation of the settings, as a screen reader says it.</summary>
-    public const string SettingsNavigation = "Settings";
+    public static string SettingsNavigation => "Settings";
 
     /// <summary>The name of the links to the legal documents at the foot of every page.</summary>
-    public const string LegalNavigation = "Legal";
+    public static string LegalNavigation => "Legal";
 
     /// <summary>The name of what the foot of a page leads a visitor to beside them, as a screen reader says it.</summary>
-    public const string DeviceNavigation = "This device";
+    public static string DeviceNavigation => "This device";
 
     /// <summary>The text of the link of a visitor to the page they sign in on.</summary>
-    public const string SignIn = "Sign in";
+    public static string SignIn => "Sign in";
 
     /// <summary>The text of the link of a visitor to the page they register on.</summary>
-    public const string Register = "Register";
+    public static string Register => "Register";
 
     /// <summary>The text of the button that signs a user out.</summary>
-    public const string SignOut = "Sign out";
+    public static string SignOut => "Sign out";
 
     /// <summary>
     /// The id of the form of the bar that signs a user out. The notice before a session ends
@@ -73,13 +73,26 @@ public static class Screens
     public const string FocusOnLoad = "main:not(:has(.form-error, .form-done)) h1, main .form-error, main .form-done";
 
     /// <summary>The name of the dialog that says the page is rejoining the server, as a screen reader says it.</summary>
-    public const string ServerConnection = "Connection to the server";
+    public static string ServerConnection => "Connection to the server";
 
     /// <summary>The name of the button that puts away what the page says of an error nothing handled, as a screen reader says it.</summary>
-    public const string Dismiss = "Dismiss";
+    public static string Dismiss => "Dismiss";
 
     /// <summary>What a screen reader is told while a page that was asked for is on its way for long.</summary>
-    public const string Loading = "Loading the page.";
+    public static string Loading => "Loading the page.";
+
+    /// <summary>What a page says when an error of it was handled by nothing.</summary>
+    public static string UnhandledError => "An unhandled error has occurred.";
+
+    /// <summary>The text of the link that asks for the page anew then.</summary>
+    public static string Reload => "Reload";
+
+    /// <summary>
+    /// The language that the pages are written in, as a page says it to the browser and to a
+    /// screen reader, on its first element: English (NFR-USA-4). It is the one place that says
+    /// so. See docs/texts.md.
+    /// </summary>
+    public static string Language => "en";
 
     public static readonly Screen Dashboard = new(DashboardPages.Title, WebUiModule.DashboardPath, WebUiModule.DashboardPath);
 

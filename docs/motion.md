@@ -158,7 +158,7 @@ The page of the appearance among the settings, `/account/appearance`, has a seco
 | **Nothing is stored for a visitor.** | The pages of a visitor move as their device asks, and the page of the appearance of a visitor offers the theme alone. Signed out, a device is one of a visitor again. |
 | **The server writes it into every page, ahead of the stylesheets.** | `PageMotion.Of` reads it from the user of the request, and `App.razor` writes `data-motion="reduced"` beside `data-theme`, and no attribute for System. So nothing of a page moves while a stylesheet or the script is on its way. The server is never told what the device asks: that is for the stylesheet to see. |
 | **A request is told it as it is signed in.** | It is read in the query that looks up the session, with the theme, and is a claim of the user of the request: `SessionAuthentication.MotionClaimType`, which `SignedInUser.MotionOf` reads. |
-| **Each of the two forms saves its own choice.** | The theme and what moves are chosen each by itself, and a form does not read the field of the other. |
+| **Each form of the page saves its own choice.** | The theme, what moves, and the time zone of the times are chosen each by itself, and a form does not read the field of another. The third form is in [times.md](times.md). |
 | **The form is as the one of the theme.** | Posted to its page with the token of the page, naming no user, asking for no proof of identity, and in no event of the audit trail. A form that names no choice saves nothing, and the page says "Choose System or Reduced." |
 | **It is a preference, and personal data of an allowed kind** (NFR-SEC-9). | One of two names. It is in the export of the user's data, under `account`, and goes with the account when it is deleted. |
 

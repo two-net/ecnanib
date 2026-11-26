@@ -287,13 +287,18 @@ internal static class AccessibilityRules
             "A user whose address is not verified is told so, in place of the setup."),
 
         // The newcomer saves, so that the pages of the user keep their theme.
-        new("/account/appearance", "two forms", Who.User, Reach.Opened, "main input[name='Motion']",
-            "Two groups of choices, each in a form with a button of its own."),
+        new("/account/appearance", "three forms", Who.User, Reach.Opened, "main input[name='Times']",
+            "Three groups of choices, each in a form with a button of its own: the theme, how much moves, and the time zone."),
         new("/account/appearance", "saved dark", Who.Newcomer, Reach.Answered("theme", ("Theme", "dark")), "html[data-theme='dark']",
             "The page comes back in the theme that was chosen: every colour of a page of a user is the dark one."),
         new("/account/appearance", "back to system", Who.Newcomer, Reach.Answered("theme", ("Theme", "system")),
             "main input#theme-system[checked]",
             "The page comes back as the device is set, after a theme was chosen."),
+        new("/account/appearance", "saved UTC", Who.Newcomer, Reach.Answered("times", ("Times", "utc")), "main input#times-utc[checked]",
+            "The page comes back with UTC chosen for the times of the pages."),
+        new("/account/appearance", "back to this device", Who.Newcomer, Reach.Answered("times", ("Times", "device")),
+            "main input#times-device[checked]",
+            "The page comes back with the time zone of the device chosen, after UTC was."),
 
         new("/account/notifications", "off", Who.User, Reach.Opened, "main input[name='_handler'][value='email-on']",
             "The list of the critical events, and the button that turns the email on."),

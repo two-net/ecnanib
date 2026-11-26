@@ -167,7 +167,7 @@ A signed-in user opens the dashboard at `/dashboard`, which the bar at the top o
 | **It leads to the downloads of the trades and the decisions** (FR-RPT-4). | Two links at its foot, to the CSV files of every agent of the user, in which each row says its mode. They are no part of a section of a mode: see [export.md](export.md). |
 | **It can be paused** (NFR-USA-1). | Under its heading the page says that it follows what changes, with "Pause live updates". Paused, it makes no connection and is as it was written, until "Resume live updates" is followed. The forms of its alerts and of the setup checklist lead back to it paused. A paused page reads no price, and says so: see "Pausing" in [live-updates.md](live-updates.md). |
 | **It has no field to type in.** | A page that follows has none: see "The one push channel" in [live-updates.md](live-updates.md). It has buttons and links: the forms of the alerts and the two of the setup checklist each have a button alone. |
-| **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written, and `SetupPages` for the setup checklist. The times are UTC, and say so. |
+| **Its texts are in one place.** | `DashboardPages` (NFR-USA-4), with how an amount is written, and `SetupPages` for the setup checklist: see [texts.md](texts.md). The times are in the time zone of the page, and each says how far that is from UTC (NFR-USA-3): see [times.md](times.md). |
 | **The tables scroll by themselves on a narrow screen,** | also by keyboard, and the cards stand side by side as far as they fit (FR-UI-1). The look is in `app.css`: a page carries no style of its own. |
 
 ## Testing
@@ -196,6 +196,5 @@ No test of these drives a browser. `AccessibilityBrowserTests` does, when a run 
 - Figures that move with the price between two changes: the total equity, the day, and what a position would make are of the moment that the page was written. Writing them over the connection, as the page of an agent writes its one position, needs the parts of the dashboard that hold a figure to be parts of that kind.
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in. A user arrives at the start page, `/`, which leads to the dashboard: see "The start page" in [layout.md](layout.md).
-- Times in the time zone of the user (NFR-USA-3).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
 - An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).

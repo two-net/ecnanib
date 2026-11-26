@@ -62,8 +62,11 @@ public class AgentClosePositionTests
         var (path, closed) = await client.ClosePositionAsync(agent);
 
         Assert.Equal(closePage, path);
+        // With the state of the agent, which is as it was, and what that state means (NFR-USA-2).
         Assert.Contains(
-            $"<p class=\"form-done\" role=\"status\">The position was closed at market. The agent is {AgentPages.Describe(state)}, as it was.</p>", closed);
+            $"<p class=\"form-done\" role=\"status\">The position was closed at market. The agent is {AgentPages.Describe(state)}, " +
+            $"as it was. {AgentPages.Explain(state)}</p>",
+            AgentBrowser.Read(closed));
         Assert.DoesNotContain(CloseButton, closed);
         Assert.Equal([agent], exposure.Closes);
 
