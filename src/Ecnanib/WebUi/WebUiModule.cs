@@ -68,6 +68,12 @@ public static class WebUiModule
     /// </summary>
     public const string OperatorStatusPath = "/operator";
 
+    /// <summary>
+    /// The path of the page on which an operator switches the global halt on or off (FR-OPS-3).
+    /// It is for operators alone, and is a part of the operator status screen, which leads to it.
+    /// </summary>
+    public const string GlobalHaltPath = "/operator/global-halt";
+
     /// <summary>The path of the download of what is stored about the signed-in user (NFR-SEC-9).</summary>
     public const string ExportPath = "/account/export";
 

@@ -121,9 +121,13 @@ public static class DecisionEngineModule
 
         // What has the Risk Guard check what goes on of a plan: it gathers the facts that the
         // fixed rules are asked of, and keeps the outcome of every rule for the record of the
-        // cycle (FR-RSK-4, FR-RSK-9). It calls no model. What keeps the global halt registers
-        // an IGlobalHalt, when it is built: until then no halt is on.
+        // cycle (FR-RSK-4, FR-RSK-9). It calls no model.
         services.AddSingleton<PlanChecks>();
+
+        // Whether a global halt is on, of whatever keeps one: Agents registers the IGlobalHalt
+        // that an operator switches (FR-OPS-3). What checks a plan asks it, and so does what
+        // settles the orders, which takes an entry that rests off the exchange while it is on.
+        services.AddSingleton<GlobalHalts>();
 
         // The checks of the Risk Guard that were stored for an agent, as its user reads them.
         services.AddSingleton<IRiskCheckRecords, RiskCheckRecords>();

@@ -27,6 +27,9 @@ internal static class OwnershipRules
         ["catalog_sync_runs"] = "The syncs of the catalog: when each ran and how it ended. A row names no user, also when a user's key was used.",
         ["prompt_templates"] = "The prompts that the system supplies, which are the same for every user.",
         ["background_jobs"] = "The latest run of each scheduled job of the application.",
+        ["runtime_flags"] =
+            "The switches of the service that are set while it runs: the global halt, which is the same for every user " +
+            "(FR-OPS-3). A row says who switched it last, and is set to nobody when that account is deleted.",
     };
 
     /// <summary>The tables of the application's model that break the rule, each with what to do about it.</summary>

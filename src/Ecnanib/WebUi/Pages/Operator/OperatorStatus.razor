@@ -8,7 +8,8 @@
     the bar of an operator, and only says what it is to show (FR-OPS-2). It has no form, asks
     the database nothing, and shows nothing of any user (FR-OPS-5): a screen that only shows is
     no action of an operator, so nothing of it is recorded in the audit trail. The first form
-    here is such an action. See "Operators" in docs/ownership.md.
+    here is such an action. What an operator does is on a page of its own, which this screen
+    leads to with a link: the global halt (FR-OPS-3). See "Operators" in docs/ownership.md.
 *@
 
 <PageTitle>@Screens.OperatorStatus.Name</PageTitle>
@@ -20,3 +21,5 @@
 <p>@OperatorPages.NotBuiltYet</p>
 
 <p>@OperatorPages.OnlyShows</p>
+
+<p><a href="@WebUiModule.GlobalHaltPath">@OperatorPages.HaltTitle</a></p>

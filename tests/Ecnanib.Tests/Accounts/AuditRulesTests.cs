@@ -4,6 +4,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
+using Ecnanib.WebUi;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -38,14 +39,22 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
             ],
             AuditRules.Requirement.Keys);
 
-        // Each is recorded, or waits for something, and never both.
+        // Each is recorded, or waits for something, and what waits says what is to be recorded.
         Assert.All(AuditRules.Requirement, action =>
         {
             var (recorded, waits) = (action.Value.RecordedAs.Count > 0, action.Value.WaitsFor is not null);
 
-            Assert.True(recorded != waits, $"\"{action.Key}\" must be recorded, or wait for what will do it, and not both.");
-            Assert.True(recorded || !string.IsNullOrWhiteSpace(action.Value.What), $"\"{action.Key}\" does not say what is to be recorded.");
+            Assert.True(recorded || waits, $"\"{action.Key}\" must be recorded, or wait for what will do it.");
+            Assert.True(!waits || !string.IsNullOrWhiteSpace(action.Value.What), $"\"{action.Key}\" does not say what is to be recorded.");
         });
+
+        // One is both, and is pinned as that: the actions of operators are recorded as far as
+        // they are built, which is the global halt, and the rest of them waits (FR-OPS-4).
+        Assert.Equal(
+            ["operator actions"],
+            AuditRules.Requirement
+                .Where(action => action.Value.RecordedAs.Count > 0 && action.Value.WaitsFor is not null)
+                .Select(action => action.Key));
     }
 
     [Fact]
@@ -102,7 +111,7 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
         {
             var reason = coverage.WaitsFor switch
             {
-                AuditRules.OperatorFunctions => WhyOperatorFunctionsAreBuilt(),
+                AuditRules.OperatorFunctions => WhyFurtherOperatorFunctionsAreBuilt(),
                 _ => model.Model.GetEntityTypes().Any(entity => IsWithin(entity.ClrType.Namespace, coverage.WaitsFor!))
                     ? $"{coverage.WaitsFor} stores rows of its own"
                     : null,
@@ -118,7 +127,8 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
             built.Count == 0,
             "The audit trail must record these actions (NFR-LOG-7), and what does them is built now. For each: add its " +
             $"members to {nameof(AuditAction)}, record them with {nameof(AuditTrail)}.{nameof(AuditTrail.RecordAsync)} in the " +
-            $"transaction of the action, mark the test that shows it, and list the members in {nameof(AuditRules)}. If one of " +
+            $"transaction of the action, mark the test that shows it, and list the members in {nameof(AuditRules)}: an " +
+            $"operator function in {nameof(AuditRules.RecordedOperatorFunctions)} as well, with what records it. If one of " +
             "them is not built by this change, say there what it waits for instead. See docs/accounts.md:" +
             Environment.NewLine + string.Join(Environment.NewLine, built));
     }
@@ -137,6 +147,55 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
 
         // And a call of IsOperator is seen where there is one: the policy itself makes it.
         Assert.Contains(CallersOfIsOperator(), caller => IsWithin(caller, "Ecnanib.Accounts"));
+
+        // So is the one outside Accounts: what switches the global halt asks again whether the
+        // user of its request is an operator, and is seen as the type that is listed for it.
+        Assert.Contains(CallersOfIsOperator(), caller => AuditRules.IsOf(caller, "Ecnanib.Agents.GlobalHaltSwitch"));
+    }
+
+    [Fact]
+    public async Task An_operator_function_that_is_recorded_is_there_and_says_what_records_it()
+    {
+        var guarded = Endpoints()
+            .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToHashSet();
+        var callers = CallersOfIsOperator().Where(caller => !IsWithin(caller, "Ecnanib.Accounts")).ToList();
+
+        // Each one that is listed is there: a route that requires the policy, or a type outside
+        // Accounts that asks whether its user is an operator. Nothing is listed that is gone.
+        var stale = AuditRules.RecordedOperatorFunctions.Keys
+            .Where(listed => !guarded.Contains(listed) && !callers.Any(caller => AuditRules.IsOf(caller, listed)))
+            .ToList();
+        Assert.True(
+            stale.Count == 0,
+            $"{nameof(AuditRules)} lists operator functions that the application does not have: {string.Join(", ", stale)}");
+
+        // None is a screen that only shows as well: it is one or the other.
+        Assert.DoesNotContain(AuditRules.RecordedOperatorFunctions.Keys, AuditRules.OperatorScreensThatOnlyShow.ContainsKey);
+
+        // What records them is what the requirement is recorded as, and nothing else.
+        Assert.All(AuditRules.RecordedOperatorFunctions, function => Assert.NotEmpty(function.Value));
+        Assert.Equal(
+            AuditRules.Requirement["operator actions"].RecordedAs.Order(),
+            AuditRules.RecordedOperatorFunctions.Values.SelectMany(actions => actions).Distinct().Order());
+
+        // And the page of each follows nothing, as an operator sees it: who is an operator is
+        // decided with each request, and a page that follows would decide it once, as its
+        // connection is made. See "Operators" in docs/ownership.md.
+        using var hosted = new AccountsApplication(
+            settings: file => file.WithJson("Application:Operators", "[ \"olive@example.com\" ]"));
+        using var client = hosted.CreateClient();
+        await hosted.RegisterVerifiedAsync("olive@example.com");
+        await client.SignInAsync("olive@example.com");
+
+        foreach (var route in AuditRules.RecordedOperatorFunctions.Keys.Where(guarded.Contains))
+        {
+            var page = await client.PageAsync(route);
+
+            Assert.Contains("<h1", page);
+            Assert.DoesNotContain("<!--Blazor:{\"type\":\"server\"", page);
+        }
     }
 
     [Fact]
@@ -197,15 +256,21 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
         // is under the address of that screen or elsewhere.
         var listed = Assert.Single(AuditRules.OperatorScreensThatOnlyShow.Keys);
 
-        Assert.Null(AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators(listed), ForUsers("/account"))));
+        Assert.Null(AuditRules.WhyFurtherOperatorFunctionsAreBuilt(Serving(ForOperators(listed), ForUsers("/account"))));
+
+        // The page of the global halt is under the address of that screen, and is an operator
+        // function that is built and recorded: nothing waits for it.
+        Assert.Null(AuditRules.WhyFurtherOperatorFunctionsAreBuilt(
+            Serving(ForOperators(listed), ForOperators(WebUiModule.GlobalHaltPath), ForUsers("/account"))));
 
         Assert.Equal(
-            $"{listed}/halt requires the operator policy",
-            AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators(listed), ForOperators($"{listed}/halt"))));
+            $"{listed}/accounts requires the operator policy",
+            AuditRules.WhyFurtherOperatorFunctionsAreBuilt(
+                Serving(ForOperators(listed), ForOperators(WebUiModule.GlobalHaltPath), ForOperators($"{listed}/accounts"))));
 
         Assert.Equal(
             "/api/catalog/sync requires the operator policy",
-            AuditRules.WhyOperatorFunctionsAreBuilt(Serving(ForOperators("/api/catalog/sync"), ForOperators(listed))));
+            AuditRules.WhyFurtherOperatorFunctionsAreBuilt(Serving(ForOperators("/api/catalog/sync"), ForOperators(listed))));
 
         static RouteEndpoint ForOperators(string route) => Endpoint(route, new AuthorizeAttribute { Policy = OperatorAccess.Policy });
 
@@ -260,10 +325,11 @@ public class AuditRulesTests(EcnanibApplicationFactory application) : IClassFixt
     }
 
     /// <summary>
-    /// Why the operator functions count as built, or null while none is. <see cref="AuditRules"/>
-    /// says how that is told, for whatever else waits for them.
+    /// Why a further operator function counts as built, or null while none is: one that is
+    /// neither a screen that only shows nor listed as recorded. <see cref="AuditRules"/> says
+    /// how that is told.
     /// </summary>
-    private string? WhyOperatorFunctionsAreBuilt() => AuditRules.WhyOperatorFunctionsAreBuilt(application.Services);
+    private string? WhyFurtherOperatorFunctionsAreBuilt() => AuditRules.WhyFurtherOperatorFunctionsAreBuilt(application.Services);
 
     /// <summary>The page and endpoint routes that the running application serves.</summary>
     private IEnumerable<RouteEndpoint> Endpoints() => AuditRules.Endpoints(application.Services);

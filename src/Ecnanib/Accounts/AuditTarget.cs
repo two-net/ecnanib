@@ -7,11 +7,18 @@ namespace Ecnanib.Accounts;
 /// <remarks>
 /// A target is made by one of the methods here, from an id, and never from text. So what a
 /// request brought cannot be written into the trail as a target. A component adds a method for
-/// its kind of target when it is built.
+/// its kind of target when it is built. A target that there is one of in the whole service has
+/// no id, and is a value here: <see cref="GlobalHalt"/>.
 /// </remarks>
 public sealed class AuditTarget
 {
     private AuditTarget(string text) => Text = text;
+
+    /// <summary>
+    /// The global halt, which is a runtime flag of the service and belongs to no user:
+    /// <c>runtime-flag:global-halt</c> (FR-OPS-3). It says nothing of who may switch it.
+    /// </summary>
+    public static AuditTarget GlobalHalt { get; } = new("runtime-flag:global-halt");
 
     /// <summary>The target as the trail stores it: the kind, a colon, and the id.</summary>
     internal string Text { get; }

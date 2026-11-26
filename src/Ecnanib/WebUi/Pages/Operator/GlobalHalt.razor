@@ -1,0 +1,114 @@
+@attribute [Route(WebUiModule.GlobalHaltPath)]
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+@using Ecnanib.Agents
+@inject IGlobalHaltSwitch Halt
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: who is an operator is decided
+    with each request, and a page that follows would decide it once (NFR-SEC-3). The page is for
+    operators alone, as the operator status screen is, which leads to it. A visitor is sent to
+    sign in, and a user who is not an operator is refused, for a form that is posted as for the
+    page.
+
+    It says what the global halt does and whom it acts on, whether it is on and since when, and
+    has one button, which switches it the other way (FR-OPS-3). It is the page that asks before
+    the halt is switched: nothing else on it can be done. The switch is recorded in the audit
+    trail by what makes it (FR-OPS-5). The page shows nothing of any user: not who switched the
+    halt, and no agent, position, or key.
+
+    One form at a time, named for what it does. Both are on the page while a form is answered,
+    whatever the halt is by then: a form that is not there cannot be answered, and one that is
+    sent twice, or after another operator was first, switches nothing and leads back here. Its
+    texts are in OperatorPages.
+*@
+
+@if (_state is not null)
+{
+    <PageTitle>@OperatorPages.HaltTitle</PageTitle>
+
+    <h1>@OperatorPages.HaltTitle</h1>
+
+    <p>@OperatorPages.HaltExplained</p>
+
+    <p>@OperatorPages.HaltActsOnEveryone</p>
+
+    @if (_state is { On: true, Since: { } since })
+    {
+        <p role="status">@OperatorPages.HaltIsOn(since, Times)</p>
+    }
+    else
+    {
+        <p role="status">@OperatorPages.HaltIsOff</p>
+    }
+
+    @if (_answers || _state.On)
+    {
+        <p>@OperatorPages.HaltOffMeans</p>
+
+        <form method="post" @formname="@OperatorPages.HaltOffForm" @onsubmit="() => SwitchAsync(on: false)">
+            <AntiforgeryToken />
+
+            <button type="submit">@OperatorPages.HaltOff</button>
+        </form>
+    }
+
+    @if (_answers || !_state.On)
+    {
+        <p>@OperatorPages.HaltOnMeans</p>
+
+        <form method="post" @formname="@OperatorPages.HaltOnForm" @onsubmit="() => SwitchAsync(on: true)">
+            <AntiforgeryToken />
+
+            <button type="submit">@OperatorPages.HaltOn</button>
+        </form>
+    }
+
+    <p>@OperatorPages.HaltRecorded</p>
+
+    <p><a href="@WebUiModule.OperatorStatusPath">@OperatorPages.BackToStatus</a></p>
+}
+
+@code {
+    private GlobalHaltState? _state;
+
+    // Whether a form is being answered, which finds its form on the page whatever the halt is.
+    private bool _answers;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _answers = !HttpMethods.IsGet(request.Request.Method);
+
+        // The halt of the service, which is the same for every operator. Nothing of a user is read.
+        _state = await Halt.StateAsync(request.RequestAborted);
+    }
+
+    private async Task SwitchAsync(bool on)
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // What switches the halt asks again whether the user of the request is an operator, and
+        // records the switch. A halt that is as asked for already stays as it is.
+        await Halt.SwitchAsync(request, on);
+
+        // The page as it is now, by a request that changes nothing: a reload of it sends no
+        // form again.
+        Navigation.NavigateTo(WebUiModule.GlobalHaltPath);
+    }
+}

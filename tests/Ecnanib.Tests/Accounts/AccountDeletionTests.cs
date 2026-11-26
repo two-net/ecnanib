@@ -497,6 +497,53 @@ public class AccountDeletionTests
     }
 
     [Fact]
+    public async Task The_account_of_an_operator_is_not_deleted_while_the_configuration_file_lists_it()
+    {
+        const string olive = "olive@example.com";
+        const string operatorKeepsTheirs = "You are an operator of this service, so your account cannot be deleted.";
+
+        using var application = new AccountsApplication(
+            settings: file => file.WithJson("Application:Operators", $"[ \"{olive}\" ]"));
+        using var client = application.CreateClient();
+        using var other = application.CreateClient();
+        var anOperator = await application.RegisterVerifiedAsync(olive);
+        await application.RegisterVerifiedAsync(Ada);
+        await client.SignInAsync(olive);
+
+        // What an operator does is recorded under their account, and would go with it
+        // (FR-OPS-5). The page says so at once: she is asked for no proof of who she is first,
+        // and is shown no button.
+        var (address, page) = await client.OpenAsync(DeletePage);
+
+        Assert.Equal(DeletePage, address);
+        Assert.Contains(operatorKeepsTheirs, page);
+        Assert.DoesNotContain(Button, page);
+
+        // The form is posted all the same, by someone who has just proved who they are.
+        // Nothing is deleted, and the answer says why.
+        await client.ConfirmIdentityAsync();
+        var (path, answer) = await client.PostAsync(DeletePage, "delete-account", Browser.AntiforgeryTokenIn(page));
+
+        Assert.Equal(DeletePage, path);
+        Assert.Contains(operatorKeepsTheirs, answer);
+        Assert.NotNull(StoredUser.Of(application.Database, olive));
+        Assert.Contains("You are signed in", await client.PageAsync("/account"));
+
+        var refused = Assert.Single(
+            application.Events(),
+            written => written.Template == "User {UserId} did not delete their account: the configuration file lists them as an operator");
+        Assert.Equal(anOperator.Id.ToString(), refused.Text("UserId"));
+
+        // A user whom the file does not list deletes theirs as ever. So does an operator once
+        // the file no longer lists them: GlobalHaltTests shows that, with what stays of a halt.
+        await other.SignInAsync(Ada);
+        await other.ConfirmIdentityAsync();
+
+        Assert.Equal(DeletedPage, (await other.DeleteAccountAsync()).Path);
+        Assert.Null(StoredUser.Of(application.Database, Ada));
+    }
+
+    [Fact]
     public async Task A_visitor_is_sent_to_sign_in_and_deletes_nothing()
     {
         using var application = new AccountsApplication();

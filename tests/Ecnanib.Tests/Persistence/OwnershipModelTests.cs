@@ -43,7 +43,7 @@ public class OwnershipModelTests
             ],
             OwnershipRules.UserOwnedTables(context.Model));
         Assert.Equal(
-            ["ai_models", "ai_providers", "background_jobs", "catalog_sync_runs", "prompt_templates", "roles"],
+            ["ai_models", "ai_providers", "background_jobs", "catalog_sync_runs", "prompt_templates", "roles", "runtime_flags"],
             OwnershipRules.ServiceTables.Keys.Order(StringComparer.Ordinal));
     }
 

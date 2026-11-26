@@ -114,6 +114,15 @@ public static class AccountPages
     /// <summary>What the page that deletes an account answers while an agent of its user is not stopped.</summary>
     public static string AgentsNotStopped => "One of your agents is not stopped. Stop every agent first, and then delete your account.";
 
+    /// <summary>
+    /// What the page that deletes an account answers an operator, whose account stays while the
+    /// configuration file lists it: the record of what an operator did goes with their account.
+    /// </summary>
+    public static string OperatorKeepsAccount =>
+        "You are an operator of this service, so your account cannot be deleted. The record of what an operator did is " +
+        "kept with their account. Have your email address taken off the list of operators in the configuration file " +
+        "first, and then delete your account.";
+
     /// <summary>What that page says over the list of what is deleted.</summary>
     public static string Deletes => "This deletes your account and everything that belongs to it, at once and for good:";
 

@@ -8,9 +8,10 @@ namespace Ecnanib.RiskGuard;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing implements it yet: the operator functions are not built, and nothing stores a halt.
-/// Until then no halt is on. A test fails as soon as the operator functions are built and
-/// nothing answers here.
+/// Agents implements it, for the halt that an operator switches, and a test holds the
+/// application to it: while nothing answered here, no halt would be on, whatever an operator
+/// switched. The Risk Guard is a leaf and stores nothing, so it declares the question and a
+/// component that may use it answers.
 /// </para>
 /// <para>
 /// The halt is a runtime flag of the database, and no setting of the configuration file

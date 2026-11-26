@@ -1,7 +1,7 @@
 using System.Reflection;
+using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.RiskGuard;
-using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Architecture;
 using Ecnanib.Tests.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -188,19 +188,24 @@ public class RiskGuardRulesTests(EcnanibApplicationFactory application) : IClass
     }
 
     [Fact]
-    public void Once_an_operator_can_switch_a_global_halt_the_Risk_Guard_is_told_whether_it_is_on()
+    public void An_operator_can_switch_a_global_halt_and_the_Risk_Guard_is_told_whether_it_is_on()
     {
-        // The operator functions are not built, and nothing stores a halt: no halt is on. As
-        // soon as an operator can switch one, a check that still said so would let every agent
-        // open positions while the halt is on (FR-OPS-3).
-        var built = AuditRules.WhyOperatorFunctionsAreBuilt(application.Services);
-        var answers = application.Services.GetServices<IGlobalHalt>().Any();
+        // An operator switches the halt, and Agents keeps it. What checks the plan of a cycle
+        // asks whatever is registered here, and nothing else: with nothing registered no halt
+        // would be on, whatever an operator switched, and every agent would go on opening
+        // positions (FR-OPS-3).
+        var answers = application.Services.GetServices<IGlobalHalt>().Select(halt => halt.GetType().FullName).ToList();
 
         Assert.True(
-            answers || built is null,
-            $"The operator functions are built ({built}), and nothing says whether the global halt is on. While it is, no agent " +
-            $"opens a new position (FR-OPS-3). Implement {nameof(IGlobalHalt)} in what keeps the halt, and register it: what " +
-            "checks the plan of a cycle asks it. See docs/risk-guard.md.");
+            answers.SequenceEqual(["Ecnanib.Agents.GlobalHaltSwitch"]),
+            "What keeps the global halt that an operator switches says whether it is on, and is the one thing registered as " +
+            $"{nameof(IGlobalHalt)}: what checks the plan of a cycle asks it, and while the halt is on no agent opens a new " +
+            $"position (FR-OPS-3). Registered: {(answers.Count == 0 ? "nothing" : string.Join(", ", answers))}. See docs/risk-guard.md.");
+
+        // And it is the one that the page of an operator switches: the two are one instance.
+        Assert.Same(
+            application.Services.GetRequiredService<IGlobalHaltSwitch>(),
+            Assert.Single(application.Services.GetServices<IGlobalHalt>()));
     }
 
     [Fact]

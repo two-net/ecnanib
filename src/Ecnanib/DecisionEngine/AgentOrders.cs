@@ -110,6 +110,7 @@ internal sealed class AgentOrders(
     IKeyValidation keyChecks,
     StoredOrders stored,
     IAgentTrading agents,
+    GlobalHalts halts,
     INotifications notifications,
     FeeValuation fees,
     BinanceSettings binance,
@@ -1510,8 +1511,8 @@ internal sealed class AgentOrders(
 
     /// <summary>
     /// Why an entry that rests is taken off the exchange now, or null when it rests on: the
-    /// next candle of its agent has closed, a part of it is executed that can be protected, or
-    /// its agent no longer opens positions (FR-BIN-S2).
+    /// next candle of its agent has closed, a part of it is executed that can be protected, its
+    /// agent no longer opens positions (FR-BIN-S2), or a global halt is on (FR-OPS-3).
     /// </summary>
     private async Task<string?> DueAsync(Order entry)
     {
@@ -1532,7 +1533,15 @@ internal sealed class AgentOrders(
             return "PartlyExecuted";
         }
 
-        return await stored.TakesEntriesAsync(entry.UserId, entry.AgentId, CancellationToken.None) ? null : "NotRunning";
+        if (!await stored.TakesEntriesAsync(entry.UserId, entry.AgentId, CancellationToken.None))
+        {
+            return "NotRunning";
+        }
+
+        // The Risk Guard accepted the entry before the halt was switched on. Left to rest, it
+        // would open a position while no agent opens one: on the longest timeframe it rests for
+        // a day. What it bought by now is a position, and is protected as ever.
+        return await halts.AnyOnAsync(CancellationToken.None) ? "GlobalHalt" : null;
     }
 
     /// <summary>

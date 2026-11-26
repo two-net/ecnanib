@@ -20,6 +20,13 @@ namespace Ecnanib.Accounts;
 /// Nothing is recorded in the audit trail: the events of an account go with it. The log says
 /// that an account was deleted, by its id.
 /// </para>
+/// <para>
+/// <b>The account of an operator is not deleted.</b> What an operator does is recorded in the
+/// audit trail, under their account (FR-OPS-5), and would go with it: an operator could switch
+/// the global halt and then remove the record of it. So the account stays while the
+/// configuration file lists its address. Once the address is taken off the list, its user is an
+/// operator no longer, and deletes the account as anyone does, with its events.
+/// </para>
 /// </remarks>
 internal sealed class AccountDeletion(
     IDbContextFactory<EcnanibDbContext> contexts,
@@ -33,9 +40,15 @@ internal sealed class AccountDeletion(
         var userId = SignedInUser.RequiredIdOf(request);
         var cancellationToken = request.RequestAborted;
 
+        if (OperatorAccess.IsOperator(request.User))
+        {
+            // Said first: nobody proves again who they are only to be told that it cannot be done.
+            return new AccountDeletionState(IsRecent: false, AgentsNotStopped: false, IsOperator: true);
+        }
+
         if (!await reauthentication.IsRecentAsync(request, SensitiveAction.DeleteAccount))
         {
-            return new AccountDeletionState(IsRecent: false, AgentsNotStopped: false);
+            return new AccountDeletionState(IsRecent: false, AgentsNotStopped: false, IsOperator: false);
         }
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);
@@ -45,7 +58,7 @@ internal sealed class AccountDeletion(
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
         return new AccountDeletionState(
-            IsRecent: true, AgentsNotStopped: await HasAgentsNotStoppedAsync(context, userId, cancellationToken));
+            IsRecent: true, AgentsNotStopped: await HasAgentsNotStoppedAsync(context, userId, cancellationToken), IsOperator: false);
     }
 
     public async Task<AccountDeletionOutcome> DeleteAsync(HttpContext request)
@@ -76,6 +89,15 @@ internal sealed class AccountDeletion(
             SessionCookie.Clear(request.Response);
 
             return AccountDeletionOutcome.Deleted;
+        }
+
+        // An operator keeps their account, whatever proof they gave: see the remarks above. Who
+        // is one was decided as the request was signed in, from the configuration file.
+        if (OperatorAccess.IsOperator(request.User))
+        {
+            logger.LogInformation("User {UserId} did not delete their account: the configuration file lists them as an operator", userId);
+
+            return AccountDeletionOutcome.IsOperator;
         }
 
         // Asked under the lock. A new password ends the session that holds the proof, and

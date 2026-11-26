@@ -10,7 +10,8 @@ public static class RiskGuardModule
     /// <summary>
     /// Registers the component, which has no service: the Risk Guard is rules only, and
     /// <see cref="GuardCheck"/> is asked with the facts of a plan. What keeps the global halt
-    /// registers an <see cref="IGlobalHalt"/>, when it is built: until then no halt is on.
+    /// registers an <see cref="IGlobalHalt"/>: Agents does, for the halt that an operator
+    /// switches (FR-OPS-3).
     /// </summary>
     public static IServiceCollection AddRiskGuard(this IServiceCollection services) => services;
 }

@@ -308,6 +308,9 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>What halts an agent that reached a loss limit, and resumes one when the day of its daily loss limit is over.</summary>
     public IAgentHalts AgentHalts => _application.Services.GetRequiredService<IAgentHalts>();
 
+    /// <summary>What keeps the global halt, as an operator reads and switches it.</summary>
+    public IGlobalHaltSwitch GlobalHalt => _application.Services.GetRequiredService<IGlobalHaltSwitch>();
+
     /// <summary>What a cycle does once it has started, as the application has it.</summary>
     public IDecisionCycle Cycle => _application.Services.GetRequiredService<IDecisionCycle>();
 

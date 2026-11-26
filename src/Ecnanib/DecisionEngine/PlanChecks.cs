@@ -42,7 +42,7 @@ internal sealed class PlanChecks(
     IExchangeMarketData market,
     IEnumerable<IAgentHoldings> holdings,
     IKeyValidation keys,
-    IEnumerable<IGlobalHalt> halts,
+    GlobalHalts halts,
     TradingSettings settings,
     TimeProvider clock,
     ILogger<PlanChecks> logger)
@@ -50,9 +50,6 @@ internal sealed class PlanChecks(
     // What keeps positions and orders, when something does. The one that was registered last
     // answers, as a service is found.
     private readonly IAgentHoldings? _holdings = holdings.LastOrDefault();
-
-    // What keeps the global halt, when something does. The halt is on when any of them says so.
-    private readonly IReadOnlyList<IGlobalHalt> _halts = [.. halts];
 
     /// <summary>
     /// Checks what goes on of the plan of a cycle, and keeps each check for the record of the
@@ -133,7 +130,9 @@ internal sealed class PlanChecks(
 
         // Answered from what the last check of the key recorded: Binance is asked nothing.
         var blocking = keys.BlockForAsync(agent.UserId, agent.Mode, agent.Market, cancellationToken);
-        var halting = HaltedAsync(cancellationToken);
+
+        // Whether a global halt is on, of whatever keeps one: what an operator switched (FR-OPS-3).
+        var halting = halts.AnyOnAsync(cancellationToken);
 
         await Task.WhenAll(pricing, listing, holding, blocking, halting);
 
@@ -167,19 +166,6 @@ internal sealed class PlanChecks(
             // When the facts had been read: a decision that was in time when the team decided,
             // and is stale by now, opens no position (FR-CYC-9).
             clock.GetUtcNow());
-    }
-
-    private async Task<bool> HaltedAsync(CancellationToken cancellationToken)
-    {
-        foreach (var halt in _halts)
-        {
-            if (await halt.IsOnAsync(cancellationToken))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void Missing(CycleStart cycle, string missing, ExchangeCallOutcome outcome) =>

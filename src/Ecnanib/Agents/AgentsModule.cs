@@ -2,6 +2,7 @@ using Ecnanib.Accounts;
 using Ecnanib.Catalog;
 using Ecnanib.Credentials;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.RiskGuard;
 
 namespace Ecnanib.Agents;
 
@@ -53,6 +54,13 @@ public static class AgentsModule
         // one be halted, and that an agent which its daily loss limit halted run again when the
         // next UTC day begins (FR-RSK-8).
         services.AddSingleton<IAgentHalts, AgentHalts>();
+
+        // What keeps the global halt (FR-OPS-3): an operator reads and switches it, and what
+        // checks the plan of a cycle asks the Risk Guard's question of it, whether it is on.
+        // One instance answers both.
+        services.AddSingleton<GlobalHaltSwitch>();
+        services.AddSingleton<IGlobalHaltSwitch>(provider => provider.GetRequiredService<GlobalHaltSwitch>());
+        services.AddSingleton<IGlobalHalt>(provider => provider.GetRequiredService<GlobalHaltSwitch>());
 
         // What gives the roles of an agent that opted in other models by strength, on its own,
         // and the job that has it do so every hour (FR-TEAM-10).

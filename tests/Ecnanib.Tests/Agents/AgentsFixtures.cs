@@ -882,3 +882,50 @@ internal static class StoredAgentRows
                 row => row.SetProperty(credential => credential.AccessibleModels, listed), TestContext.Current.CancellationToken);
     }
 }
+
+/// <summary>A row of the <c>runtime_flags</c> table, read by a test directly.</summary>
+internal sealed record StoredFlag(string Name, bool Value, Guid? ChangedBy, DateTimeOffset ChangedAt)
+{
+    /// <summary>The name of the global halt, as its row has it.</summary>
+    public const string GlobalHalt = "global-halt";
+
+    /// <summary>Every flag that has a row.</summary>
+    public static IReadOnlyList<StoredFlag> All(TestDatabase database)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand("SELECT name, value, changed_by, changed_at FROM runtime_flags ORDER BY name", connection);
+        using var reader = command.ExecuteReader();
+
+        var flags = new List<StoredFlag>();
+        while (reader.Read())
+        {
+            flags.Add(new StoredFlag(
+                reader.GetString(0),
+                reader.GetBoolean(1),
+                reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+
+        return flags;
+    }
+
+    /// <summary>
+    /// Writes the global halt as on or off, as the row of a halt that was switched has it, for
+    /// a test that is about what the halt does and has no operator: nobody is signed in for it,
+    /// and nothing is recorded.
+    /// </summary>
+    public static void GiveGlobalHalt(TestDatabase database, bool on, DateTimeOffset at)
+    {
+        using var connection = database.Open();
+        using var command = new NpgsqlCommand(
+            """
+            INSERT INTO runtime_flags (name, value, changed_by, changed_at) VALUES (@name, @value, NULL, @at)
+            ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, changed_by = NULL, changed_at = EXCLUDED.changed_at
+            """,
+            connection);
+        command.Parameters.AddWithValue("name", GlobalHalt);
+        command.Parameters.AddWithValue("value", on);
+        command.Parameters.AddWithValue("at", at.ToUniversalTime());
+        command.ExecuteNonQuery();
+    }
+}

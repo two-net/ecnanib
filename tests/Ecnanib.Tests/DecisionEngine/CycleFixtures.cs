@@ -90,8 +90,9 @@ internal sealed class CyclesApplication : IDisposable
     /// </param>
     /// <param name="settings">Other settings of the file of the tests, such as a stale limit.</param>
     /// <param name="halt">
-    /// What keeps the global halt, for a test of a plan that is checked while one is on. Nothing
-    /// keeps one yet, so unless a test says so no halt is on, as in the application.
+    /// A stand-in that keeps a global halt, for a test of a plan that is checked while one is on.
+    /// It is asked beside the halt that an operator switches, which is off unless a test switches
+    /// it: so unless a test says so no halt is on, as in an application that was never halted.
     /// </param>
     public CyclesApplication(
         DateTimeOffset now,

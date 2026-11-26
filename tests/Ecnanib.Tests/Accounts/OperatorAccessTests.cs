@@ -14,9 +14,10 @@ namespace Ecnanib.Tests.Accounts;
 /// <summary>
 /// Operator functions are checked separately from ownership (NFR-SEC-3). An operator is a user
 /// whose verified address the configuration file lists (FR-OPS-1). The check opens nothing that
-/// belongs to another user, and owning something satisfies no part of it. The functions
-/// themselves are not built yet, so a handler of the tests stands for them: it requires the
-/// policy, as they will.
+/// belongs to another user, and owning something satisfies no part of it. A handler of the tests
+/// stands for an operator function here, so that the check is held to apart from what any one
+/// function does: it requires the policy, as they do. The first that is built, the global halt,
+/// has tests of its own: <c>GlobalHaltTests</c>.
 /// </summary>
 public class OperatorAccessTests
 {
@@ -182,7 +183,7 @@ public class OperatorAccessTests
             host: host => host.HandleAtTheEnd(functions.HandleAsync));
 
     /// <summary>
-    /// Stands for the operator functions, which are not built yet. It requires the policy the way
+    /// Stands for an operator function, whichever it is. It requires the policy the way
     /// the framework does for a page or an endpoint that carries it: a visitor is asked to sign
     /// in, and a user whom the policy does not let through is refused. It keeps whom it served.
     /// </summary>

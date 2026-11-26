@@ -478,6 +478,33 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("agent_state_changes", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Agents.RuntimeFlag", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<Guid?>("ChangedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("changed_by");
+
+                    b.Property<bool>("Value")
+                        .HasColumnType("boolean")
+                        .HasColumnName("value");
+
+                    b.HasKey("Name")
+                        .HasName("pk_runtime_flags");
+
+                    b.HasIndex("ChangedBy")
+                        .HasDatabaseName("ix_runtime_flags_changed_by");
+
+                    b.ToTable("runtime_flags", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.AiProviderGateway.AiProvider", b =>
                 {
                     b.Property<string>("Code")
@@ -2460,6 +2487,15 @@ namespace Ecnanib.Platform.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_agent_state_changes_users_user_id");
+                });
+
+            modelBuilder.Entity("Ecnanib.Agents.RuntimeFlag", b =>
+                {
+                    b.HasOne("Ecnanib.Accounts.User", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedBy")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_runtime_flags_users_changed_by");
                 });
 
             modelBuilder.Entity("Ecnanib.Catalog.AiModel", b =>

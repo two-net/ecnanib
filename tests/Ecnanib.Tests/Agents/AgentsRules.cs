@@ -58,6 +58,8 @@ internal static class AgentsRules
         ["IStoredAgents.CloneAsync"] = "Creates a copy of an agent, which is a draft in Demo, with the models of its roles.",
         ["IStoredAgents.DeleteAsync"] = "Deletes an agent that is a draft, or is stopped with nothing open.",
         ["IAgentControls.HistoryAsync"] = "Reads the changes of the state of one agent.",
+        ["IGlobalHaltSwitch.StateAsync"] =
+            "Reads whether the global halt is on, and since when (FR-OPS-3). It is the same for every user, and says nothing of one.",
         ["IAgentModes.BlockOfAsync"] = "Reads what stands in the way of switching the mode of an agent. It switches nothing.",
         ["IAgentExposure.HasOpenPositionOrOrdersAsync"] =
             "Asked by Agents, and answered by whatever keeps positions and orders. It is no operation on an agent.",
@@ -115,6 +117,10 @@ internal static class AgentsRules
             "Resumes the agents that their daily loss limit halted on an earlier UTC day, which is a start: it asks what " +
             "blocks it as far as the key and the team go. It is the service's doing, and no action of a user: the change " +
             "of the state records it, and the audit trail does not.",
+        ["IGlobalHaltSwitch.SwitchAsync"] =
+            "Switches the global halt on or off, for an operator, and for nobody else: while it is on, no agent of any " +
+            "user opens a new position (FR-OPS-3). It changes the state of no agent, starts nothing, and closes nothing, " +
+            "and it records the switch in the audit trail.",
     };
 
     /// <summary>

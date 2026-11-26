@@ -430,22 +430,37 @@ A user can delete their account (FR-ACC-9). The page is `/account/delete`, linke
 |---|---|
 | Re-authentication | Deleting the account is a sensitive action. The page is shown only to a user who has just proved again who they are: everyone else is sent to `/confirm-identity` and comes back. The button asks again, in the action. |
 | Agents | The account is deleted only while every agent of the user is stopped. Otherwise the page says so, and nothing is deleted. See "Agents" below. |
+| Operators | The account of an operator is not deleted while the configuration file lists its address. The page says so in place of the form, and asks for no proof first. See "An operator" below. |
 | What goes | The row of `users`, and with it every row that belongs to the user, in every table. Stored keys are such rows, so they are gone at once. Nothing is marked now and removed later. |
-| What stays | The rows of the service, which carry no owner. Statistics that count across users are such rows, once there are any. The platform-wide board stores none: it is worked out from the trades that are stored each time it is shown, so the trades of a deleted account leave it at once. See "The platform-wide board" in [experience.md](experience.md). |
+| What stays | The rows of the service, which carry no owner. The global halt is such a row: it stays as it is, and who switched it last is set to nobody. Statistics that count across users are such rows, once there are any. The platform-wide board stores none: it is worked out from the trades that are stored each time it is shown, so the trades of a deleted account leave it at once. See "The platform-wide board" in [experience.md](experience.md). |
 | Sessions | Every browser of the user is signed out. The browser that deleted the account loses its session cookie, and is sent to `/account/deleted`, a page for visitors. |
 | The address | Has no account any more. Registering it again makes a new account, with nothing of the earlier one. |
 | A last message | Tells the address that the account was deleted. If it cannot be sent, the error is logged and the account is deleted all the same. The address is kept nowhere after it. |
 | The audit trail | Records nothing: the events of an account go with it. The log has `User {UserId} deleted their account, which ended {SessionCount} sessions`. |
+
+### An operator
+
+What an operator does is recorded in the audit trail under their own account (FR-OPS-5), and the events of an account go with it. So an operator could switch the global halt and then delete the record of it with their account.
+
+| Rule | Detail |
+|---|---|
+| **An operator does not delete their account** | `IAccountDeletion` asks `OperatorAccess.IsOperator` of the user of the request: as the page opens, before any proof is asked for, and again in the action, under the lock. The answer is `AccountDeletionOutcome.IsOperator`, and the log has `User {UserId} did not delete their account: the configuration file lists them as an operator`. |
+| **Once the file no longer lists the address, they do** | Who is an operator is decided from the file, with each request. Taking an address off `Application:Operators` takes a restart, and whoever runs the service does it. After that the account is one like any other, and is deleted with its events, those of what its user did as an operator among them. |
+| **So the trail is kept from the operator, and not for good** | An operator cannot remove their own events alone. Keeping them after the account is gone would take a record that names no account, and is not built. |
+| **The halt does not go with the account** | `runtime_flags.changed_by` is set to nobody, and the halt stays as it is. See "What is not asked for by owner" in [ownership.md](ownership.md). |
+
+`AccountDeletionTests` refuses a listed operator, on the page and for a form that is posted all the same. `GlobalHaltTests` takes the address off the list, deletes the account, and finds the halt on and nothing of the account left.
 
 ### How it is done
 
 Deleting an account is one transaction:
 
 1. It locks the row of the account with `FOR UPDATE`, as the first thing it asks of the row.
-2. Under that lock it asks whether the session of the request holds a proof that is recent enough.
-3. It asks whether an agent of the user is not stopped.
-4. It ends the sign-ins of the account that wait for a code, and then its sessions.
-5. It deletes the row of `users`. The database deletes every row that points at it.
+2. It asks whether the user of the request is an operator, whose account stays: see "An operator".
+3. Under that lock it asks whether the session of the request holds a proof that is recent enough.
+4. It asks whether an agent of the user is not stopped.
+5. It ends the sign-ins of the account that wait for a code, and then its sessions.
+6. It deletes the row of `users`. The database deletes every row that points at it. A row of the service that says who changed it last is set to nobody: see [ownership.md](ownership.md).
 
 The cookie, the log event, and the last message come after the commit.
 
@@ -537,7 +552,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 |---|---|
 | `user_id` | The user who did it. For the one action that the service does itself, `KeyRejected`, the user it was done for: the owner of the key. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
-| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. |
+| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. A runtime flag of the service has a name in place of an id: `runtime-flag:global-halt`, which `AuditTarget.GlobalHalt` is. |
 | `occurred_at` | When. |
 | `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not, or when no request did it. |
 
@@ -558,6 +573,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `AgentStarted`, `AgentPaused`, `AgentResumed`, `AgentStopped` | The user started, paused, resumed, or stopped an agent. |
 | `AgentPositionCloseRequested` | The user asked for the position of an agent to be closed at market, by hand. It is recorded when it is asked for, before the order. See "The audit trail" in [agents.md](agents.md). |
 | `AgentSwitchedToLive`, `AgentSwitchedToDemo` | The user switched an agent from Demo to Live, where it trades with real money, or back. See "The mode" in [agents.md](agents.md). |
+| `GlobalHaltSwitchedOn`, `GlobalHaltSwitchedOff` | An operator switched the global halt on, or off (FR-OPS-3, FR-OPS-5). The event carries the operator as its user. See "The global halt" in [ownership.md](ownership.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.
@@ -602,11 +618,13 @@ A component that may not use Accounts, such as the Decision Engine, records noth
 
 | Action of the requirement | Waits for |
 |---|---|
-| Operator actions | The first operator function |
+| Operator actions, but for the global halt | The next operator function: disabling and enabling an account, and triggering a catalog sync (FR-OPS-4) |
+
+The actions of operators are recorded as far as they are built. Switching the global halt is, and is listed in `AuditRules.RecordedOperatorFunctions` with the two members that record it: the page `/operator/global-halt`, and `GlobalHaltSwitch` of Agents, which asks whether the user of its request is an operator.
 
 What a user does to an agent is recorded: risk setting changes, starts, pauses, resumes, and stops, manual closes, and switches of its mode. Agents takes the request for a manual close and records it, and whatever keeps positions places the order. See "The audit trail" in [agents.md](agents.md).
 
-`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the operator actions, that is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`. A screen of an operator that only shows is left out: the operator status screen is listed in `AuditRules.OperatorScreensThatOnlyShow`, and the same tests hold it to having no form of its own. See "Operators" in [ownership.md](ownership.md). It also fails for a member of `AuditAction` that no marked test shows being recorded.
+`AuditRulesTests` fails for an action that still waits once what it waits for is built. For the operator actions, that is once a page or an endpoint requires the operator policy or something outside Accounts calls `OperatorAccess.IsOperator`, and is not listed in `AuditRules.RecordedOperatorFunctions` with what records it. A screen of an operator that only shows is left out as well: the operator status screen is listed in `AuditRules.OperatorScreensThatOnlyShow`, and the same tests hold it to having no form of its own. See "Operators" in [ownership.md](ownership.md). It also fails for a member of `AuditAction` that no marked test shows being recorded.
 
 ## The setup marks
 
@@ -768,8 +786,9 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - A button that sends the verification link again. Until then, a user gets a new link by registering again, which is not possible while registration is closed.
 - Limits on attempts that outlast a restart, or that several instances share. The counts are in memory: see "Limits on attempts".
 - Preferences, but for five. Whether a user left the platform-wide board is stored, and so are whether they are sent email for critical events, the theme of their account, how much of its pages moves, and which time zone they write a time in, and all five are in the export. The account page has no settings of its own: it says that there are those choices, and leads to the board, to the page of the email, and to the page of the appearance, where each is made. It is the profile among the settings, which have a navigation of their own above each of their pages: see "The settings" in [layout.md](layout.md). When another preference is stored, it is personal data of an allowed kind, and it is in the export.
-- Keeping the audit events of operator actions when the operator deletes their own account. No operator action is built yet. When one is, either an operator cannot delete their account, or those events are kept apart from it. An action on the account of another user names that account as its target, under the operator's own: whose export and whose deletion such an event follows is decided then as well.
-- The rest of the audit trail: the actions of operators, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
+- Keeping the audit events of operator actions for good. An operator cannot delete their account while the configuration file lists it, so they cannot remove their own events alone: see "An operator". Once the address is off the list, the account is deleted with its events. A record that outlasts the account would name no account, and is not built.
+- Whose export and whose deletion an event about the account of another user follows. No such action is built: disabling and enabling an account will name that account as its target, under the operator's own, and it is decided then.
+- The rest of the audit trail: the actions of operators but for the global halt, each of which is recorded when it is built, and the job that removes events older than `Retention:AuditDays`. See "What is not recorded yet".
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

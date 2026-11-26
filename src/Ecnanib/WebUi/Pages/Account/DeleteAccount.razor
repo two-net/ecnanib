@@ -8,13 +8,19 @@
     Rendered on the server for each request, and never interactive. The page is shown to a user
     who has just proved again who they are, and to nobody else. The form is on the page whenever
     one is posted, whatever the account says by then: a form that is not there cannot be answered.
-    Whether the account is deleted is for DeleteAsync to say, which asks again. Its texts are in
-    AccountPages.
+    Whether the account is deleted is for DeleteAsync to say, which asks again. An operator is
+    shown no form, and is told why: the record of what an operator did goes with their account
+    (FR-OPS-5). Its texts are in AccountPages.
 *@
 
 <PageTitle>@AccountPages.DeleteTitle</PageTitle>
 
 <h1>@AccountPages.DeleteTitle</h1>
+
+@if (_isOperator)
+{
+    <p class="form-error" role="alert">@AccountPages.OperatorKeepsAccount</p>
+}
 
 @if (_agentsNotStopped)
 {
@@ -48,6 +54,7 @@
 @code {
     private bool _showForm;
     private bool _agentsNotStopped;
+    private bool _isOperator;
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
@@ -72,6 +79,14 @@
         }
 
         var state = await Deletion.StateAsync(request);
+
+        if (state.IsOperator)
+        {
+            // No form, and no proof asked for: the account stays while its user is an operator.
+            _isOperator = true;
+
+            return;
+        }
 
         if (!state.IsRecent)
         {
@@ -107,6 +122,10 @@
 
             case AccountDeletionOutcome.AgentsNotStopped:
                 _agentsNotStopped = true;
+                break;
+
+            case AccountDeletionOutcome.IsOperator:
+                _isOperator = true;
                 break;
         }
     }

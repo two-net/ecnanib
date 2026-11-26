@@ -135,7 +135,9 @@ One screen of the specification has a route and a place in the navigation, and s
 
 | Screen | What its page says | Its feature |
 |---|---|---|
-| Operator status, `/operator` | That it is for operators, what it is to show, and that it shows nothing of any user and nothing can be done on it. It has no form, and asks the database nothing. | The status screen and the controls of an operator (FR-OPS-2 to FR-OPS-5). |
+| Operator status, `/operator` | That it is for operators, what it is to show, and that it shows nothing of any user and nothing can be done on it. It has no form, and asks the database nothing. A link leads to the page of the global halt. | What the status screen shows, and the account controls of an operator (FR-OPS-2, FR-OPS-4). |
+
+**The global halt is a part of the operator status screen, on a page of its own:** `/operator/global-halt`, which the screen leads to with a link, and which leads back (FR-OPS-3). It is no screen of the specification, as the page that deletes an account is none: the bar marks "Operator status" on it, as a part of that screen. It is for operators alone, and is an operator function: see "The global halt" in [ownership.md](ownership.md).
 
 **The operator status screen is no operator function.** It requires the operator policy, as an operator function does, and does nothing that the audit trail could record or that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and `AuditRulesTests` holds it to that: the one form of its page is the button of the bar. The first form that is put on it fails that test, and anything else that requires the policy counts as an operator function as before. See "Operators" in [ownership.md](ownership.md).
 
@@ -155,10 +157,10 @@ No test of these drives a browser. `AccessibilityBrowserTests` does, when a run 
 3. Register, sign in, and open each screen of the map at both widths. On the phone, "Menu" opens and closes the navigation, by a pointer and by the keyboard, in any order of the two, and a page that is opened from it has it closed. The link of the open screen is marked.
 4. With the keyboard alone: a page that opens has the focus at its heading, so the first Tab is in the content. Shift and Tab from there go back through the bar to "Skip to the content", which shows while it has the focus. Enter follows it, and the next Tab is in the content again. In Safari, a link is a stop of the keyboard with Option and Tab.
 5. Do the same in Chrome or Edge, in Firefox, and in Safari. The console of the browser shows no report of the content security policy.
-6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status".
+6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status". The screen leads to "Global halt", where one button switches the halt on, and then off.
 
 ## Not built yet
 
 - The dashboard as the page that a user arrives at after signing in. A user arrives at the start page, which leads to the dashboard: `SessionAuthentication.LocalPathOrHome`.
-- What the operator status screen shows, and what an operator does (FR-OPS-2 to FR-OPS-5). The Operator role itself is still to confirm (SRS 2.2).
+- What the operator status screen shows, and the account controls of an operator (FR-OPS-2, FR-OPS-4). The global halt is built. The Operator role itself is still to confirm (SRS 2.2).
 - A page of the security that holds more than two-factor authentication: a change of the password by a user who is signed in, and the devices that they are signed in on. A password is changed by the link of "Forgot your password?".

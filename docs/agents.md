@@ -539,6 +539,19 @@ Five of them follow what changes, so that agent status, positions, prices, and c
 - What a user named an agent is written as text, like everything else on a page, and is in no log event.
 - The texts of the pages are in `AgentPages`, in one place, those of the page of the risk checks in `RiskCheckPages` beside it, those of the pages of the cycles in `CyclePages`, and those of the parts that make the page of the state the screen of the agent in `AgentReportPages`.
 
+## The global halt
+
+An operator can switch a global halt on or off. While it is on, no agent opens a new position, and open positions are still managed and protected (FR-OPS-3). Agents keeps it: `GlobalHaltSwitch`, with the entity `RuntimeFlag`.
+
+| Rule | Detail |
+|---|---|
+| **Why it is here** | What keeps the halt answers the Risk Guard, through `IGlobalHalt`, and records each switch in the audit trail of Accounts. The Risk Guard and Accounts are leaves and know nothing of each other, and Agents may use both. See [architecture.md](architecture.md). |
+| **It is no state of an agent** | The halt changes no agent, and ends no cycle. An agent that runs goes on running: its team is asked, a plan of it that opens a position is rejected by the Risk Guard, and an entry of it that rests is taken off the exchange. `Halted` is the state of one agent that reached a loss limit, and is something else: see "Halting an agent". |
+| **One instance answers both** | `IGlobalHaltSwitch`, for the page of an operator, and `IGlobalHalt`, for what checks a plan and what settles the orders. Both read the row `global-halt` of `runtime_flags`, each time they are asked. |
+| **Only an operator switches it** | `SwitchAsync` asks `OperatorAccess.IsOperator` of the user of its request, whatever called it, locks the row of the account, writes the flag only where that changes it, and records the switch in the same transaction. |
+
+What the halt does to a plan and to an order is in "The global halt" of [risk-guard.md](risk-guard.md). The page, who reaches it, and what is recorded are in "The global halt" of [ownership.md](ownership.md).
+
 ## What other components ask of Agents
 
 | Who asks | Through | What Agents answers |
@@ -549,6 +562,8 @@ Five of them follow what changes, so that agent status, positions, prices, and c
 | The Decision Engine, as the turn of a cycle comes | `IRunningAgents.FindAsync` | The agent as it is stored then, with its roles, when it still runs cycles, and nothing otherwise: an agent that was paused, stopped, or deleted while its cycle waited gets none. |
 | The Decision Engine, which keeps the record of the cycles | The foreign key `(agent_id, user_id)` of `decision_cycles` | Nothing is asked. The record of the cycles of an agent hangs on its row, and goes with it when the agent is deleted: see "The record of a cycle" in [team.md](team.md). |
 | The Decision Engine, for the equity of every agent of a user | The rows of `agents`, by owner | Nothing is asked. `IAgentEquities` reads the agents of the user that a page hands it, with their mode, their capital, and the asset that their symbol is priced in, in the snapshot that it reads their positions in: the dashboard shows the equity of each (FR-RPT-1). It only reads. See [dashboard.md](dashboard.md). |
+| The Decision Engine, as it checks a plan and as it settles the orders | `IGlobalHalt` of the Risk Guard, which `GlobalHaltSwitch` answers | Whether the global halt is on, read from its row each time (FR-OPS-3). See "The global halt". |
+| The page of an operator | `IGlobalHaltSwitch` | Whether the global halt is on and since when, and the switch of it, for an operator alone. See "The global halt". |
 | The Decision Engine, which watches the loss limits | `IAgentHalts` | An agent in whatever state it is, that an agent which reached a loss limit is halted, and that the agents which their daily loss limit halted on an earlier UTC day run again (FR-RSK-8). See "Halting an agent". |
 | The Decision Engine, for a test cycle that a user runs | `IAgentTeams.FindAsync` | The agent of that user as it is stored, in whatever state it is, with the roles of its team that have a model, and with what about the team keeps it from working: the `RoleBlock` of each role that a start would name (FR-TEAM-1). An agent of another user is not found. It only reads, and takes no lock: nothing has to hold until an agent runs. See "A test cycle" in [cycles.md](cycles.md). |
 
@@ -581,7 +596,7 @@ Other components declared interfaces for Agents before it could do what they are
 | List | What is in it |
 |---|---|
 | `SettingsOperations` | What keeps the settings of agents, or only reads or answers. |
-| `ControlOperations` | What does more with an agent: starting, pausing, resuming, and stopping it, and closing its position. And what the service does to its state: it has the agent wait for its user, halts it for a loss limit, and resumes it after a daily halt. |
+| `ControlOperations` | What does more with an agent: starting, pausing, resuming, and stopping it, and closing its position. And what the service does to its state: it has the agent wait for its user, halts it for a loss limit, and resumes it after a daily halt. And the switch of the global halt, which is an operator's, and keeps the agents of every user from opening positions while it is on. |
 | `ModeOperations` | What switches the mode of an agent: to Live, and back to Demo. |
 
 A method that is added is in none of them, and fails `AgentsRulesTests` until someone lists it, and so decides what it is.
@@ -639,7 +654,9 @@ See "The audit trail" in [accounts.md](accounts.md).
 | `agent_roles` | `agent_id`, `role`, `user_id`, `model_id`. One row for each role of an agent that has a model: `(agent_id, role)` is its key. `role` points at `roles`, and `model_id` at `ai_models`. |
 | `agent_state_changes` | `id`, `agent_id`, `user_id`, `mode`, `state`, `cause`, `changed_at`. One row for each change of the state of an agent, the first of them its creation. Indexed by `(agent_id, changed_at)`. |
 
-The tables hold rows of users: `Agent`, `AgentRole`, and `AgentStateChange` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it, and the roles and the changes of an agent with the agent.
+| `runtime_flags` | `name`, `value`, `changed_by`, `changed_at`. One row for each flag that was switched: `name` is its key, and `global-halt` the one there is. `changed_by` points at `users`, and is set to nothing when that account is deleted. |
+
+The first three tables hold rows of users: `Agent`, `AgentRole`, and `AgentStateChange` implement `IUserOwned`, and what is asked for a user is asked with `OwnedBy`. The rows of an account are deleted with it, and the roles and the changes of an agent with the agent. `runtime_flags` holds rows of the service: a flag is the same for every user, and its row stays when the account that switched it goes. See [ownership.md](ownership.md).
 
 | Column | What it holds |
 |---|---|

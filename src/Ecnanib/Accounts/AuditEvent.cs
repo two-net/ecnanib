@@ -102,6 +102,16 @@ public enum AuditAction
 
     /// <summary>The user switched an agent from Live back to Demo.</summary>
     AgentSwitchedToDemo,
+
+    /// <summary>
+    /// An operator switched the global halt on: from then on no agent opens a new position, and
+    /// open positions are still managed and protected (FR-OPS-3, FR-OPS-5). The target names the
+    /// halt, and the event carries the operator as its user.
+    /// </summary>
+    GlobalHaltSwitchedOn,
+
+    /// <summary>An operator switched the global halt off: agents open positions again.</summary>
+    GlobalHaltSwitchedOff,
 }
 
 /// <summary>
@@ -138,7 +148,10 @@ public sealed class AuditEvent : IUserOwned
     /// <summary>What was done.</summary>
     public AuditAction Action { get; }
 
-    /// <summary>What it was done to, as a kind and an id: <c>user:…</c> for an account.</summary>
+    /// <summary>
+    /// What it was done to, as a kind and an id: <c>user:…</c> for an account. A runtime flag of
+    /// the service has a name in place of an id: <c>runtime-flag:global-halt</c>.
+    /// </summary>
     public string Target { get; }
 
     /// <summary>When it was done.</summary>

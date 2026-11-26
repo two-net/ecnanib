@@ -6,7 +6,8 @@ namespace Ecnanib.Accounts;
 /// Deleting an account: a user deletes their own, and every row that belongs to it goes with it,
 /// at once (FR-ACC-9, NFR-SEC-9). It is a sensitive action, so it is done only for a user who has
 /// just proved again who they are (FR-ACC-4), and only while every agent of theirs is stopped.
-/// See docs/accounts.md.
+/// The account of an operator is not deleted while the configuration file lists it: the record
+/// of what an operator did goes with their account (FR-OPS-5). See docs/accounts.md.
 /// </summary>
 /// <remarks>
 /// Each method is for the user who is signed in on the request it is given, and fails for a
@@ -40,7 +41,11 @@ public interface IAccountDeletion
 /// Whether an agent of theirs is not stopped, which stands in the way. It is asked only for a
 /// user who has given the proof, and is false for one who has not.
 /// </param>
-public sealed record AccountDeletionState(bool IsRecent, bool AgentsNotStopped);
+/// <param name="IsOperator">
+/// Whether they are an operator, whose account is not deleted while the configuration file
+/// lists it. Nothing else is asked for one: the page says so, and asks for no proof.
+/// </param>
+public sealed record AccountDeletionState(bool IsRecent, bool AgentsNotStopped, bool IsOperator);
 
 /// <summary>How deleting an account ended.</summary>
 public enum AccountDeletionOutcome
@@ -59,6 +64,13 @@ public enum AccountDeletionOutcome
 
     /// <summary>An agent of the user is not stopped. Nothing was deleted.</summary>
     AgentsNotStopped,
+
+    /// <summary>
+    /// The user is an operator: the configuration file lists their address, and it is verified.
+    /// Nothing was deleted. The record of what an operator did goes with their account, so the
+    /// account stays until the address is taken off the list (FR-OPS-5).
+    /// </summary>
+    IsOperator,
 }
 
 /// <summary>

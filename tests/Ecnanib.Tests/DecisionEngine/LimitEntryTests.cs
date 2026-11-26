@@ -2,6 +2,7 @@ using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.RiskGuard;
 using Ecnanib.Shared;
+using Ecnanib.Tests.Agents;
 using Ecnanib.Tests.RiskGuard;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,9 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// seen (FR-RSK-7). A Spot agent sells only the quantity it bought (FR-BIN-S3). An agent of the
 /// Futures market enters at a price by the same rules, with the margin of its symbol set before,
 /// and what the entry bought is protected by a stop-loss and a take-profit that only reduce the
-/// position (FR-BIN-F1 to FR-BIN-F3). See "An entry at a price" in docs/orders.md.
+/// position (FR-BIN-F1 to FR-BIN-F3). While a global halt is on, no agent opens a new position,
+/// so an entry that rests is taken off the exchange, and what it bought by then is protected
+/// (FR-OPS-3). See "An entry at a price" in docs/orders.md.
 /// </summary>
 public class LimitEntryTests
 {
@@ -343,6 +346,65 @@ public class LimitEntryTests
         Assert.Equal("CANCELED", Assert.Single(application.Binance.Orders).Status);
         Assert.Equal(OrderStatus.Canceled, Assert.Single(await application.OrdersOfAsync(agent.Id)).Status);
         Assert.Equal("NotRunning", Assert.Single(application.Application.Events(), said => said.Template == TakenOff).Text("EntryTakenOffReason"));
+    }
+
+    [Fact]
+    public async Task An_entry_that_rests_is_taken_off_the_exchange_while_a_global_halt_is_on()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync();
+        await application.PlaceAsync(agent, AtAPrice);
+
+        // The Risk Guard accepted the entry while no halt was on, and it rests: what settles
+        // the orders asks about it, and leaves it there.
+        await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
+
+        Assert.Equal("NEW", Assert.Single(application.Binance.Orders).Status);
+        Assert.DoesNotContain(application.Application.Events(), said => said.Template == TakenOff);
+
+        // An operator switches the global halt on. Left to rest, the entry would open a
+        // position while no agent opens one, for as long as a candle of its agent lasts
+        // (FR-OPS-3). The next run of the job takes it off, within a minute.
+        application.Clock.Set(application.Clock.GetUtcNow().AddMinutes(1));
+        StoredFlag.GiveGlobalHalt(application.Application.Database, on: true, application.Clock.GetUtcNow());
+
+        await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
+
+        Assert.Equal("CANCELED", Assert.Single(application.Binance.Orders).Status);
+        Assert.Equal(OrderStatus.Canceled, Assert.Single(await application.OrdersOfAsync(agent.Id)).Status);
+        Assert.Equal("GlobalHalt", Assert.Single(application.Application.Events(), said => said.Template == TakenOff).Text("EntryTakenOffReason"));
+        Assert.Empty(await application.PositionsOfAsync(agent.Id));
+
+        // The halt stops no agent: this one runs on, and decides again once the halt is off.
+        Assert.Equal(AgentState.Running, (await application.AgentAsync(agent.Id)).State);
+    }
+
+    [Fact]
+    public async Task What_an_entry_bought_before_a_global_halt_is_a_position_and_is_protected_while_the_halt_is_on()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync();
+        await application.PlaceAsync(agent, AtAPrice);
+
+        // Binance executes a part of the entry, and then the halt is switched on.
+        application.Binance.Execute(application.Binance.The(stop: false), 0.004m);
+        StoredFlag.GiveGlobalHalt(application.Application.Database, on: true, application.Clock.GetUtcNow());
+
+        await application.Application.SettleOrdersAsync(application.Clock.GetUtcNow());
+
+        // The rest is taken off, and what was bought is a position with its stop-loss and its
+        // take-profit: open positions are still managed and protected (FR-OPS-3).
+        Assert.Equal("CANCELED", application.Binance.The(stop: false).Status);
+
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+        Assert.Equal((0.004m, 59900m, null), (position.Quantity, position.EntryPrice, position.ClosedAt));
+        Assert.Equal(
+            [
+                (OrderPurpose.Entry, OrderStatus.Canceled, 0.011m, 0.004m),
+                (OrderPurpose.StopLoss, OrderStatus.Open, 0.004m, 0m),
+                (OrderPurpose.TakeProfit, OrderStatus.Open, 0.004m, 0m),
+            ],
+            (await application.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status, order.Quantity, order.ExecutedQuantity)));
     }
 
     [Fact]

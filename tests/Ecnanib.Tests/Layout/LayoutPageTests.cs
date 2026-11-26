@@ -360,6 +360,16 @@ public partial class LayoutPageTests
         Assert.Contains("What it is to show is not built yet", page);
         Assert.Equal(["Operator status=page"], Marked(BarOf(page)));
 
+        // The screen leads to the page of the global halt, which is a part of it: the bar
+        // marks the screen there, and the page leads back (FR-OPS-3).
+        Assert.Matches($"<a href=\"{WebUiModule.GlobalHaltPath}\"[^>]*>Global halt</a>", page);
+
+        var halt = await anOperator.PageAsync(WebUiModule.GlobalHaltPath);
+
+        Assert.Contains("<h1>Global halt</h1>", halt);
+        Assert.Equal(["Operator status=true"], Marked(BarOf(halt)));
+        Assert.Matches($"<a href=\"{WebUiModule.OperatorStatusPath}\"[^>]*>Back to the operator status</a>", halt);
+
         // A user who is not an operator is refused, and is told no more than that there is no
         // page for them (NFR-SEC-3). They stay signed in.
         using (var refused = await user.GetAsync(WebUiModule.OperatorStatusPath, Cancellation))

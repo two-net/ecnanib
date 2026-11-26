@@ -56,13 +56,15 @@ internal sealed class RecoveryCodeConfiguration : IEntityTypeConfiguration<Recov
 - **Another foreign key between two rows of one user must not stand in the way of that.** One that is declared with `Restrict` can refuse the deletion of the account, depending on the order the database deletes in. The test that deletes an account with a row in every table shows whether it does.
 - The owner is an id. It tells nothing about the person, so it is not personal data, and a component that must not see personal data may hold it.
 
-A row that belongs to no user belongs to the service: vocabulary, the catalog, the prompts, the state of the jobs. Such a table is listed, with what it holds, in [`OwnershipRules.cs`](../tests/Ecnanib.Tests/Persistence/OwnershipRules.cs). That file is the source of truth. To list a table there is to decide that no user owns its rows.
+A row that belongs to no user belongs to the service: vocabulary, the catalog, the prompts, the state of the jobs, and the runtime flags, of which the global halt is the one there is. Such a table is listed, with what it holds, in [`OwnershipRules.cs`](../tests/Ecnanib.Tests/Persistence/OwnershipRules.cs). That file is the source of truth. To list a table there is to decide that no user owns its rows.
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules`, `analyst_calls`, `shadow_trades`, `lessons`, `board_opt_outs`, `email_opt_ins`, `orders`, `fills`, `positions`, `fundings`, `position_roles`, `position_results`, `equity_marks`, `equity_snapshots`, `notifications` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules`, `analyst_calls`, `shadow_trades`, `lessons`, `board_opt_outs`, `email_opt_ins`, `orders`, `fills`, `positions`, `fundings`, `position_roles`, `position_results`, `equity_marks`, `equity_snapshots`, `notifications` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs`, `runtime_flags` |
 
 `users` is the account itself. No table holds both kinds of row.
+
+**A row of the service may say which account changed it last, and keeps nothing of that account when it is deleted.** `runtime_flags.changed_by` points at `users` and is declared with `OnDelete(DeleteBehavior.SetNull)`: the flag stays as it is, because a halt that is on is on for every user, and the id of the account goes. It is the one key to `users` that does not carry an owner. `GlobalHaltTests` deletes the account of whoever switched the halt, and finds the halt on and nothing of the account left.
 
 ## Asking for a user's data
 
@@ -132,11 +134,32 @@ An operator is a user with the status screens and the safety controls of the ser
 - Owning something satisfies no part of the policy.
 - An operator function that is about every user, or about a user who is not the one signed in, asks the database without `OwnedBy`. That is why it requires the policy. The platform-wide board reads across users without it, and shows nothing of one user: see "What is not asked for by owner".
 
-An operator function asks in one of the two ways of "The check", and in no other. `AuditRulesTests` watches for both, to tell when the first operator function is built: what an operator does is recorded in the audit trail (FR-OPS-5). See "The audit trail" in [accounts.md](accounts.md).
+An operator function asks in one of the two ways of "The check", and in no other. `AuditRulesTests` watches for both: what an operator does is recorded in the audit trail (FR-OPS-5), so each operator function that is built is listed in `AuditRules.RecordedOperatorFunctions` with the actions that record it, and one that is not listed fails a test. See "The audit trail" in [accounts.md](accounts.md).
 
 **A screen that only shows is no operator function.** The operator status screen, `/operator`, has its route and its place in the bar of an operator (FR-UI-2): it requires the policy, says what it is to show, and does nothing. It has no form, asks the database nothing, and shows nothing of any user, so there is nothing of it to record, and nothing that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and the rule that tells when the first operator function is built leaves a listed screen out. `AuditRulesTests` holds a listed screen to it: its page has no form but the button of the bar, which signs out. The first form that is put on it fails that test, the screen is taken off the list, and what waits for the operator functions fails until it is built. Anything else that requires the policy counts as before, whether its address is under that of the screen or not. The bar shows the link to the screen by asking the same policy, with `AuthorizeView`, and not by `IsOperator`. See "Screens whose feature is not built" in [layout.md](layout.md).
 
-No operator function is built yet.
+### The global halt
+
+The one operator function that is built is the global halt (FR-OPS-3): while it is on, no agent opens a new position, and open positions are still managed and protected. What it does to a plan and to an entry that rests is in "The global halt" of [risk-guard.md](risk-guard.md).
+
+| Rule | Detail |
+|---|---|
+| **It has a page of its own** | `/operator/global-halt`, which the operator status screen leads to. It says what the halt does and whom it acts on, whether it is on and since when, and has one button, which switches it the other way. The page is what asks before the halt is switched: it has nothing else to do on it. |
+| **It asks in both ways** | The page carries `[Authorize(Policy = OperatorAccess.Policy)]`, for a form that is posted as for the page itself. And what switches the halt, `IGlobalHaltSwitch.SwitchAsync` of Agents, asks `OperatorAccess.IsOperator` of the user of its request again: whatever calls it, nobody else switches the halt. |
+| **It is never a page that follows** | The page is rendered on the server for each request, so who is an operator is decided with each one. `AuditRulesTests` holds every operator function to that. |
+| **It is stored in the database** | As the row `global-halt` of `runtime_flags`: whether it is on, who switched it last, and when (NFR-CFG-6). The configuration file has no key for it, and `SettingsFileTests` refuses one. A halt that was never switched has no row, and is off. Nothing is cached: a switch holds from the next check on, on every instance. |
+| **Every switch is recorded** | As `GlobalHaltSwitchedOn` or `GlobalHaltSwitchedOff`, with the target `runtime-flag:global-halt`, in the transaction that switches (FR-OPS-5). A form that is sent twice, or for what the halt already is, switches nothing and records nothing. |
+| **It shows nothing of any user** | Not who switched the halt, and no agent, position, or key: the page reads the flag, and nothing else (FR-OPS-5). The audit trail says who switched it. |
+| **An operator does not delete their account** | Their events in the audit trail would go with it. See "Deleting the account" in [accounts.md](accounts.md). |
+
+**When the application cannot be reached**, the halt is one row, and whoever runs the database can set it there. That is not recorded in the audit trail, so it is for an emergency, and is written down by whoever does it:
+
+```sql
+INSERT INTO runtime_flags (name, value, changed_by, changed_at) VALUES ('global-halt', TRUE, NULL, now())
+ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, changed_by = NULL, changed_at = EXCLUDED.changed_at;
+```
+
+`FALSE` in place of `TRUE` switches it off.
 
 ## No tenants and no billing
 
@@ -159,6 +182,7 @@ If the rows belong to the service instead, list the table in `OwnershipRules.Ser
 
 ## Not built yet
 
-- The operator functions: the global halt, the status screen, and the account controls, each recorded in the audit trail. The events of an account go with it when it is deleted, so what happens to the events of an operator who deletes their own account is to be decided with them. See "Not built yet" in [accounts.md](accounts.md).
+- The other operator functions: what the status screen is to show (FR-OPS-2), and the account controls and the trigger of a catalog sync (FR-OPS-4), each recorded in the audit trail when it is built. `AuditRules` says that they wait, and a test fails when one is built and is not listed with what records it.
+- Telling the users that a global halt is on. Today a user sees it where a plan of an agent was rejected: the rule "Global halt" of the check says so.
 - What a protected endpoint under `/api` answers to a visitor. See "Not built yet" in [accounts.md](accounts.md).
-- Checking again whether the user of a connection is an operator. Who the user is, and whether they are an operator, is decided when the connection of a page that follows is made. Whether the session of the connection still stands is asked again: see "The session of a connection" in [accounts.md](accounts.md). No page that follows is an operator function.
+- Checking again whether the user of a connection is an operator. Who the user is, and whether they are an operator, is decided when the connection of a page that follows is made. Whether the session of the connection still stands is asked again: see "The session of a connection" in [accounts.md](accounts.md). No page that follows is an operator function, and `AuditRulesTests` holds the ones that are built to it.

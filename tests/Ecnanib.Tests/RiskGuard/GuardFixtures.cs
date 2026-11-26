@@ -117,8 +117,9 @@ internal static class GuardedCycles
 }
 
 /// <summary>
-/// Stands for what keeps the global halt, which is not built (FR-OPS-3): it says what the test
-/// set, and how often it was asked.
+/// Stands for something that keeps a global halt (FR-OPS-3): it says what the test set, and how
+/// often it was asked. It is registered beside what an operator switches, which Agents keeps and
+/// which is off unless a test switches it: the halt is on when either says so.
 /// </summary>
 internal sealed class StandInHalt(bool on = false) : IGlobalHalt
 {

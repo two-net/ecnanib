@@ -26,7 +26,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `AgentStatePages`, `AgentModePages` | `Pages/Agents` | The state of an agent and what changes it, and the two pages that switch its mode. |
 | `CyclePages`, `RiskCheckPages`, `AgentReportPages` | `Pages/Agents` | The cycles and their timelines, the checks of the Risk Guard, and the trades, decisions, and performance of an agent. |
 | `ExperiencePages`, `BoardPages`, `LessonPages` | `Pages/Experience` | The experience screens, the platform-wide board, and the lessons. |
-| `CatalogPages`, `UsagePages`, `OperatorPages` | `Pages/Catalog`, `Pages/Usage`, `Pages/Operator` | The model catalog, the AI usage, and the operator status screen. |
+| `CatalogPages`, `UsagePages`, `OperatorPages` | `Pages/Catalog`, `Pages/Usage`, `Pages/Operator` | The model catalog, the AI usage, and the operator status screen with the page of the global halt. |
 | `ExportFiles` | `Exports` | The links to the two downloads. The names of their columns are words of the files, and no texts: see [export.md](export.md). |
 
 What a market, a mode, and a state of an agent are called is one text for every screen: `AgentPages.NameOf` and `AgentPages.Describe`, wherever a page writes one. What the pages of one screen say is in the class of that screen, also where another screen says the same words: a heading and a link that read alike in English need not read alike in another language.

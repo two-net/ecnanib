@@ -65,7 +65,7 @@ The Catalog tells whatever depends on a model this way, when a sync marks the mo
 
 Agents asks what an agent holds on the exchange this way, has its position closed, and asks what in the account of a user at the exchange stands in the way of an agent (FR-BIN-F2): it declares `IAgentExposure`, which the Decision Engine implements, because it keeps the positions and the orders, and is the one component that is handed the Binance key of a user for a call. Agents places no order itself. See [agents.md](agents.md) and [orders.md](orders.md).
 
-The Risk Guard asks whether the global halt is on this way: it declares `IGlobalHalt`, for whatever keeps the halt to implement. See [risk-guard.md](risk-guard.md).
+The Risk Guard asks whether the global halt is on this way: it declares `IGlobalHalt`, which Agents implements, because what keeps the halt records each switch of an operator in the audit trail of Accounts, and the Risk Guard may not use Accounts. See [risk-guard.md](risk-guard.md).
 
 Experience asks for the closed trades of a user this way, which a track record is worked out from: it declares `IClosedTrades`, which the Decision Engine implements, because it keeps the positions, their results, and the models that held their roles. So Agents, which may use Experience and not the Decision Engine, asks Experience alone about a track record. Experience asks for the closed trades of every user who has not left the platform-wide board in the same way, as a question of its own: it declares `IBoardTrades`, which the Decision Engine implements as well. See [experience.md](experience.md).
 
@@ -263,7 +263,7 @@ Every check stores the outcome of every rule, with its cycle, in `risk_checks` a
 
 When an agent's loss for the UTC day reaches its daily loss limit, or its drawdown from its peak equity reaches its drawdown limit, its position is closed and it is halted: until the next UTC day, or until its user resumes it (FR-RSK-8). `LossLimits` of the Risk Guard says when a limit is reached, for the rule that rejects an entry and for what halts an agent alike. `LossLimitWatch` of the Decision Engine evaluates the limits at every cycle, before the team is called, and at every reconciliation: in one transaction under the lock of the account it keeps what the limits are counted from, in `equity_marks`, records the equity that it found, in `equity_snapshots`, and has Agents halt an agent that runs. Then it tells its user with a notification, and has the position closed by what places the orders. Only an agent that runs is halted, and an equity that is not known halts nothing.
 
-Not built yet: the global halt of an Operator. See [risk-guard.md](risk-guard.md).
+An Operator can switch a global halt on or off. While it is on, no agent opens a new position, and open positions are still managed and protected (FR-OPS-3). Agents keeps it, as a runtime flag of the database (NFR-CFG-6), and answers `IGlobalHalt`. The Decision Engine asks it in two places, through one `GlobalHalts`: as the plan of a cycle is checked, and as the orders are settled, where an entry that rests is taken off the exchange while the halt is on. See "The global halt" in [risk-guard.md](risk-guard.md).
 
 ## Prompts
 
@@ -283,7 +283,7 @@ The instructions of each role say what the role is given and name each field of 
 
 The only account type is the individual user, and every resource belongs to exactly one (FR-ACC-5). A row that belongs to a user carries its owner. Whatever serves a request asks for the rows of the user who is signed in, so a row of another user is not found (NFR-SEC-3, NFR-DAT-9). The vocabulary for it, `IUserOwned` and `OwnedBy`, is in `Platform`, so that a component which may not use Accounts can still say whose its rows are.
 
-Operator functions require a policy of their own, which Accounts registers: an operator is a user whose verified address the configuration file lists. Being an operator opens nothing that belongs to another user. There are no tenants, and the service is free, so there is no billing (FR-ACC-6). See [ownership.md](ownership.md).
+Operator functions require a policy of their own, which Accounts registers: an operator is a user whose verified address the configuration file lists. Being an operator opens nothing that belongs to another user. The one that is built is the global halt (FR-OPS-3): its page is in the Web UI, and what switches it is in Agents, which asks again whether the user of its request is an operator and records each switch in the audit trail (FR-OPS-5). It adds one table, `runtime_flags`, whose rows belong to the service. `ComponentRules.cs` is unchanged: Agents could use the Risk Guard and Accounts already. There are no tenants, and the service is free, so there is no billing (FR-ACC-6). See [ownership.md](ownership.md).
 
 ## Security
 
@@ -333,7 +333,7 @@ Every row says the mode that it was of, and a file adds nothing up (FR-BIN-11). 
 
 The UI is a responsive web application, usable at desktop and mobile widths, with a route and navigation for each screen of the specification (FR-UI-1, FR-UI-2). It is the frame of the Web UI that every page is written in, and no component of its own: a link past the bar, the bar at the top, the content, and the legal documents at the foot. The frame is rendered on the server for each request, and no script of it keeps a connection or opens its navigation. On a narrow screen its navigation opens and closes with an element that the browser itself opens and closes, and the stylesheet makes one frame of the same elements at both widths: on a wide screen it shows what that element holds, open or not. The link to the screen that is open says so, to a screen reader too.
 
-What the screens are called and where they are is in one place, `Screens` in `WebUi/Layout`, and the tests hold the application to a map of their own, `ScreenRules.cs`: each screen with its route, whom it opens for, and what leads to it. One screen whose feature is not built has a route and a place in the navigation, and says what it is for: the operator status screen. It requires the operator policy and only shows, so it is no operator function: see "Operators" in [ownership.md](ownership.md). The frame stores nothing and adds no table. `ComponentRules.cs` is unchanged. See [layout.md](layout.md).
+What the screens are called and where they are is in one place, `Screens` in `WebUi/Layout`, and the tests hold the application to a map of their own, `ScreenRules.cs`: each screen with its route, whom it opens for, and what leads to it. One screen whose feature is not built has a route and a place in the navigation, and says what it is for: the operator status screen. It requires the operator policy and only shows, so it is no operator function: see "Operators" in [ownership.md](ownership.md). It leads to the page of the global halt, which is one. The frame stores nothing and adds no table. `ComponentRules.cs` is unchanged. See [layout.md](layout.md).
 
 ## Themes
 

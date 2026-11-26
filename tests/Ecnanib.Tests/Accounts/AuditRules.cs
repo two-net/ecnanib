@@ -10,12 +10,13 @@ namespace Ecnanib.Tests.Accounts;
 
 /// <summary>
 /// How one of the actions that the requirement names is recorded: by members of
-/// <see cref="AuditAction"/>, or not yet, because what does the action is not built.
+/// <see cref="AuditAction"/>, or not yet, because what does the action is not built. One that
+/// is built in part is both: what is built of it is recorded, and the rest waits.
 /// </summary>
-/// <param name="RecordedAs">The members that record it. Empty while it waits.</param>
+/// <param name="RecordedAs">The members that record it. Empty while all of it waits.</param>
 /// <param name="WaitsFor">
 /// What it waits for: the namespace of the component that will do the action, or
-/// <see cref="AuditRules.OperatorFunctions"/>. Null when it is recorded.
+/// <see cref="AuditRules.OperatorFunctions"/>. Null when all of it is recorded.
 /// </param>
 /// <param name="What">For an action that waits: what is to be recorded, and by whom.</param>
 internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, string? WaitsFor, string? What)
@@ -23,6 +24,9 @@ internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, stri
     public static AuditCoverage By(params AuditAction[] members) => new(members, WaitsFor: null, What: null);
 
     public static AuditCoverage Waiting(string waitsFor, string what) => new([], waitsFor, what);
+
+    /// <summary>The same, of an action that is built in part: what is not built of it still waits.</summary>
+    public AuditCoverage AndWaiting(string waitsFor, string what) => this with { WaitsFor = waitsFor, What = what };
 }
 
 /// <summary>
@@ -38,14 +42,16 @@ internal sealed record AuditCoverage(IReadOnlyList<AuditAction> RecordedAs, stri
 internal static class AuditRules
 {
     /// <summary>
-    /// What the actions of operators wait for: the first function that asks whether its user is
-    /// an operator. They have no component of their own.
+    /// What the actions of operators that are not recorded yet wait for: the next function that
+    /// asks whether its user is an operator, and is not listed in
+    /// <see cref="RecordedOperatorFunctions"/>. They have no component of their own.
     /// </summary>
-    public const string OperatorFunctions = "the operator functions";
+    public const string OperatorFunctions = "the operator functions that are not built";
 
     /// <summary>
     /// The actions that NFR-LOG-7 names, each with how it is recorded. An entry stands on its
-    /// own: one of them can be recorded while another still waits.
+    /// own: one of them can be recorded while another still waits. The actions of operators are
+    /// recorded as far as they are built, and the rest of them waits.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, AuditCoverage> Requirement = new Dictionary<string, AuditCoverage>
     {
@@ -91,9 +97,14 @@ internal static class AuditRules
         // created or copied, changes none.
         ["risk setting changes"] = AuditCoverage.By(AuditAction.AgentRiskSettingsChanged),
 
-        ["operator actions"] = AuditCoverage.Waiting(
-            OperatorFunctions,
-            "Switching the global halt, disabling and enabling an account, and triggering a catalog sync (FR-OPS-3 to FR-OPS-5)."),
+        // What an operator does. Switching the global halt is built, and recorded: the event
+        // carries the operator as its user, and names the halt (FR-OPS-3, FR-OPS-5). The
+        // controls of an account and the trigger of a catalog sync are not built, and wait.
+        ["operator actions"] = AuditCoverage
+            .By(AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff)
+            .AndWaiting(
+                OperatorFunctions,
+                "Disabling and enabling an account, and triggering a catalog sync (FR-OPS-4, FR-OPS-5)."),
     };
 
     /// <summary>
@@ -142,33 +153,59 @@ internal static class AuditRules
         [WebUiModule.OperatorStatusPath] =
             "The operator status screen has its route and its place in the bar of an operator (FR-UI-2), and says only " +
             "what it is to show (FR-OPS-2). It has no form, asks the database nothing, and shows nothing of any user: it " +
-            "switches no halt, disables no account, and triggers no sync, which are the actions of an operator.",
+            "switches no halt, disables no account, and triggers no sync, which are the actions of an operator. It leads " +
+            "to the page of the global halt with a link, and that page is an operator function of its own.",
     };
 
     /// <summary>
-    /// Why the operator functions count as built, or null while none is: an endpoint that
+    /// The operator functions that are built, each with the members that record what an
+    /// operator does there (FR-OPS-5): a route that requires the operator policy, or a type
+    /// outside Accounts that calls <see cref="OperatorAccess.IsOperator"/>. To list one is to
+    /// decide, here where it shows, that everything an operator can do there is recorded by
+    /// those members. <see cref="AuditRulesTests"/> holds each to being there.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<AuditAction>> RecordedOperatorFunctions =
+        new Dictionary<string, IReadOnlyList<AuditAction>>
+        {
+            // The page on which an operator switches the global halt, and what switches it,
+            // which asks again whether the user of its request is an operator (FR-OPS-3).
+            [WebUiModule.GlobalHaltPath] = [AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff],
+            ["Ecnanib.Agents.GlobalHaltSwitch"] = [AuditAction.GlobalHaltSwitchedOn, AuditAction.GlobalHaltSwitchedOff],
+        };
+
+    /// <summary>
+    /// Why a further operator function counts as built, or null while none is: an endpoint that
     /// requires the operator policy, or a call of <see cref="OperatorAccess.IsOperator"/> from
-    /// outside Accounts. A screen of <see cref="OperatorScreensThatOnlyShow"/> is none. What
-    /// waits for the operator functions asks this: the audit trail, and the global halt of the
-    /// Risk Guard.
+    /// outside Accounts. A screen of <see cref="OperatorScreensThatOnlyShow"/> is none, and one
+    /// of <see cref="RecordedOperatorFunctions"/> is built and recorded already. What an
+    /// operator will do and is not recorded yet waits for this.
     /// </summary>
     /// <param name="services">The services of a running application, which knows its endpoints.</param>
-    public static string? WhyOperatorFunctionsAreBuilt(IServiceProvider services)
+    public static string? WhyFurtherOperatorFunctionsAreBuilt(IServiceProvider services)
     {
         var guarded = Endpoints(services)
             .Where(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(data => data.Policy == OperatorAccess.Policy))
             .Select(endpoint => endpoint.RoutePattern.RawText)
-            .FirstOrDefault(route => route is null || !OperatorScreensThatOnlyShow.ContainsKey(route));
+            .FirstOrDefault(route => route is null
+                || !(OperatorScreensThatOnlyShow.ContainsKey(route) || RecordedOperatorFunctions.ContainsKey(route)));
 
         if (guarded is not null)
         {
             return $"{guarded} requires the operator policy";
         }
 
-        var caller = CallersOfIsOperator().FirstOrDefault(caller => !IsWithin(caller, "Ecnanib.Accounts"));
+        var caller = CallersOfIsOperator()
+            .FirstOrDefault(caller => !IsWithin(caller, "Ecnanib.Accounts") && !RecordedOperatorFunctions.Keys.Any(listed => IsOf(caller, listed)));
 
         return caller is null ? null : $"{caller} asks whether its user is an operator";
     }
+
+    /// <summary>
+    /// True when a caller is a type, or is of it: what the compiler makes of a method that
+    /// waits is a type of its own, nested in the one that declares the method.
+    /// </summary>
+    public static bool IsOf(string caller, string type) =>
+        caller == type || caller.StartsWith(type + "+", StringComparison.Ordinal);
 
     /// <summary>The page and endpoint routes that a running application serves.</summary>
     public static IEnumerable<RouteEndpoint> Endpoints(IServiceProvider services) =>

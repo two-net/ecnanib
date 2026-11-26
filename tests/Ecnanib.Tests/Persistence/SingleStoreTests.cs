@@ -49,7 +49,7 @@ public class SingleStoreTests
                 "equity_marks",
                 "equity_snapshots", "exchange_credentials", "fills", "fundings", "legal_acceptances", "lessons", "notifications",
                 "orders", "pending_sign_ins", "position_results", "position_roles", "positions", "prompt_templates", "risk_check_rules",
-                "risk_checks", "role_outputs", "roles", "sessions", "shadow_trades",
+                "risk_checks", "role_outputs", "roles", "runtime_flags", "sessions", "shadow_trades",
                 "two_factor_recovery_codes", "users",
             ],
             modelTables.Order(StringComparer.Ordinal));

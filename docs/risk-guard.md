@@ -189,7 +189,7 @@ With a price of 60000, a quantity step of 0.001, an equity of 1000, and a risk f
 
 ### The global halt
 
-An Operator can switch a global halt on or off. While it is on, no agent opens a new position; open positions are still managed and protected (FR-OPS-3). The operator functions are not built, so nothing stores a halt. The Risk Guard declares what it asks:
+An Operator can switch a global halt on or off. While it is on, no agent opens a new position; open positions are still managed and protected (FR-OPS-3). The Risk Guard declares what it asks:
 
 ```csharp
 public interface IGlobalHalt
@@ -198,12 +198,19 @@ public interface IGlobalHalt
 }
 ```
 
+Agents keeps the halt, and answers: `GlobalHaltSwitch`, which an operator switches on the page `/operator/global-halt`. See "The global halt" in [ownership.md](ownership.md) for the page, who reaches it, and how a switch is recorded.
+
 | Rule | Detail |
 |---|---|
-| **Nothing implements it yet, and no halt is on.** | `RiskGuardRulesTests` has a test that fails as soon as the operator functions are built and nothing answers. It tells that they are built as the audit trail does: see "The audit trail" in [accounts.md](accounts.md). The operator status screen, which only shows and switches nothing, is not one of them: see "Operators" in [ownership.md](ownership.md). |
-| **The halt is on when any implementation says so.** | Whatever keeps the halt implements and registers it. The Risk Guard is a leaf, so a component that may use it implements it: see "When a lower component must trigger a higher one" in [architecture.md](architecture.md). |
-| **A halt stops what opens a position, and nothing else.** | `NoGlobalHalt` is asked of a plan that opens. A plan that closes a position or adjusts protection goes on, and of a reverse the close: see "A reverse that is rejected". |
-| The halt is a runtime flag of the database, and no setting of the file (NFR-CFG-6). | The file has no key for it, and none for the Risk Guard. |
+| **Agents implements it, and it is the one thing registered.** | The Risk Guard is a leaf and stores nothing, and what keeps the halt records each switch in the audit trail of Accounts, which the Risk Guard may not use. Agents may use both: see "When a lower component must trigger a higher one" in [architecture.md](architecture.md). `RiskGuardRulesTests` holds the application to it: with nothing registered no halt would be on, whatever an operator switched. |
+| **The halt is on when any implementation says so.** | `GlobalHalts` of the Decision Engine asks each that is registered. The application has one, and a test may add a stand-in beside it. |
+| **A halt stops what opens a position, and nothing else.** | `NoGlobalHalt` is asked of a plan that opens. A plan that closes a position or adjusts protection goes on, and of a reverse the close: see "A reverse that is rejected". It stops no agent and ends no cycle: the team of an agent that holds a position must still decide whether to close it or to tighten its protection. |
+| **An entry that rests is taken off the exchange.** | The Risk Guard accepted it before the halt was switched on, and it would open a position when it is executed: on the longest timeframe it rests for a day. What settles the orders asks the same `GlobalHalts`, every minute, and takes it off. What it bought by then is a position, and is protected. See "An entry at a price" in [orders.md](orders.md). |
+| **It is read as the plan is checked, and is not cached.** | One read of one row for each check, beside the other facts. A switch holds from the next check on, on every instance of the application. |
+| **A halt that cannot be read fails the check.** | The cycle fails, and nothing of its plan goes on. Nothing is opened on a halt that is not known to be off. |
+| The halt is a runtime flag of the database, and no setting of the file (NFR-CFG-6). | It is the row `global-halt` of `runtime_flags`. The file has no key for it, and none for the Risk Guard. |
+
+**What a halt does not do.** It closes no position, and takes no stop-loss or take-profit off. It does not keep the teams of the agents from being asked: a cycle runs as ever, its models are called, and a plan that opens is rejected after that. And an entry at the market that was accepted a moment before the halt was switched on is placed: the halt is asked as the plan is checked, and not again as the order is sent.
 
 ### The loss limits
 
@@ -408,7 +415,7 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 | `StandInMarket` | The price that the symbol last traded at, 60000 unless the test says otherwise, and the symbols of a market with their rules. How a read of either ends. `AsThePriceIsRead` is called as the price is read: a test moves its clock there, or changes what the agent holds, so that a fact is one thing when the team decides and another when the plan is checked. |
 | `StandInHoldings` | What every agent holds, which a test can change while a cycle runs. |
 | `StandInKeyChecks` | What about the Binance key of every user keeps an agent from trading. |
-| `StandInHalt` | Whether a global halt is on: `CyclesApplication` takes one. |
+| `StandInHalt` | Whether a global halt is on, beside the one that an operator switches: `CyclesApplication` takes one. `StoredFlag.GiveGlobalHalt` writes the row of the real one, for a test that has no operator. |
 
 `LossLimitTests` asks `LossLimits` with no application: a loss at the limit, a little short of it, and counted from nothing, which limit is said when both are reached, and that the rule which rejects an entry and what halts an agent agree on every equity.
 
@@ -418,11 +425,14 @@ The exchange did not give {Missing} for the Risk Guard to check the plan of agen
 - `RiskCheckRecordTests` stores and reads checks in the database, and runs a cycle through the gateway and the stored keys once.
 - **`RiskGuardCycleTests` shows entries that are accepted in a cycle,** each with the quantity and the leverage that its check stored: on Spot and on Futures, with a risk fraction that the Risk Manager reduced, capped at the equity, and reduced to the leverage cap. The agent of those tests risks 1.5 percent a trade at most, and has a leverage cap of 4.
 
+- **`GlobalHaltTests` of `tests/Ecnanib.Tests/Agents` runs cycles with the halt that the application keeps,** and no stand-in: an operator switches it on the page, a plan that opens is rejected for `NoGlobalHalt` alone, a plan that closes goes on, and a plan that opens goes on again once the halt is off. `LimitEntryTests` shows an entry that rests being taken off while the halt is on, and what it bought being protected.
+
 ## Not built yet
 
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. They are not read. A leverage that Binance refuses to set gets no entry: see "The margin of Futures" in [orders.md](orders.md).
 - Bringing the prices of a plan onto the price step of its symbol. A model is not told the step, and a plan with a price off it is rejected. What makes an order from a plan decides whether to round, and which way.
-- The global halt of an Operator (FR-OPS-3), which answers `IGlobalHalt`.
+- Leaving out the cycle of an agent that holds nothing while a global halt is on. Its team is asked as ever, and its plan is rejected: the calls are made and paid for. An agent that holds a position needs its cycle, to close or to protect.
+- Asking the halt again as an entry is sent. An entry at the market that was accepted a moment before the halt was switched on is placed.
 - A day that began while the application did not run: its start is the equity at the first evaluation after the application started, and what was lost in the day before that is not counted in it.
 - What a position was sold at when it was closed at Binance by no order of the agent, by its user or by a liquidation, and the fee of that. It has no execution, so what left the position counts as closed at the price when the reconciliation found it, which is what the equity valued it at a moment before: the loss limits count a loss that was made there, by that price, and the fee is in none. See "What is corrected" in [orders.md](orders.md).
 - The maintenance margin in the liquidation estimate. A position that approaches the price that Binance liquidates it at, which has the maintenance margin in it, is said to its user while it is open (FR-BIN-F5): see "The margin of a position" in [orders.md](orders.md).

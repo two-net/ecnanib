@@ -53,6 +53,8 @@ public class AgentsRulesTests
         // mode of an agent, and the first of them puts real money at stake. Three are the
         // service's doing, and no action of a user: an agent is halted when it reaches a loss
         // limit, runs again when the day of its daily loss limit is over, and waits for its user.
+        // One is an operator's, and acts on the agents of every user: the global halt, which
+        // keeps them from opening positions while it is on (FR-OPS-3).
         Assert.Equal(
             [
                 "IAgentControls.ClosePositionAsync",
@@ -66,6 +68,7 @@ public class AgentsRulesTests
                 "IAgentModes.SwitchToDemoAsync",
                 "IAgentModes.SwitchToLiveAsync",
                 "IAgentTrading.RequireAttentionAsync",
+                "IGlobalHaltSwitch.SwitchAsync",
             ],
             AgentsRules.OperationsBeyondSettings());
     }

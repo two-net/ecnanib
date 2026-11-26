@@ -314,6 +314,11 @@ internal static class AccessibilityRules
         new("/account/delete", "refused while an agent runs", Who.User, Reach.Opened, "main .form-error",
             "A message in place of the form, for a user who has an agent that is not stopped."),
 
+        // An operator is asked for no proof, and is told as the page opens that the account
+        // stays while the configuration file lists it.
+        new("/account/delete", "refused for an operator", Who.Operator, Reach.Opened, "main .form-error",
+            "A message in place of the form, for an operator, whose account is not deleted."),
+
         // The dashboard.
         new("/dashboard", "setup checklist", Who.Newcomer, Reach.Opened, "main .setup-checklist",
             "A first-time user has the checklist with its steps, and no agent in either mode."),
@@ -484,6 +489,15 @@ internal static class AccessibilityRules
         // Three paragraphs under the heading: the page of an address without a page has two.
         new("/operator", "the page", Who.Operator, Reach.Opened, "main > h1 + p + p + p",
             "The screen of an operator, under a bar that has the link to it."),
+
+        // The global halt, which the screen above leads to. The second state switches it on,
+        // and stores that: no cycle runs in the world, and no other page says whether the halt
+        // is on, so it changes no other state.
+        new("/operator/global-halt", "off", Who.Operator, Reach.Opened, "main input[name='_handler'][value='halt-on']",
+            "What the halt does and whom it acts on, that it is off, and the one button, which switches it on."),
+        new("/operator/global-halt", "switched on", Who.Operator, Reach.Answered("halt-on"),
+            "main input[name='_handler'][value='halt-off']",
+            "The page comes back with since when the halt is on, and the one button, which switches it off."),
 
         // Two-factor authentication, as its user goes through it: she sets it up, signs in on
         // another browser, proves who she is, makes new recovery codes, and stops before turning
