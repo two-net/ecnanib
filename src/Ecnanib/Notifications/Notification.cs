@@ -167,6 +167,9 @@ public enum NotificationType
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>
 {
+    /// <summary>The name of the index of every notification by when it was raised, in the model and in the database.</summary>
+    public const string AllByCreatedAtIndex = "ix_notifications_created_at_all";
+
     public void Configure(EntityTypeBuilder<Notification> builder)
     {
         builder.ToTable("notifications");
@@ -199,6 +202,13 @@ internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notif
         // The ones that an email is still to be sent for, oldest first, which the job that sends
         // them reads: few rows, and most runs find none.
         builder.HasIndex(notification => notification.CreatedAt).HasFilter("email_pending");
+
+        // The notifications of every user by when they were raised, the oldest first: what the
+        // job that deletes the ones that are kept no longer reads, once for every batch
+        // (NFR-DAT-5). The index above holds only the ones that wait for an email, and the
+        // others start with an owner, whom that job does not ask by. It is of the same column
+        // as the one above, so it has a name of its own: without one it would be that index.
+        builder.HasIndex(notification => notification.CreatedAt, AllByCreatedAtIndex).HasDatabaseName(AllByCreatedAtIndex);
 
         // The notifications belong to the account and go with it when it is deleted (FR-ACC-9).
         builder.HasOne<User>()

@@ -148,6 +148,18 @@ public static class DecisionEngineModule
         services.AddSingleton<LessonWriting>();
         services.AddBackgroundJob<LessonWritingJob>();
 
+        // Deletes the records of the cycles that are kept no longer, every hour, in small
+        // batches: what the roles answered first, and then the record of a cycle with what
+        // hangs on it (NFR-DAT-5). Orders, executions, positions, and lessons hang on no cycle,
+        // and stay. See docs/retention.md.
+        services.AddSingleton<RecordRetention>();
+        services.AddBackgroundJob<RecordRetentionJob>();
+
+        // Thins the equity of the agents over time, every hour: a day of long ago keeps the
+        // row that it ended with (NFR-DAT-5).
+        services.AddSingleton<EquityThinning>();
+        services.AddBackgroundJob<EquityThinningJob>();
+
         // The data package of a cycle: candles, the context of the higher timeframes, the
         // indicators, which the system computes, and what the agent holds, which what keeps the
         // positions and the orders says.

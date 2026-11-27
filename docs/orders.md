@@ -587,6 +587,7 @@ Agent equity is the capital the user allocated to an agent, plus the agent's net
 | **An agent has rows for each mode** | What it did in Demo is never combined with what it does in Live (FR-BIN-11). |
 | **An equity that is not known is not recorded** | Where Binance did not say the price that the open position is valued at: see "The equity of an agent". |
 | **An agent that is not evaluated has no new row** | One that its user paused or stopped, and that holds nothing. Its equity is what its newest row says. |
+| **A day of longer ago than 90 days keeps one row** | The latest of the UTC day, for an agent in a mode and an asset: `EquityThinning` deletes the others, every hour (NFR-DAT-5). So the equity of the last 90 days is there row for row, and of the time before it as each day ended. See "Thinning the equity over time" in [retention.md](retention.md). |
 | **The screen of the agent draws it** | The equity curve, in the mode that the agent is in, and the largest drawdown, which is counted over these rows as the drawdown limit counts a drawdown (FR-RPT-2): `IAgentReports`, with `EquityCurves`. See "Equity curve" in [agent-screen.md](agent-screen.md). |
 | **The database says a row that is added** | With the trigger that `AddEquitySignal` gives the table, so that the screen of the agent shows it without a manual refresh: see "What the database says" in [live-updates.md](live-updates.md). |
 
@@ -785,7 +786,6 @@ A check against Binance's own test environment is in `LiveBinanceTests`: see "Ch
 - Orders in the account of a user that no agent placed. They are not listed, and so not compared: what reconciles asks about the orders that have a row.
 - The leverage brackets of a symbol, by which Binance allows less leverage for a larger position. A leverage that Binance refuses for that gets no entry, and its user is told: see "The margin of Futures".
 - A fee in an asset that the configuration file names no symbol for. It is stored as Binance said it, and is in no figure: see "The value of a fee".
-- Thinning the equity of an agent over time to one row for a day after 90 days (NFR-DAT-5). Nothing deletes yet.
 - The equity of an agent that is not evaluated: one that its user paused or stopped, and that holds nothing, has no new row until it runs again.
 - The funding and the margin of the open position on the page of its agent, and its fees: what the page says the open position would make is before fees and funding. The fees and the funding of the agent to date are among its performance figures, and those of each closed position are on its trade list (FR-RPT-2): see [agent-screen.md](agent-screen.md).
 - Why a plan that closes a position or adjusts its protection placed no order, in the record of its cycle. The record of a cycle has its orders and why no entry was placed (FR-CYC-10): see "The timeline" in [team.md](team.md). That a position was gone before its close was due is in the log only.

@@ -76,6 +76,11 @@ internal sealed class EquitySnapshotConfiguration : IEntityTypeConfiguration<Equ
         builder.Property(snapshot => snapshot.Capital);
         builder.Property(snapshot => snapshot.Equity);
 
+        // The rows of every agent of a day, and the oldest row of all: what the job that thins
+        // the days of long ago reads (NFR-DAT-5). The key starts with an agent, and that job
+        // goes by the day.
+        builder.HasIndex(snapshot => snapshot.At);
+
         // The equity of an agent goes with it when it is deleted, and with the account when that
         // is. The key carries the owner along (NFR-DAT-9).
         builder.HasOne<Agent>()

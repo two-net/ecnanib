@@ -74,8 +74,8 @@ The triggers are in [`LiveRules.cs`](../tests/Ecnanib.Tests/LiveUpdates/LiveRule
 | `agents` | `Agent` | An agent that is created or deleted, and a change of its state, its mode, or a setting. | `roles_reassigned_at`, which is on the form of the agent alone. |
 | `positions` | `Holdings` | A position that is opened or closed, and what it holds, its entry price, and its protection. | `alerted_at` and `funding_due_at`. |
 | `orders` | `Holdings` | An order that is written, and what becomes of it. | `checked_at`, which is written each time the exchange is asked about an order that rests. |
-| `decision_cycles` | `Cycle` | A cycle that is recorded. | |
-| `equity_snapshots` | `Equity` | The equity of an agent that is recorded: what it made or lost has changed, or what its open position is worth has. | A row that goes with its agent: the table of the agents says that. A row is never changed. |
+| `decision_cycles` | `Cycle` | A cycle that is recorded, and one that is deleted when it is kept no longer: see [retention.md](retention.md). | |
+| `equity_snapshots` | `Equity` | The equity of an agent that is recorded: what it made or lost has changed, or what its open position is worth has. | A row that goes with its agent: the table of the agents says that. A row of long ago that is thinned away, which changes what no page follows: see [retention.md](retention.md). A row is never changed. |
 | `notifications` | `Notification` | A notification that is raised, read, or removed. | `email_pending` and `emailed_at`. |
 | `sessions` | `Session` | A session that ends, however it ends. | A session that begins, and `last_active_at`, which is written with every minute of use. |
 

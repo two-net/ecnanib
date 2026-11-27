@@ -53,6 +53,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_audit_events");
 
+                    b.HasIndex("OccurredAt")
+                        .HasDatabaseName("ix_audit_events_occurred_at");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_audit_events_user_id");
 
@@ -849,6 +852,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasAlternateKey("Id", "UserId")
                         .HasName("ak_decision_cycles_id_user_id");
 
+                    b.HasIndex("ClosedAt")
+                        .HasDatabaseName("ix_decision_cycles_closed_at");
+
                     b.HasIndex("AgentId", "UserId", "ClosedAt")
                         .HasDatabaseName("ix_decision_cycles_agent_id_user_id_closed_at");
 
@@ -939,6 +945,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasKey("AgentId", "Mode", "At")
                         .HasName("pk_equity_snapshots");
+
+                    b.HasIndex("At")
+                        .HasDatabaseName("ix_equity_snapshots_at");
 
                     b.HasIndex("AgentId", "UserId")
                         .HasDatabaseName("ix_equity_snapshots_agent_id_user_id");
@@ -1897,6 +1906,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_role_outputs");
 
+                    b.HasIndex("CalledAt")
+                        .HasDatabaseName("ix_role_outputs_called_at");
+
                     b.HasIndex("MarketTemplateId")
                         .HasDatabaseName("ix_role_outputs_market_template_id");
 
@@ -2318,6 +2330,9 @@ namespace Ecnanib.Platform.Persistence.Migrations
 
                     b.HasIndex("UserId", "AgentId", "CreatedAt")
                         .HasDatabaseName("ix_notifications_user_id_agent_id_created_at");
+
+                    b.HasIndex(new[] { "CreatedAt" }, "ix_notifications_created_at_all")
+                        .HasDatabaseName("ix_notifications_created_at_all");
 
                     b.ToTable("notifications", (string)null);
                 });

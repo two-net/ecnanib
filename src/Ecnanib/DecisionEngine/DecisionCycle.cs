@@ -133,6 +133,12 @@ internal sealed class DecisionCycleConfiguration : IEntityTypeConfiguration<Deci
         // mode that is asked for.
         builder.HasIndex(cycle => new { cycle.UserId, cycle.Mode, cycle.ClosedAt });
 
+        // The cycles of every user by the close of their candles, the oldest first: what the
+        // job that deletes the records that are kept no longer reads, once for every batch
+        // (NFR-DAT-5). The two above start with an agent and with an owner, and that job has
+        // neither to ask by.
+        builder.HasIndex(cycle => cycle.ClosedAt);
+
         // The cycles of an agent go with it when it is deleted, and with the account when that
         // is. The key carries the owner along, so the cycle of an agent is its user's (NFR-DAT-9).
         builder.HasOne<Agent>()

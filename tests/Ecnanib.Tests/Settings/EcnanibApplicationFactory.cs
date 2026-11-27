@@ -113,6 +113,46 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string NotificationEmailKey = "notification-email";
 
+    // The job of the Decision Engine that deletes the records of the cycles that are kept no longer, named in the same way.
+    private const string RecordRetention = "Ecnanib.DecisionEngine.RecordRetentionJob";
+
+    /// <summary>
+    /// The key under which the job that deletes the records of the cycles that are kept no
+    /// longer is kept: the scheduler of no application of the tests runs it, and a test runs it
+    /// from there itself, at a moment of its choosing.
+    /// </summary>
+    public const string RecordRetentionKey = "record-retention";
+
+    // The job of the Decision Engine that thins the equity of the agents over time, named in the same way.
+    private const string EquityThinning = "Ecnanib.DecisionEngine.EquityThinningJob";
+
+    /// <summary>
+    /// The key under which the job that thins the equity of the agents over time is kept: the
+    /// scheduler of no application of the tests runs it, and a test runs it from there itself,
+    /// at a moment of its choosing.
+    /// </summary>
+    public const string EquityThinningKey = "equity-thinning";
+
+    // The job of Notifications that deletes the notifications that are kept no longer, named in the same way.
+    private const string NotificationRetention = "Ecnanib.Notifications.NotificationRetentionJob";
+
+    /// <summary>
+    /// The key under which the job that deletes the notifications that are kept no longer is
+    /// kept: the scheduler of no application of the tests runs it, and a test runs it from there
+    /// itself, at a moment of its choosing.
+    /// </summary>
+    public const string NotificationRetentionKey = "notification-retention";
+
+    // The job of Accounts that deletes the events of the audit trail that are kept no longer, named in the same way.
+    private const string AuditRetention = "Ecnanib.Accounts.AuditRetentionJob";
+
+    /// <summary>
+    /// The key under which the job that deletes the events of the audit trail that are kept no
+    /// longer is kept: the scheduler of no application of the tests runs it, and a test runs it
+    /// from there itself, at a moment of its choosing.
+    /// </summary>
+    public const string AuditRetentionKey = "audit-retention";
+
     private SettingsDirectory? _ownDirectory;
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
@@ -358,6 +398,29 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(emailing);
             services.AddKeyedSingleton(typeof(IBackgroundJob), NotificationEmailKey, emailing.ImplementationType!);
+
+            // The four jobs that delete what is kept no longer are due as the background work
+            // starts, and then every hour: each deletes the rows of its tables that are older
+            // than the configuration file keeps them, by the clock of the application. Many
+            // tests store rows of long ago for a reason of their own, or set their clock far
+            // ahead, and compare what the tables hold before and after: their rows would be
+            // gone at a moment that the test does not choose. So no application of a test runs
+            // these jobs on a schedule: a test that is about what a run does finds the job by
+            // its key, and runs it itself.
+            foreach (var (retention, key) in new[]
+            {
+                (RecordRetention, RecordRetentionKey),
+                (EquityThinning, EquityThinningKey),
+                (NotificationRetention, NotificationRetentionKey),
+                (AuditRetention, AuditRetentionKey),
+            })
+            {
+                var deleting = services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == retention);
+
+                services.Remove(deleting);
+                services.AddKeyedSingleton(typeof(IBackgroundJob), key, deleting.ImplementationType!);
+            }
 
             // The job that reconciles the agents with the exchange is due as the background
             // work starts when an agent holds anything, and then every few minutes: it asks

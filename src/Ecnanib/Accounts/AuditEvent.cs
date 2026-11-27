@@ -205,6 +205,10 @@ internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEv
         builder.Property(audited => audited.OccurredAt);
         builder.Property(audited => audited.Origin);
 
+        // The events of every user by when they happened, the oldest first: what the job that
+        // deletes the ones that are kept no longer reads, once for every batch (NFR-DAT-5).
+        builder.HasIndex(audited => audited.OccurredAt);
+
         // The events of an account go with it when it is deleted: they hold where its user was.
         builder.HasOne<User>()
             .WithMany()

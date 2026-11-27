@@ -91,7 +91,7 @@ Signing in starts a session: a row of the `sessions` table, and a cookie in the 
 
 Each signed-in request counts as activity, but for what a page does by itself: see "The session of a connection". It is not written on every request: a session whose stored time is less than a minute old is left as it is (less than that when the period is under an hour). The period counts from the stored time, which is never later than the last request, so **a session never lasts longer than configured**, and can end up to a minute early.
 
-A session that has ended is deleted when its cookie is next seen, and the cookie is taken from the browser. So is a cookie that names no session, or that does not hold a token at all. The sessions of a user that ended on browsers which never came back are deleted when the user signs in. Those of a user who never signs in again stay until the account is deleted; a job that removes them belongs with the retention jobs.
+A session that has ended is deleted when its cookie is next seen, and the cookie is taken from the browser. So is a cookie that names no session, or that does not hold a token at all. The sessions of a user that ended on browsers which never came back are deleted when the user signs in. Those of a user who never signs in again stay until the account is deleted: no job removes them yet. See "Not built yet" in [retention.md](retention.md).
 
 ### How a request is signed in
 
@@ -629,6 +629,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 - **The ids of events are in the order the events were recorded in.** An id starts with a time in milliseconds, and `AuditTrail` hands each one out for a later millisecond than the one before. So two events of one transaction are in order too: a recovery code, and then the sign-in it made. This holds for the events that one running instance records.
 - **The origin is personal data,** and it is not on the list of NFR-SEC-9. It is kept because an audit trail that cannot say where an action came from does not show a takeover. It is the one thing stored about a person beyond that list: see "Personal data". It is in the export of the user's data.
 - **The events of an account are deleted with the account.** So deleting an account is not an event: the log says that it was deleted.
+- **An event is kept for a time.** It is deleted when it is older than the days of `Retention:AuditDays`, 730 in the tracked file, whatever it records: `AuditRetention` deletes them every hour, in small batches, found by the index of `occurred_at` (NFR-DAT-5). Deleting an event is not an event. See [retention.md](retention.md).
 - Behind a proxy, the origin is the address of the browser only when the application is told to believe the proxy's headers. Otherwise it is the address of the proxy. See "Behind a proxy that terminates TLS" in [security.md](security.md).
 
 Two actions are recorded though the requirement does not name them. A re-authentication says who was at the browser when keys or money were at stake. A new password by a link from the mail is how an account is taken over by whoever reads that mail.
@@ -840,7 +841,6 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - Showing a user that an operator disabled or enabled their account, in their export. The event is the operator's: see "Disabling an account".
 - A reason for disabling an account, and an email that tells its user. They are told at the sign-in, with the right password.
 - Exporting or deleting a disabled account by its user: both need a session.
-- The job that removes events older than `Retention:AuditDays`.
 - A screen that shows a user, or an operator, the audit trail. A user reads theirs in the export.
 - A way for an operator to turn two-factor authentication off for a user who has lost both the app and the recovery codes, and an email that tells the owner when it is turned on or off.
 - What a protected endpoint under `/api` answers to a request that is not signed in. Today it would be sent to the sign-in page, as a page is. No such endpoint exists yet.

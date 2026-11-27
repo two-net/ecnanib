@@ -177,6 +177,14 @@ public class SettingsFileTests
         { "Experience:ShadowFeePercent:Spot", "\"0.1\"", "Experience:ShadowFeePercent:Spot" },
         { "Experience:ShadowFeePercent", "0.1", "Experience:ShadowFeePercent" },
         { "Retention:AuditDays", "-1", "Retention:AuditDays" },
+
+        // What is kept is kept for a day at the least, and for a hundred years at the most: a
+        // number of days that reaches back before any calendar is no time that a job can count.
+        { "Retention:TranscriptDays", "0", "Retention:TranscriptDays" },
+        { "Retention:TranscriptDays", "36501", "Retention:TranscriptDays" },
+        { "Retention:DecisionDays", "36501", "Retention:DecisionDays" },
+        { "Retention:NotificationDays", "36501", "Retention:NotificationDays" },
+        { "Retention:AuditDays", "2147483647", "Retention:AuditDays" },
         { "Limits:MaxAgentsPerUser", "0", "Limits:MaxAgentsPerUser" },
         { "Logging:Outputs:File:RetainedFiles", "0", "Logging:Outputs:File:RetainedFiles" },
 

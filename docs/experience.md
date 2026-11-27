@@ -559,7 +559,7 @@ Experience has four tables. Two are for what later candles are to say something 
 - **Neither table of the calls and the shadow trades is in the export of a user's data.** Both are listed in `ExportRules.NotExported`, as the cycles that they hang on are: see "Exporting your data" in [accounts.md](accounts.md).
 - **The lessons are in the export,** in the section `lessons`: every row, a lesson that waits or could not be written with which it is. Agents hands them over: Experience may not use Accounts, which declares what an export is made of, so that what recalls lessons into prompts stays out of reach of personal data (FR-PRM-9).
 - **A cycle that was stored before the tables were added has no rows.** The migration `AddExperienceScoring` creates the tables, and fills nothing. A position whose result was recorded before `AddLessons` has no lesson.
-- Records of decisions are kept for a year (NFR-DAT-5), and nothing deletes yet. A row of Experience goes with its cycle when that is deleted: see "Not built yet".
+- **A row of Experience goes with its cycle,** and the record of a cycle is kept for the days of `Retention:DecisionDays`, a year in the tracked file (NFR-DAT-5). So the calls and the shadow trades that a strength score counts are those of that time, for a score of all time as well. A lesson hangs on its position, and is kept indefinitely. See "The record of a cycle" in [retention.md](retention.md).
 
 ## The log
 
@@ -626,7 +626,6 @@ A run that completed something says how much, as information, and a run that com
 - A shadow trade of a plan that was approved and then opened no position: one that the Risk Guard rejected, one whose entry was skipped, and one whose entry at a price was not reached. Only a plan that was executed has a result on the approved side.
 - Following a shadow trade for longer than 200 candles, and scoring what the candles of the exchange no longer reach. The gateway reads the newest candles alone: see "Market data" in [exchange.md](exchange.md).
 - Scoring the cycles that were recorded before the tables were added. They left no rows.
-- Deleting the calls and the shadow trades that are older than the records of decisions are kept (NFR-DAT-5). They go with their cycles, and nothing deletes a cycle for its age yet.
 - Saying in the record of a cycle which lessons its prompts recalled. A lesson can be disabled or deleted afterwards, and the record of a cycle holds no prompt: see "The record of a cycle" in [team.md](team.md).
 - A record of the calls that write lessons. A lesson says the model that wrote it and the version of its instructions. How long a call took and how many tokens it used are in the log of the gateway alone, and a call that gave no lesson leaves the outcome of its row. So these calls are in no figure of the AI usage, which is worked out from the recorded calls of the roles, and its page says so: see "AI usage" in [team.md](team.md).
 - Lessons for the positions that were closed before lessons were written. Their rows were never left: see "Writing a lesson".

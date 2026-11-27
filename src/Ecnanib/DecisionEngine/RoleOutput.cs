@@ -213,6 +213,11 @@ internal sealed class RoleOutputConfiguration : IEntityTypeConfiguration<RoleOut
                 output.LiveSearches,
             });
 
+        // The calls of every user by when they were made, the oldest first: what the job that
+        // deletes the calls that are kept no longer reads, once for every batch (NFR-DAT-5).
+        // No other index starts with the time, and that job has no owner to ask by.
+        builder.HasIndex(output => output.CalledAt);
+
         // The calls of a cycle go with it, and so with its agent and with the account. The key
         // carries the owner along, so the call of a cycle is its user's (NFR-DAT-9).
         builder.HasOne<DecisionCycle>()

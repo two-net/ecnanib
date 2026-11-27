@@ -20,7 +20,8 @@ What a trade is, and what its result is made of, is in "The results of a positio
 | **A file is of every agent of the user.** | Each row names its agent, by its id and by the name that it has now. A file has no choice of an agent, a mode, or a time. |
 | **The latest is first.** | The trades by when they were closed, and the decisions by the close of their candle, as the screen of an agent lists them. |
 | **A row says what the screen of its agent says.** | One rule makes a trade for the trade list and for the file, `ListedTrades`, and one rule makes a cycle for its timeline and for the file, `CycleRecordViews`. A file says nothing else of a trade or of a cycle than a page does (FR-RPT-2). |
-| **A trade names the decision that opened it.** | `entry_cycle_id` of a trade is `cycle_id` of a decision, so the two files can be read together. |
+| **A trade names the decision that opened it.** | `entry_cycle_id` of a trade is `cycle_id` of a decision, so the two files can be read together. A trade is kept indefinitely and a decision for a time, so a trade of long ago names a decision that the other file no longer has. |
+| **A file has what is stored.** | The decisions are those of the days of `Retention:DecisionDays`, 365 in the tracked file, and a decision of longer ago than those of `Retention:TranscriptDays`, 90, has the cells of its roles empty: what the roles answered is kept for that long (NFR-DAT-5). The trades are every trade. See [retention.md](retention.md). |
 | **An agent that is deleted takes its rows along.** | What hangs on an agent is deleted with it, so neither file has a row of it: see [ownership.md](ownership.md). |
 
 ## Per mode
@@ -154,4 +155,3 @@ No test opens a file in a spreadsheet. By hand:
 - The equity of an agent over time, the scored calls of its analysts, and the shadow trades of its vetoed plans. The screens show them: see [agent-screen.md](agent-screen.md) and [experience.md](experience.md).
 - The tokens and the time of each call. The page of the AI usage adds them up (FR-RPT-3): see "AI usage" in [team.md](team.md).
 - A limit to how often a user asks for a file.
-- Retention: decision records are kept 365 days (NFR-DAT-5), and nothing deletes yet, so a file holds every cycle that was ever recorded.

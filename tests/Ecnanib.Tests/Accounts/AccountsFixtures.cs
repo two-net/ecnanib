@@ -456,6 +456,60 @@ internal sealed class AccountsApplication : IDisposable
     public IBackgroundJob NotificationEmail =>
         _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.NotificationEmailKey);
 
+    /// <summary>
+    /// Runs the job that deletes the records of the cycles that are kept no longer, now, as the
+    /// scheduler does every hour. A test runs it itself: the scheduler of no application of the
+    /// tests does.
+    /// </summary>
+    public Task DeleteAgedRecordsAsync(CancellationToken? cancellationToken = null) =>
+        RecordRetention.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that deletes the records of the cycles that are kept no longer, which only a test runs.</summary>
+    public IBackgroundJob RecordRetention =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.RecordRetentionKey);
+
+    /// <summary>
+    /// Runs the job that thins the equity of the agents over time, now, as the scheduler does
+    /// every hour. A test runs it itself: the scheduler of no application of the tests does.
+    /// </summary>
+    public Task ThinEquityAsync(CancellationToken? cancellationToken = null) =>
+        EquityThinning.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that thins the equity of the agents over time, which only a test runs.</summary>
+    public IBackgroundJob EquityThinning =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.EquityThinningKey);
+
+    /// <summary>
+    /// Runs the job that deletes the notifications that are kept no longer, now, as the scheduler
+    /// does every hour. A test runs it itself: the scheduler of no application of the tests does.
+    /// </summary>
+    public Task DeleteAgedNotificationsAsync(CancellationToken? cancellationToken = null) =>
+        NotificationRetention.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that deletes the notifications that are kept no longer, which only a test runs.</summary>
+    public IBackgroundJob NotificationRetention =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.NotificationRetentionKey);
+
+    /// <summary>
+    /// Runs the job that deletes the events of the audit trail that are kept no longer, now, as
+    /// the scheduler does every hour. A test runs it itself: the scheduler of no application of
+    /// the tests does.
+    /// </summary>
+    public Task DeleteAgedAuditEventsAsync(CancellationToken? cancellationToken = null) =>
+        AuditRetention.RunAsync(
+            new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+            cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>The job that deletes the events of the audit trail that are kept no longer, which only a test runs.</summary>
+    public IBackgroundJob AuditRetention =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.AuditRetentionKey);
+
     public IRegistration Registration => _application.Services.GetRequiredService<IRegistration>();
 
     public IFairUse FairUse => _application.Services.GetRequiredService<IFairUse>();

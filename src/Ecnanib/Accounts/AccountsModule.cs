@@ -1,3 +1,4 @@
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Security;
 using Microsoft.AspNetCore.Authentication;
 
@@ -77,6 +78,11 @@ public static class AccountsModule
         // account (FR-UI-4). Only the dashboard reads it, so it is read there and not with the
         // session.
         services.AddSingleton<ISetupMarks, StoredSetupMarks>();
+
+        // Deletes the events of the audit trail that are of longer ago than they are kept, every
+        // hour, in small batches (NFR-DAT-5). See docs/retention.md.
+        services.AddSingleton<AuditRetention>();
+        services.AddBackgroundJob<AuditRetentionJob>();
 
         // The one way a request is known to be signed in, for the Web UI and the API alike.
         services.AddAuthentication(SessionAuthentication.Scheme)

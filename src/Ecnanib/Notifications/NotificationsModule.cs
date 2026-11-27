@@ -27,6 +27,11 @@ public static class NotificationsModule
         services.AddSingleton<NotificationEmails>();
         services.AddBackgroundJob<NotificationEmailJob>();
 
+        // Deletes the notifications that were raised longer ago than they are kept, every hour,
+        // in small batches (NFR-DAT-5). See docs/retention.md.
+        services.AddSingleton<NotificationRetention>();
+        services.AddBackgroundJob<NotificationRetentionJob>();
+
         // The parts of the export of a user's data that this component keeps (NFR-SEC-9).
         services.AddSingleton<IExportedPart, NotificationsExport>();
         services.AddSingleton<IExportedPart, EmailOptInExport>();

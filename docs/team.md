@@ -378,6 +378,7 @@ public interface ICycleRecords
 
 - **The rows are their user's:** `DecisionCycle` and `RoleOutput` implement `IUserOwned`. The Decision Engine may not use Accounts, so a row carries its owner along to the row that it hangs on: `(agent_id, user_id)` points at `agents (id, user_id)`, and `(cycle_id, user_id)` at `decision_cycles (id, user_id)`. The database holds the owners to being the same. See [ownership.md](ownership.md).
 - **The record of a cycle goes with its agent,** and with the account: an agent is deleted only while it is a draft, or is stopped with nothing open.
+- **A record is kept for a time, and its calls for a shorter one.** What a role answered is deleted after the days of `Retention:TranscriptDays`, 90 in the tracked file, and the record of a cycle after those of `Retention:DecisionDays`, 365, with what hangs on it (NFR-DAT-5). A cycle whose calls went shows the rest of its record on its timeline, and no call. See [retention.md](retention.md).
 - **They hold no prompt, no key, and no personal data.** A model is sent nothing that says who the user is (FR-PRM-9), and the summary of a data package holds what a prompt holds. `PersonalDataRules` lists `data_package`, `rejection`, and `result` with what they hold.
 - **They are not in the export of a user's data, and are a download of their own.** A user exports their decisions as CSV (FR-RPT-4): a row for each cycle, with the model and the answer of each role. See [export.md](export.md). `ExportRules` lists both tables with that.
 - A table of role outputs points at the versions of the templates: `PromptRulesTests` holds every such table to it.
@@ -387,6 +388,8 @@ The migration `AddCycleRecord` adds `data_package` and `no_entry`, and the index
 The migration `AddCycleKind` adds `kind`. It gave every cycle that was stored then `Scheduled`: until then nothing but the close of a candle started a cycle.
 
 The migration `AddRoleOutputCalledAtIndex` adds the index of `role_outputs` by owner and time. It carries the cycle, the model, the outcome, the tokens, and the live searches of a call, so the database can count the calls of a period from the index, without the rows, which hold what the models answered: see "AI usage".
+
+The migration `AddRetentionIndexes` adds the index of `role_outputs` by the time of a call alone, and that of `decision_cycles` by the close of a candle alone: what deletes the records that are kept no longer reads the rows of every user by their time. See "The indexes" in [retention.md](retention.md).
 
 ### The summary of the data package
 
@@ -501,7 +504,7 @@ public sealed record UsageFigures(
     int Calls, int NotCounted, long? InputTokens, long? OutputTokens, long LiveSearches, decimal? EstimatedCost);
 ```
 
-`OfUserAsync` answers with the usage of each provider over a period, and of each day, agent, and provider in it. A period is the last 7, 30, or 90 days, and the usage is of every agent of the user, or of one. `OfKeysAsync` answers with the usage of each key that it is told of.
+`OfUserAsync` answers with the usage of each provider over a period, and of each day, agent, and provider in it. A period is the last 7, 30, or 90 days, and the usage is of every agent of the user, or of one. A call is kept for the days of `Retention:TranscriptDays`, 90 in the tracked file, which is as far back as the longest period reaches: see "What a role answered" in [retention.md](retention.md). `OfKeysAsync` answers with the usage of each key that it is told of.
 
 | Rule | Detail |
 |---|---|
@@ -602,6 +605,5 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - The calls that write lessons in the AI usage. They are charged to the user's key, and are recorded nowhere: see "Not built yet" in [experience.md](experience.md).
 - Keeping the usage of an agent that is deleted. Nothing of the usage is stored, so it goes with the calls.
 - What a provider charges for live searches, and for the tokens that it reads from a cache or writes to one, in the estimated cost. The searches are counted, and every token of a prompt is priced as input.
-- Retention of the records: decision records are kept 365 days and role transcripts 90 (NFR-DAT-5). `Retention` has the settings, and nothing deletes yet.
 - Telling a model why its first answer was rejected. The call that is made once more has the same prompt.
 - Sending the schemas to the real providers in the suite. `LiveProviderTests` does when it is given keys.

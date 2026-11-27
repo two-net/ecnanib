@@ -130,7 +130,7 @@ A database error is logged once, by whoever handles the exception. The mapper's 
 
 ### The sizes of the tables
 
-An operator status screen shows table sizes (FR-OPS-2): decision records and transcripts grow with every cycle, and this is how that growth is watched until the retention jobs are built (risk R7 of the specification, NFR-DAT-5). `IDatabaseSizes` says them, in `Platform/Persistence`:
+An operator status screen shows table sizes (FR-OPS-2): decision records and transcripts grow with every cycle, and this is how that growth is watched, beside the retention jobs that hold it back (risk R7 of the specification, NFR-DAT-5): see [retention.md](retention.md). `IDatabaseSizes` says them, in `Platform/Persistence`:
 
 ```csharp
 public interface IDatabaseSizes

@@ -87,6 +87,8 @@ Each of the four may also have a `FeedUrl`: the address of Binance's account eve
 
 `Trading:RoleReassignmentDays`, a whole number from 1 to 365, says how many days, each of 24 hours, pass at the least between two times that the service gives the roles of one agent other models by strength (FR-TEAM-10). It counts for an agent whose user turned the automatic reassignment on, and from the last time that the service gave a role of it another model. The tracked file has 7. See "Reassigning the roles automatically" in [agents.md](agents.md).
 
+`Retention` says for how many days each kind of record is kept (NFR-DAT-5): `TranscriptDays` what a role answered in a cycle, `DecisionDays` the record of a cycle, `NotificationDays` a notification, and `AuditDays` an event of the audit trail. Each is a whole number from 1 to 36500, and a day is 24 hours. A job deletes what is older, every hour: when a number is made smaller, the first run after the restart deletes what is stored of the time between, and nothing brings it back. The tracked file has 90, 365, 90, and 730. `TranscriptDays` below 90 shortens what the page of the AI usage can add up, and what a role answered is not kept for longer than its cycle, whatever `TranscriptDays` says. See [retention.md](retention.md).
+
 `Limits:SignIn`, `Limits:Registration`, and `Limits:PasswordReset` say how often each may be tried: `PerClient` times from one IP address and `PerAddress` times for one email address, each 1 or more, within `Minutes`, from 1 to 1440. Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, or all visitors count as one client. See "Limits on attempts" in [accounts.md](accounts.md).
 
 ### Permissions
