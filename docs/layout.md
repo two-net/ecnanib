@@ -133,7 +133,7 @@ It uses no container query, no `:has()`, and no nesting.
 
 ## The operator status screen and its parts
 
-Every screen of the specification is built. The last was the operator status screen, `/operator`, which shows how the service stands: the scheduler, the queue of the cycles, the catalog syncs, the calls to the AI providers, the request limits, the clock, and the outages of Binance, the sizes of the tables, and the rates of errors, each under a heading of its own and most of them as a table (FR-OPS-2, NFR-REL-4). It says of when it is, and is loaded again for how the service stands now. See "The operator status screen" in [ownership.md](ownership.md).
+Every screen of the specification is built. The last was the operator status screen, `/operator`, which shows how the service stands: its availability and the response times of its screens, each held against a target (NFR-REL-1, NFR-PRF-1), the scheduler, the queue of the cycles, the catalog syncs, the calls to the AI providers, the request limits, the clock, and the outages of Binance, the sizes of the tables, and the rates of errors, each under a heading of its own and most of them as a table (FR-OPS-2, NFR-REL-4). It says of when it is, and is loaded again for how the service stands now. See "The operator status screen" in [ownership.md](ownership.md).
 
 **What an operator does is a part of that screen, on a page of its own,** which the screen leads to with a link, and which leads back. None of them is a screen of the specification, as the page that deletes an account is none: the bar marks "Operator status" on each, as a part of that screen. Each is for operators alone, and is an operator function: see "Operators" in [ownership.md](ownership.md).
 

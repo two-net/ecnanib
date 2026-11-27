@@ -3,6 +3,7 @@ using Ecnanib.Agents;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Notifications;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.Agents;
@@ -148,6 +149,9 @@ internal sealed class AccessibilityWorld : IDisposable
 
     /// <summary>Where the application is reached by a browser, when it listens.</summary>
     public Uri ListeningAt => _application.ListeningAt;
+
+    /// <summary>How long the application took to answer the screens that it showed (NFR-PRF-1).</summary>
+    public IScreenTimes ScreenTimes => _application.ScreenTimes;
 
     /// <summary>A browser of its own, with no cookie yet: nobody is signed in on it.</summary>
     public HttpClient CreateClient()

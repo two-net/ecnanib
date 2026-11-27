@@ -85,7 +85,7 @@ Events inside a request or a cycle carry the properties that say what they belon
 
 | Property | Set by |
 |---|---|
-| `RequestId` | `UseRequestCorrelation()`, for every HTTP request. It comes first in the pipeline. |
+| `RequestId` | `UseRequestCorrelation()`, for every HTTP request. It comes first in the pipeline. What times the screens comes right after it, and says how long a screen took to answer with this property, at the `Debug` level: see "The log" in [performance.md](performance.md). |
 | `UserId` | `UseUserCorrelation()`, when the request is signed in: the id of the account. It comes right after authentication, which is what knows the user. See [accounts.md](accounts.md). |
 | `Provider`, `Model` | The AI Provider Gateway, around each call to a model. `Provider` alone around a check of a key and a list of models, and by the Catalog around a sync. |
 | `AgentId`, `CycleId`, `Role` | The component that runs a cycle and calls the team. The job of the Decision Engine that starts the cycles sets `UserId`, `AgentId`, and `CycleId` around each cycle: see [cycles.md](cycles.md). What runs a role sets `Role` around each call of it, so the events of the gateway carry it: see "A role call" in [team.md](team.md). |

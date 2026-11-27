@@ -4,6 +4,7 @@ using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.Availability;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Platform.Persistence;
 
 namespace Ecnanib.WebUi.Pages.Operator;
@@ -13,8 +14,8 @@ namespace Ecnanib.WebUi.Pages.Operator;
 /// the scheduler, the depth of the queue of the cycles, the last catalog sync of each provider,
 /// the use of the request limits of Binance, the drift of the clock, the sizes of the tables,
 /// and the rates of errors (FR-OPS-2), and with them where the calls to the AI providers are
-/// paused and where Binance is out (NFR-REL-4), and how available the service was (NFR-REL-1).
-/// What frames the screen, and the pages that it leads to, have their texts in
+/// paused and where Binance is out (NFR-REL-4), how available the service was (NFR-REL-1), and
+/// how long its screens took to answer (NFR-PRF-1). What frames the screen, and the pages that it leads to, have their texts in
 /// <see cref="OperatorPages"/>.
 /// </summary>
 /// <remarks>
@@ -25,6 +26,9 @@ public static class OperatorStatusPages
 {
     /// <summary>The id of the heading of the availability, which names its table.</summary>
     public const string AvailabilityId = "status-availability";
+
+    /// <summary>The id of the heading of the response times of the screens, which names its table.</summary>
+    public const string ScreensId = "status-screens";
 
     /// <summary>The id of the heading of the scheduler, which names its table.</summary>
     public const string SchedulerId = "status-scheduler";
@@ -63,9 +67,9 @@ public static class OperatorStatusPages
 
     /// <summary>Which of the readings are of one instance alone.</summary>
     public static string OfThisInstance =>
-        "The queue of the cycles, the pauses of the calls to the AI providers, the request limits, the clock, the outages of " +
-        "Binance, and the counts of errors are kept in memory by the instance that answered this page. The rest is read from " +
-        "the database.";
+        "The response times of the screens, the queue of the cycles, the pauses of the calls to the AI providers, the request " +
+        "limits, the clock, the outages of Binance, and the counts of errors are kept in memory by the instance that answered " +
+        "this page. The rest is read from the database.";
 
     /// <summary>What is written in place of something that is not known.</summary>
     public static string NotKnown => "Not known";
@@ -134,13 +138,16 @@ public static class OperatorStatusPages
     {
         ArgumentNullException.ThrowIfNull(month);
 
-        return month.MeetsTarget switch
-        {
-            true => "Met",
-            false => "Missed",
-            null => NotKnown,
-        };
+        return MetOrMissed(month.MeetsTarget);
     }
+
+    /// <summary>Whether something is at its target, in words. What is not known is said as not known.</summary>
+    private static string MetOrMissed(bool? meetsTarget) => meetsTarget switch
+    {
+        true => "Met",
+        false => "Missed",
+        null => NotKnown,
+    };
 
     /// <summary>How long the service was down for in a month, or that this is not known.</summary>
     public static string Down(MonthAvailability month)
@@ -186,6 +193,82 @@ public static class OperatorStatusPages
         ];
 
         return string.Join(' ', parts.Where(part => part.Length > 0));
+    }
+
+    /// <summary>The heading of the response times of the screens.</summary>
+    public static string ScreensHeading => "Response times of the screens";
+
+    /// <summary>What is measured, where, and what it is held to (NFR-PRF-1).</summary>
+    public static string ScreensExplained =>
+        "How long the server took to answer each screen that it showed, held against a target: " +
+        $"{ScreenTarget.Percent} of 100 answers within {Milliseconds(ScreenTarget.Within)}. It is measured at the server, " +
+        "from the request to the page that answers it.";
+
+    /// <summary>What counts as a screen that was shown, by whom it is counted, and since when.</summary>
+    public static string ScreensCounted(DateTimeOffset since, PageTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(times);
+
+        return "A page counts when it was asked for and shown, and when it asked for itself again to follow what changed. " +
+            "What a form did does not count, and neither does an answer that sent the browser on. This instance measures " +
+            $"since it started, on {times.At(since)}.";
+    }
+
+    /// <summary>That no screen was shown.</summary>
+    public static string NoScreens => "No screen was shown in the last 24 hours.";
+
+    /// <summary>The name of the table of the response times.</summary>
+    public static string ScreensCaption => "The response times of each screen";
+
+    /// <summary>The heading of the route of a screen.</summary>
+    public static string ScreenHeading => "Screen";
+
+    /// <summary>The heading of how often a screen was shown in the last hour.</summary>
+    public static string ShownLastHourHeading => "Shown, last hour";
+
+    /// <summary>The heading of the 95th percentile of the last hour.</summary>
+    public static string AnsweredLastHourHeading => $"{ScreenTarget.Percent} of 100 within, last hour";
+
+    /// <summary>The heading of whether the last hour is at the target.</summary>
+    public static string TargetLastHourHeading => "Target, last hour";
+
+    /// <summary>The heading of how often a screen was shown in the last 24 hours.</summary>
+    public static string ShownLastDayHeading => "Shown, last 24 hours";
+
+    /// <summary>The heading of the 95th percentile of the last 24 hours.</summary>
+    public static string AnsweredLastDayHeading => $"{ScreenTarget.Percent} of 100 within, last 24 hours";
+
+    /// <summary>The heading of whether the last 24 hours are at the target.</summary>
+    public static string TargetLastDayHeading => "Target, last 24 hours";
+
+    /// <summary>What the row of every screen together is called.</summary>
+    public static string AllScreens => "All screens";
+
+    /// <summary>What the row of the screens that are not told apart is called.</summary>
+    public static string OtherScreens => "Other screens";
+
+    /// <summary>
+    /// The time that 95 of 100 answers were within. Times are counted in steps, so it is the end
+    /// of a step: the answers took that long at the most. Not known when nothing was shown.
+    /// </summary>
+    public static string Answered(AnswerTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(times);
+
+        return times switch
+        {
+            { Count: 0 } => NotKnown,
+            { BeyondLongest: true } => "More than a minute",
+            _ => Milliseconds(times.Percentile),
+        };
+    }
+
+    /// <summary>Whether the answers of a span of time are at the target, in words.</summary>
+    public static string Target(AnswerTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(times);
+
+        return MetOrMissed(times.MeetsTarget);
     }
 
     /// <summary>The heading of the health of the scheduler.</summary>

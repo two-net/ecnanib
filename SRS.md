@@ -554,7 +554,7 @@ All components run inside one application with one database (section 5.1).
 |---|---|---|
 | NFR-PRF-1 | Typical screens respond within 300 ms at the 95th percentile, measured at the server. | Should |
 | NFR-PRF-2 | With providers responding normally, 95% of cycles finish within 90 seconds of candle close. | Must |
-| NFR-PRF-3 | A single instance supports at least 500 running agents, with every cycle at a shared candle boundary started within 30 seconds. **To confirm by load test.** | Should |
+| NFR-PRF-3 | A single instance supports at least 500 running agents, with every cycle at a shared candle boundary started within 30 seconds, inside the concurrency limits of FR-CYC-11. **Confirmed by load test** on 27 November 2026: with the per-provider limit of section 7 raised from 250 to 500, the cycles of 500 agents all started within 17 seconds of the close. | Should |
 | NFR-PRF-4 | A catalog sync for one provider finishes within 60 seconds. | Should |
 
 ### 5.7 Reliability and recovery
@@ -670,7 +670,7 @@ The outline below shows what the single configuration file contains. Key names a
       "MaxEntryDistancePercent": [0.1, 1, 3]
     },
     "StaleSeconds": { "15m": 120, "1H": 300, "4H": 600, "1D": 900 },
-    "Cycles": { "MaxPerProvider": 250, "MaxPerKey": 4 },
+    "Cycles": { "MaxPerProvider": 500, "MaxPerKey": 4 },
     "DataPackage": { "Candles": 200, "ContextCandles": 50 },
     "LiquidationWarningPercent": 20
   },

@@ -82,7 +82,7 @@ The triggers are in [`LiveRules.cs`](../tests/Ecnanib.Tests/LiveUpdates/LiveRule
 - **One function says it for every table:** `live_signal()`. A trigger names its subject, the column that says the agent, and the columns whose change alone is said to nobody.
 - **A statement that writes a row as it is says nothing,** and neither does one that changes only what is routine.
 - **What is said is the subject, `user_id`, and the agent,** on the channel `ecnanib_live`. PostgreSQL says the same thing once for one transaction, so an account that is deleted says each of its agents once.
-- **Transactions that say a change commit one after the other.** PostgreSQL says things in the order of the commits, so it lets one transaction that notifies commit at a time, across the server. A commit is short, and a cycle writes a few such rows. Whether that holds for the cycles of 500 agents at one close is for the load test to confirm (NFR-PRF-3).
+- **Transactions that say a change commit one after the other.** PostgreSQL says things in the order of the commits, so it lets one transaction that notifies commit at a time, across the server. A commit is short, and a cycle writes a few such rows. It holds for the cycles of 500 agents at one close: in the load test a cycle took a second and a half at the most beside the calls of its team, with everything that it reads and writes, and with 1,000 agents two and a half (NFR-PRF-3). See "What was measured" in [performance.md](performance.md).
 - **A subject is a member of `LiveSubject`, by its name.** Renaming one needs a migration.
 - **A table that a page comes to follow** is listed in `LiveRules.cs`, and given its trigger by a migration that is written by hand, as `AddLiveSignals` is.
 

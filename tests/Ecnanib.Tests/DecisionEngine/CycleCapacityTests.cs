@@ -11,6 +11,11 @@ namespace Ecnanib.Tests.DecisionEngine;
 /// queue takes no time worth counting for the agents of a whole service, and every close says
 /// how many of its cycles ended in time. See "How long a cycle takes" in docs/cycles.md.
 /// </summary>
+/// <remarks>
+/// The cycles here are stand-ins that end at once, on a clock that stands. The load test runs
+/// the same agents with cycles of the application's own, on a clock that runs, and says when
+/// each started (NFR-PRF-3): <c>LoadTests</c>, and "The load test" in docs/performance.md.
+/// </remarks>
 public class CycleCapacityTests
 {
     private static readonly DateTimeOffset Midnight = new(2026, 11, 16, 0, 0, 0, TimeSpan.Zero);
@@ -22,7 +27,7 @@ public class CycleCapacityTests
         // The limits of the tracked file, and the agents that a single instance is to carry
         // (NFR-PRF-3): 100 users with 5 agents each, on every timeframe, each with a team of
         // four providers, at midnight, when a candle of every timeframe closes.
-        using var application = new CyclesApplication(Midnight, maxPerProvider: 250, maxPerKey: 4);
+        using var application = new CyclesApplication(Midnight, maxPerProvider: 500, maxPerKey: 4);
         var agents = application.Agents!;
 
         (Timeframe Timeframe, string Symbol, Market Market, TradingMode Mode)[] ofUser =
@@ -47,7 +52,7 @@ public class CycleCapacityTests
         // Every agent had its cycle, once, within the limits.
         Assert.Equal(given.Order(), application.Cycles.StartedFor.Order());
         Assert.All(new[] { "gpt", "grok", "gemini", "claude" }, provider =>
-            Assert.InRange(application.Cycles.MostAtOnceWith(provider), 1, 250));
+            Assert.InRange(application.Cycles.MostAtOnceWith(provider), 1, 500));
         Assert.All(users, user => Assert.InRange(application.Cycles.MostAtOnceWith(user, "claude"), 1, 4));
 
         // The candles were asked for once for each symbol and timeframe, and not once for each agent.

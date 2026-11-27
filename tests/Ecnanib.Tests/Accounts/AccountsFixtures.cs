@@ -14,6 +14,8 @@ using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.LiveUpdates;
+using Ecnanib.Platform.Logging;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Tests.BackgroundWork;
@@ -322,6 +324,15 @@ internal sealed class AccountsApplication : IDisposable
 
     /// <summary>How deep the queue of the cycles is now, as an operator status screen shows it (FR-OPS-2).</summary>
     public ICycleLoad CycleLoad => _application.Services.GetRequiredService<ICycleLoad>();
+
+    /// <summary>How long the screens took to answer, as an operator status screen shows it (NFR-PRF-1).</summary>
+    public IScreenTimes ScreenTimes => _application.Services.GetRequiredService<IScreenTimes>();
+
+    /// <summary>How much of the request limits of Binance the service uses, as an operator status screen shows it (FR-BIN-4).</summary>
+    public IExchangeLimits ExchangeLimits => _application.Services.GetRequiredService<IExchangeLimits>();
+
+    /// <summary>The errors and warnings that the application logged, as an operator status screen shows them (FR-OPS-2).</summary>
+    public ILoggedProblems LoggedProblems => _application.Services.GetRequiredService<ILoggedProblems>();
 
     /// <summary>What runs a test cycle of an agent for its user, which places no orders (FR-CYC-12).</summary>
     public ITestCycles TestCycles => _application.Services.GetRequiredService<ITestCycles>();

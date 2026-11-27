@@ -33,7 +33,7 @@ The code is the project `src/Ecnanib`. Each logical component of SRS section 3.1
 Three more areas are not SRS components:
 
 - `Shared` holds vocabulary that several components use, such as `Market` and `TradingMode`. It depends on nothing.
-- `Platform` holds the plumbing every component builds on. That is configuration, logging, persistence, background work, and how requests travel: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, it sets up structured logging from that file, as [logging.md](logging.md) describes, it holds the one database context and its migrations, as [persistence.md](persistence.md) describes, it backs the database up and tests that a backup can be restored, as [backups.md](backups.md) describes, it runs the components' scheduled jobs, as [background-work.md](background-work.md) describes, it sets the rules for TLS and cookies, says what a browser is told to refuse, and encrypts the secrets that a component stores, as [security.md](security.md) describes, and it hears the database say that a row of a user changed, and hands that to the open pages of that user, as [live-updates.md](live-updates.md) describes. It may depend only on `Shared`.
+- `Platform` holds the plumbing every component builds on. That is configuration, logging, persistence, background work, and how requests travel: it reads the one configuration file into typed settings, as [configuration.md](configuration.md) describes, it sets up structured logging from that file, as [logging.md](logging.md) describes, it holds the one database context and its migrations, as [persistence.md](persistence.md) describes, it backs the database up and tests that a backup can be restored, as [backups.md](backups.md) describes, it runs the components' scheduled jobs, as [background-work.md](background-work.md) describes, it sets the rules for TLS and cookies, says what a browser is told to refuse, and encrypts the secrets that a component stores, as [security.md](security.md) describes, it hears the database say that a row of a user changed, and hands that to the open pages of that user, as [live-updates.md](live-updates.md) describes, and it measures how long the screens take to answer, as [performance.md](performance.md) describes. It may depend only on `Shared`.
 - `Api` holds the HTTP endpoints under `/api`. Like the Web UI, it is an entry point on top of the components.
 
 Each component has a `<Name>Module.cs` with an `Add<Name>()` method that registers its services. `Program.cs` is the composition root: it creates the host with `PlatformModule.CreateBuilder`, calls every `Add<Name>()`, and maps the API and the UI. A component that has scheduled work registers a job with `AddBackgroundJob<T>()` in its `Add<Name>()`, and the platform's scheduler runs it in the same process. A component does not start a hosted service of its own for such work: that would run on every instance, without the lock that makes a second instance safe.
@@ -389,6 +389,20 @@ The service measures its own availability against a target, excluding announced 
 An operator announces maintenance, so who may, and the audit trail that says who did, are of Accounts, which `Platform` may not name. Accounts opens the transaction and has `Platform` write the row inside it, as it has the audit trail write its event. The Web UI reads what is announced for the banner of every page, and the availability for the operator status screen.
 
 `ComponentRules.cs` gains one line: `Platform.Availability` is a namespace with a narrower audience than its area, which only `Platform`, Accounts, and the Web UI may use. So nothing that trades can read what is announced, and maintenance can pause no agent and close no position. See [reliability.md](reliability.md).
+
+## Performance
+
+Typical screens respond within 300 ms at the 95th percentile, measured at the server (NFR-PRF-1). What measures it is in `Platform`, in `Ecnanib.Platform.Performance`: one piece of the request pipeline, which `Program.cs` adds right after the correlation of the request, times every request that asks for a page and counts the time when the page was shown, by the route of the page. It keeps the counts in memory, as the counts of errors are kept, and says them through `IScreenTimes` for the operator status screen. It knows a page by what the framework says of its endpoint, so it names nothing of the Web UI.
+
+It adds no table, no job, and no setting: the target is the figure of the requirement. `ComponentRules.cs` is unchanged.
+
+A single instance supports at least 500 running agents, with every cycle at a shared candle boundary started within 30 seconds (NFR-PRF-3). That is confirmed by a load test, which is a test like the others and adds nothing to the application. It runs where it is asked for:
+
+```
+ECNANIB_LOAD=1 dotnet test --solution Ecnanib.slnx --filter-class "*Performance.LoadTests"
+```
+
+See [performance.md](performance.md).
 
 ## Logging
 

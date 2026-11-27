@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Tests.Logging;
@@ -307,13 +308,36 @@ internal sealed class AskedJob(string name, BackgroundJobSchedule schedule, Func
 /// A clock that stands still until a test moves it. Only the time of day is the test's: waiting
 /// takes real time, so the scheduler notices a moved clock within one of its beats.
 /// </summary>
+/// <remarks>
+/// A test that measures how long something takes by the time of day lets the clock run: from
+/// then on it goes on from what it shows, as fast as the clock of the machine. See <see cref="Run"/>.
+/// </remarks>
 internal sealed class TestClock(DateTimeOffset now) : TimeProvider
 {
-    private long _ticks = now.UtcTicks;
+    // What the clock showed at a moment of the timer of the machine, and that moment when the
+    // clock runs. Replaced as one, so that whoever reads the clock reads the two of one moment.
+    private volatile Shown _shown = new(now.UtcTicks, RunsSince: null);
 
-    public override DateTimeOffset GetUtcNow() => new(Volatile.Read(ref _ticks), TimeSpan.Zero);
+    public override DateTimeOffset GetUtcNow()
+    {
+        var shown = _shown;
 
-    public void Set(DateTimeOffset now) => Volatile.Write(ref _ticks, now.UtcTicks);
+        return new(
+            shown.RunsSince is { } since ? shown.Ticks + Stopwatch.GetElapsedTime(since).Ticks : shown.Ticks,
+            TimeSpan.Zero);
+    }
+
+    /// <summary>Moves the clock. One that runs goes on from there.</summary>
+    public void Set(DateTimeOffset now) =>
+        _shown = new(now.UtcTicks, _shown.RunsSince is null ? null : Stopwatch.GetTimestamp());
+
+    /// <summary>
+    /// Lets the clock run, from what it shows now: a second of the machine is a second of the
+    /// clock from here on, so the time between two readings is the time that passed.
+    /// </summary>
+    public void Run() => _shown = new(GetUtcNow().UtcTicks, Stopwatch.GetTimestamp());
+
+    private sealed record Shown(long Ticks, long? RunsSince);
 }
 
 /// <summary>A job's row of the <c>background_jobs</c> table, read by a test directly.</summary>

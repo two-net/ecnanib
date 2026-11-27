@@ -10,6 +10,7 @@ using Ecnanib.Experience;
 using Ecnanib.Notifications;
 using Ecnanib.Platform;
 using Ecnanib.Platform.Logging;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Platform.Settings;
@@ -91,6 +92,11 @@ public class Program
         // Correlation comes next, so that everything after it, authentication and error handling
         // included, logs with the request's properties.
         app.UseRequestCorrelation();
+
+        // How long a screen takes to answer is measured from here on, with everything below:
+        // who is signed in, the page, and what an error is answered with (NFR-PRF-1). See
+        // docs/performance.md.
+        app.UseScreenTiming();
 
         // Who is signed in, and then the user as a property of what the request logs. The handler
         // of Accounts does not fail a request here, ahead of the error handling: see docs/accounts.md.

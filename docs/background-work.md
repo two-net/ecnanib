@@ -284,7 +284,7 @@ var database = PostgresServer.CreateDatabase();
 using var application = ApplicationWithJobs.On(database, clock, job);
 ```
 
-The scheduler takes the time from the `TimeProvider` service. A test replaces it with `TestClock` and sets the time, so a job that is due in a day runs within a second of the test saying that a day has passed.
+The scheduler takes the time from the `TimeProvider` service. A test replaces it with `TestClock` and sets the time, so a job that is due in a day runs within a second of the test saying that a day has passed. The clock stands between two settings. The load test lets it run, with `Run`, so that the time of day passes as time does: see [performance.md](performance.md).
 
 `FirstJob` is a job that runs first, and keeps how often it was told that the work is taken up. `LastJob` is one that has something to do last, and keeps how often it was called for it. `Sequence` keeps what jobs did in the order that they did it, for a test of what comes before what. A test of a stop that takes too long gives its host less time to stop in than the file of the tests does, with `ApplicationWithJobs.On(database, clock, stopsWithin, jobs)`. `BackgroundJobRunsFirstTests` and `BackgroundJobRunsLastTests` hold the scheduler to the two sections above.
 

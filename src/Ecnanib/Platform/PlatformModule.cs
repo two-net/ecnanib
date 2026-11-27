@@ -3,6 +3,7 @@ using Ecnanib.Platform.Availability;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.LiveUpdates;
 using Ecnanib.Platform.Logging;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Security;
 using Ecnanib.Platform.Settings;
@@ -14,9 +15,9 @@ namespace Ecnanib.Platform;
 /// <summary>
 /// Platform: the plumbing every component builds on. That is configuration, logging, persistence
 /// with the backups of the database, background work, how requests travel, how stored secrets are
-/// encrypted, and the signals that the open pages follow. See docs/configuration.md,
-/// docs/logging.md, docs/persistence.md, docs/backups.md, docs/background-work.md,
-/// docs/security.md, and docs/live-updates.md.
+/// encrypted, the signals that the open pages follow, and how long the screens take to answer.
+/// See docs/configuration.md, docs/logging.md, docs/persistence.md, docs/backups.md,
+/// docs/background-work.md, docs/security.md, docs/live-updates.md, and docs/performance.md.
 /// </summary>
 public static class PlatformModule
 {
@@ -71,6 +72,9 @@ public static class PlatformModule
         // What says that the service is up, how available it was, and the maintenance that is
         // announced (NFR-REL-1, NFR-REL-6).
         builder.Services.AddAvailability();
+
+        // What counts how long the screens take to answer, held against their target (NFR-PRF-1).
+        builder.Services.AddScreenTiming();
         GiveTimeToStop(builder, settings.Application);
         builder.Services.AddTransportSecurity(settings.Application);
 

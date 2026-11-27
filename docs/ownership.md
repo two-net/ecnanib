@@ -142,11 +142,12 @@ An operator function asks in one of the two ways of "The check", and in no other
 
 ### The operator status screen
 
-The screen shows scheduler health, queue depth, last catalog sync per provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2), and with them where the calls to the AI providers are paused and where Binance is out (NFR-REL-4). Before them it shows how available the service was, held against its target (NFR-REL-1). It is a page of the Web UI, `Pages/Operator/OperatorStatus.razor`, and no component of its own: each reading is said by the component that keeps it, behind an interface, and the page puts them together and holds the words, in `OperatorStatusPages`.
+The screen shows scheduler health, queue depth, last catalog sync per provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2), and with them where the calls to the AI providers are paused and where Binance is out (NFR-REL-4). Before them it shows how available the service was, held against its target (NFR-REL-1), and how long its screens took to answer, held against theirs (NFR-PRF-1). It is a page of the Web UI, `Pages/Operator/OperatorStatus.razor`, and no component of its own: each reading is said by the component that keeps it, behind an interface, and the page puts them together and holds the words, in `OperatorStatusPages`.
 
 | Reading | Who says it | From what |
 |---|---|---|
 | Availability | `IAvailability` of `Platform` | When the service said that it was up, in `up_spans`, and the maintenance that was announced in advance, in `maintenance_windows`. See "Availability" in [reliability.md](reliability.md). |
+| Response times of the screens | `IScreenTimes` of `Platform` | How long the server took to answer each screen that it showed, counted in memory by the route of the screen. See "Screen response times" in [performance.md](performance.md). |
 | Scheduler health | `IBackgroundWorkStatus` of `Platform` | The latest run of each job, in `background_jobs`, and the schedule of each registered job. See "The status of the jobs" in [background-work.md](background-work.md). |
 | Queue depth | `ICycleLoad` of the Decision Engine | The cycles of the close that is under way, in memory. See "The depth of the queue" in [cycles.md](cycles.md). |
 | Last catalog sync | `ICatalogSync.StatusAsync` of the Catalog | The rows of `catalog_sync_runs`. See "The status of the syncs" in [catalog.md](catalog.md). |
@@ -161,9 +162,9 @@ The screen shows scheduler health, queue depth, last catalog sync per provider, 
 |---|---|
 | **It only reads** | It has no form and no control. What an operator does is on a page of its own, which the screen leads to with a link: the global halt, the accounts, the catalog sync, and the maintenance. |
 | **It is never a page that follows** | It is rendered on the server for each request, says of when it is, and is loaded again for how the service stands now. |
-| **It shows nothing of any user** | No reading names a user, an agent, or a key: a queue is numbers, a sync names a provider, the keys that a provider refuses are a number, and a count of errors holds no word of an event (FR-OPS-5). `GlobalHaltTests.The_pages_of_an_operator_show_nothing_of_any_user` holds it to that, with a user who has keys and two-factor authentication. |
-| **What is of one instance says so** | The queue, the pauses of the calls, the limits, the clock, the outages, and the counts are kept in memory by the instance that answered. The availability, the jobs, the syncs, and the sizes are read from the database, and are the same on every instance. |
-| **Unknown is said as unknown** | A clock that was not read has no drift, and is not shown with a drift of nothing. A job that has not run is not said to be late. A month that nothing was measured of has no availability, and is not shown with one of nothing or of a hundred. |
+| **It shows nothing of any user** | No reading names a user, an agent, or a key: a queue is numbers, a sync names a provider, the keys that a provider refuses are a number, a screen is told by its route and never by the address that was asked for, and a count of errors holds no word of an event (FR-OPS-5). `GlobalHaltTests.The_pages_of_an_operator_show_nothing_of_any_user` holds it to that, with a user who has keys and two-factor authentication. |
+| **What is of one instance says so** | The response times of the screens, the queue, the pauses of the calls, the limits, the clock, the outages, and the counts are kept in memory by the instance that answered. The availability, the jobs, the syncs, and the sizes are read from the database, and are the same on every instance. |
+| **Unknown is said as unknown** | A clock that was not read has no drift, and is not shown with a drift of nothing. A job that has not run is not said to be late. A month that nothing was measured of has no availability, and is not shown with one of nothing or of a hundred. A span of time in which no screen was shown has no response time, and its target is neither met nor missed. |
 
 ### The global halt
 

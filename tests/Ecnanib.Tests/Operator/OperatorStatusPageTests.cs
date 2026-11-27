@@ -1,9 +1,11 @@
 using System.Net;
 using AngleSharp.Html.Parser;
+using Ecnanib.Accounts;
 using Ecnanib.AiProviderGateway;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Platform.Performance;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
@@ -51,11 +53,13 @@ public class OperatorStatusPageTests
         // The seven readings of the requirement, in its order, each under a heading of its own.
         // With them, where the calls to the AI providers are paused, after the catalog of the
         // providers, and where Binance is out, after its limits and its clock (NFR-REL-4). And
-        // before them all, how available the service was (NFR-REL-1).
+        // before them all, how available the service was (NFR-REL-1), and how long its screens
+        // took to answer (NFR-PRF-1): the two that are held against a target.
         Assert.Equal(
             [
-                "Availability", "Scheduler", "Queue of the cycles", "Catalog syncs", "Calls to the AI providers",
-                "Request limits of Binance", "Clock", "Outages of Binance", "Tables", "Errors and warnings",
+                "Availability", "Response times of the screens", "Scheduler", "Queue of the cycles", "Catalog syncs",
+                "Calls to the AI providers", "Request limits of Binance", "Clock", "Outages of Binance", "Tables",
+                "Errors and warnings",
             ],
             Parsed(page).QuerySelectorAll("main h2").Select(heading => heading.TextContent.Trim()));
 
@@ -118,6 +122,78 @@ public class OperatorStatusPageTests
                 ["October 2026", "Not known", "Not known", "Not known", "Not known", "Nothing of it was measured"],
             ],
             RowsOf(page, "status-availability"));
+    }
+
+    [Fact]
+    public async Task The_response_times_say_each_screen_with_its_figures_held_against_the_target()
+    {
+        // What the instance measured, as the test says it: every screen together, three screens
+        // by their routes, and the screens that are not told apart.
+        var measured = new StandInScreenTimes
+        {
+            Said = new ScreenTimesReading(
+                Morning.AddHours(-30),
+                new ScreenTimes(null, Times(1250, 1230, 150), Times(20_480, 19_300, 400)),
+                [
+                    new ScreenTimes("/agents/{Id:guid}/state", Times(50, 50, 75), Times(900, 840, 500)),
+                    new ScreenTimes("/dashboard", Times(1200, 1180, 150), Times(19_500, 18_525, 300)),
+                    new ScreenTimes("/usage", Times(0, 0, null), new AnswerTimes(3, 0, null, BeyondLongest: true)),
+                    new ScreenTimes(null, Times(0, 0, null), Times(77, 77, 5)),
+                ]),
+        };
+
+        using var application = Application(new TestClock(Morning), services: services => services.AddSingleton<IScreenTimes>(measured));
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+        var said = string.Join(" ", SaidIn(page, "status-screens"));
+
+        // What it is held to, where it is measured, what counts, and since when.
+        Assert.Contains("held against a target: 95 of 100 answers within 300 milliseconds.", said);
+        Assert.Contains("It is measured at the server", said);
+        Assert.Contains("This instance measures since it started, on 15 November 2026, 04:07 UTC.", said);
+
+        Assert.Equal(
+            [
+                "Screen", "Shown, last hour", "95 of 100 within, last hour", "Target, last hour", "Shown, last 24 hours",
+                "95 of 100 within, last 24 hours", "Target, last 24 hours",
+            ],
+            ColumnsOf(page, "status-screens"));
+
+        // All screens first, then each by its route. A span in which nothing was shown is not
+        // known, and is neither met nor missed. The target is met by 95 of 100 exactly: 18,525
+        // of 19,500.
+        Assert.Equal(
+            [
+                ["All screens", "1,250", "150 milliseconds", "Met", "20,480", "400 milliseconds", "Missed"],
+                ["/agents/{Id:guid}/state", "50", "75 milliseconds", "Met", "900", "500 milliseconds", "Missed"],
+                ["/dashboard", "1,200", "150 milliseconds", "Met", "19,500", "300 milliseconds", "Met"],
+                ["/usage", "0", "Not known", "Not known", "3", "More than a minute", "Missed"],
+                ["Other screens", "0", "Not known", "Not known", "77", "5 milliseconds", "Met"],
+            ],
+            RowsOf(page, "status-screens"));
+
+        static AnswerTimes Times(long count, long within, int? milliseconds) =>
+            new(count, within, milliseconds is { } known ? TimeSpan.FromMilliseconds(known) : null, BeyondLongest: false);
+    }
+
+    [Fact]
+    public async Task The_response_times_are_those_of_the_screens_that_the_instance_showed()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        await client.PageAsync(WebUiModule.OperatorStatusPath);
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // The screen itself, which was shown once before this answer, and the page that the
+        // operator signed in on: each by its route, after all of them together.
+        var rows = RowsOf(page, "status-screens");
+
+        Assert.Equal("All screens", rows[0][0]);
+        Assert.Equal("1", Assert.Single(rows, row => row[0] == WebUiModule.OperatorStatusPath)[1]);
+        Assert.Contains(rows, row => row[0] == SessionAuthentication.SignInPath);
+        Assert.All(rows, row => Assert.Matches(@"^(Met|Missed)$", row[3]));
     }
 
     [Fact]
@@ -485,6 +561,14 @@ public class OperatorStatusPageTests
 
         public bool EntriesPaused(Market market, TradingMode mode) =>
             Said.Any(answers => answers.Market == market && answers.Environment == mode && answers.EntriesPaused);
+    }
+
+    /// <summary>Stands for what measures the response times of the screens: it says what the test says.</summary>
+    private sealed class StandInScreenTimes : IScreenTimes
+    {
+        public required ScreenTimesReading Said { get; init; }
+
+        public ScreenTimesReading Read() => Said;
     }
 
     private static SettingsJson Operators(SettingsJson file) => file.WithJson("Application:Operators", $"[ \"{Olive}\" ]");

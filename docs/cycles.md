@@ -50,7 +50,7 @@ So `ClosedCandles` asks for the candles of a close until the newest of them clos
 |---|---|
 | **The candles are asked for once for all agents that share them** (FR-BIN-3). | One ask for a symbol and a timeframe, on a market in an environment. It is one ask, and not one for each cycle: candles that came short are held for nobody, so every ask for them is a read of Binance. |
 | **They are asked for again a second later,** while they come one short, and while the exchange gives no answer. | A read that failed is shared for some seconds and is no call then, so one pace does for both. |
-| **A candle that is not there half a minute after the close is not waited for.** | The cycles of that symbol and timeframe are skipped, with one warning that says how the last read ended. The other symbols are not held up. The next close starts the next cycles. `ClosedCandles.Wait` is that half minute, which is what the cycles of a close have to start in (NFR-PRF-3). |
+| **A candle that is not there half a minute after the close is not waited for.** | The cycles of that symbol and timeframe are skipped, with one warning that says how the last read ended. The other symbols are not held up. The next close starts the next cycles. `ClosedCandles.Wait` is that half minute, which is what the cycles of a close have to start in (NFR-PRF-3). That the cycles of 500 agents do is what the load test confirmed: see [performance.md](performance.md). |
 | **A cycle is handed the candles.** | `CycleStart.Candles` is the reading as the gateway gave it: the newest candle closed at `CycleStart.ClosedAt`. The agents that share a symbol and a timeframe are handed the same. |
 | A symbol that cannot be asked for costs its own cycles only. | The gateway serves the symbols of `Binance:Symbols` alone. An agent whose symbol the file no longer lists has its cycles skipped, with an error in the log, and the others go on. |
 
@@ -93,7 +93,7 @@ The cycles of a close wait in one queue, `CycleQueue`, which one run of the job 
 | **The first cycles start once the candles of every symbol are in.** | Or 5 seconds after the run began, whichever is first: `DecisionCyclesJob.Gather`. Binance closes the candles of two symbols a moment apart, and a cycle of a day must not take a place ahead of a cycle of 15 minutes whose candle arrives a moment later. A symbol whose candle is late joins the queue when it has it, at its place in the order. |
 | **A place is free again however a cycle ends.** | An error that leaves a cycle ends that cycle alone. It is logged once, as an error, with the user, the agent, and the cycle, and the others go on. |
 
-In the tracked file the limits are 250 for a provider and 4 for a key. A team of four different providers takes a place with each, so 250 cycles run at once then, and the cycles of 500 agents that share a boundary start in two rounds. Four of a user's agents are called with one key at once, and a fifth waits for one of them.
+In the tracked file the limits are 500 for a provider and 4 for a key. A team of four different providers takes a place with each, so 500 cycles run at once then, and the cycles of 500 agents that share a boundary all start as their candles arrive: within 30 seconds of the close, which the load test confirmed (NFR-PRF-3). The limit was 250 before that test, with which half of them waited for a round and started 52 seconds after the close: see "What was measured" in [performance.md](performance.md). Four of a user's agents are called with one key at once, and a fifth waits for one of them.
 
 ### The depth of the queue
 
@@ -525,12 +525,12 @@ The pages of the state, the cycles, and the test cycle of an agent show the cycl
 
 ## How long a cycle takes
 
-With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). A cycle is three calls of the team one after the other, the first of them two at once, so it takes what the providers of its team take: no test shows that with the providers themselves. What starts the cycles has its share of it, and measures the rest:
+With providers responding normally, 95% of cycles finish within 90 seconds of candle close (NFR-PRF-2). A cycle is three calls of the team one after the other, the first of them two at once, so it takes what the providers of its team take: no test shows that with the providers themselves. What starts the cycles has its share of it, and measures the rest. The load test ran the cycles of 500 agents at one close, with models that took 15 seconds each: every cycle ended within 63 seconds of the close, of which a cycle took a second and a half at the most beside the calls of its team. See "What was measured" in [performance.md](performance.md).
 
 - **A run begins within about a second of the close,** which is the beat of the scheduler, and the cycles start when their candles are in.
-- **The queue takes no time worth counting.** `CycleCapacityTests` passes the cycles of 500 agents that share a boundary through it, with the limits of the tracked file, in seconds.
+- **The queue takes no time worth counting.** `CycleCapacityTests` passes the cycles of 500 agents that share a boundary through it, with the limits of the tracked file, in seconds. In the load test the cycles started within half a second of when their candles were in.
 - **A data package takes its reads of the exchange, and nothing else worth counting.** They are made at the same time and shared by the cycles of a symbol, and each says how long it took: see "The log".
-- **Where a limit binds, cycles wait for a round, and the target follows by arithmetic.** With cycles of 45 seconds, a second round ends within 90 seconds, and a third does not.
+- **Where a limit binds, cycles wait for a round, and the target is missed.** A round begins when cycles of the round before it end, and the first round begins when its candles are in, some seconds after the close. With cycles of 45 seconds, a second round ended 98 seconds after the close in the load test, with the limit of 250 that the tracked file had then. With its limit of 500, the cycles of 500 agents are one round.
 - **Every cycle says when it started and when it ended,** in milliseconds since its close, and how long it ran.
 - **Every close says how many of its cycles ended within 90 seconds,** once, in its summary. The summary is a warning when more than one in twenty did not: those that ended later, that were stopped before the next close, and that could not start in time.
 
@@ -538,7 +538,7 @@ With providers responding normally, 95% of cycles finish within 90 seconds of ca
 
 | Key | In the tracked file | What it is |
 |---|---|---|
-| `Trading:Cycles:MaxPerProvider` | 250 | The most cycles that use one AI provider at once, of all users together. 1 or more. |
+| `Trading:Cycles:MaxPerProvider` | 500 | The most cycles that use one AI provider at once, of all users together. 1 or more. It is how many cycles of a shared close start at once: the load test confirmed 500 (NFR-PRF-3). |
 | `Trading:Cycles:MaxPerKey` | 4 | The most cycles that use the key of one user for one AI provider at once. 1 or more. |
 | `Trading:DataPackage:Candles` | 200 | The most recent closed candles of the agent's timeframe that a data package holds (FR-CYC-2). From 1 to 498. |
 | `Trading:DataPackage:ContextCandles` | 50 | The most recent closed candles of each higher timeframe that a data package holds. From 1 to 498. |
@@ -647,4 +647,3 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
 - Stopping the cycle of an agent when its user pauses or stops it. What places an entry asks again whether the agent takes new entries.
 - The depth of the queue on an instance that stands by, and what a close counted once it is over, on the operator status screen. The summary of each close is in the log.
-- The load test at 500 running agents, with real cycles (NFR-PRF-3).

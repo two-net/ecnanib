@@ -7,6 +7,7 @@
 @using Ecnanib.Platform.Availability
 @using Ecnanib.Platform.BackgroundWork
 @using Ecnanib.Platform.Logging
+@using Ecnanib.Platform.Performance
 @using Ecnanib.Platform.Persistence
 @using Ecnanib.WebUi.Pages.Agents
 @inject IBackgroundWorkStatus Work
@@ -19,6 +20,7 @@
 @inject IDatabaseSizes Sizes
 @inject ILoggedProblems Problems
 @inject IAvailability Measure
+@inject IScreenTimes Screened
 @inject TimeProvider Time
 
 @*
@@ -31,9 +33,10 @@
     sync of each provider, the use of the request limits of Binance, the drift of the clock, the
     sizes of the tables, and the rates of errors. With them it shows where the calls to the AI
     providers are paused, and where Binance is out (NFR-REL-4), and before them how available
-    the service was, held against its target (NFR-REL-1). Each is said by the component
-    that keeps it, behind an interface, and each is of the service: none of them names a user,
-    an agent, or a key, so the screen shows nothing of any user (FR-OPS-5).
+    the service was, held against its target (NFR-REL-1), and how long its screens took to
+    answer, held against theirs (NFR-PRF-1). Each is said by the component that keeps it, behind
+    an interface, and each is of the service: none of them names a user, an agent, or a key, so
+    the screen shows nothing of any user (FR-OPS-5).
 
     It only shows. It has no form, so nothing of it is recorded in the audit trail: what an
     operator does is on a page of its own, which this screen leads to with a link. See
@@ -94,6 +97,63 @@
                 </tbody>
             </table>
         </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.ScreensId">@OperatorStatusPages.ScreensHeading</h2>
+
+        <p>@OperatorStatusPages.ScreensExplained</p>
+
+        <p>@OperatorStatusPages.ScreensCounted(read.Screens.MeasuredSince, Times)</p>
+
+        @if (read.Screens.Screens.Count == 0)
+        {
+            <p>@OperatorStatusPages.NoScreens</p>
+        }
+        else
+        {
+            <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.ScreensId" tabindex="0">
+                <table>
+                    <caption>@OperatorStatusPages.ScreensCaption</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">@OperatorStatusPages.ScreenHeading</th>
+                            <th scope="col">@OperatorStatusPages.ShownLastHourHeading</th>
+                            <th scope="col">@OperatorStatusPages.AnsweredLastHourHeading</th>
+                            <th scope="col">@OperatorStatusPages.TargetLastHourHeading</th>
+                            <th scope="col">@OperatorStatusPages.ShownLastDayHeading</th>
+                            <th scope="col">@OperatorStatusPages.AnsweredLastDayHeading</th>
+                            <th scope="col">@OperatorStatusPages.TargetLastDayHeading</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var screen in read.Screens.Screens.Prepend(read.Screens.All))
+                        {
+                            <tr>
+                                @if (screen.Route is { } route)
+                                {
+                                    <th scope="row"><code>@route</code></th>
+                                }
+                                else if (ReferenceEquals(screen, read.Screens.All))
+                                {
+                                    <th scope="row">@OperatorStatusPages.AllScreens</th>
+                                }
+                                else
+                                {
+                                    <th scope="row">@OperatorStatusPages.OtherScreens</th>
+                                }
+                                <td>@OperatorStatusPages.Count(screen.LastHour.Count)</td>
+                                <td>@OperatorStatusPages.Answered(screen.LastHour)</td>
+                                <td>@OperatorStatusPages.Target(screen.LastHour)</td>
+                                <td>@OperatorStatusPages.Count(screen.LastDay.Count)</td>
+                                <td>@OperatorStatusPages.Answered(screen.LastDay)</td>
+                                <td>@OperatorStatusPages.Target(screen.LastDay)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 
     <section>
@@ -427,7 +487,8 @@
             Outages.Answers(),
             await Sizes.ReadAsync(cancellationToken),
             Problems.Read(),
-            await Measure.ReadAsync(cancellationToken));
+            await Measure.ReadAsync(cancellationToken),
+            Screened.Read());
     }
 
     // What a provider is called, as the catalog says it, or its code where the catalog has none
@@ -446,5 +507,6 @@
         IReadOnlyList<ExchangeAnswers> Outages,
         IReadOnlyList<TableSize> Tables,
         LoggedProblemCounts Problems,
-        AvailabilityReading Availability);
+        AvailabilityReading Availability,
+        ScreenTimesReading Screens);
 }
