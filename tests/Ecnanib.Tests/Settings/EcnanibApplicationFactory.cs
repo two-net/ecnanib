@@ -93,6 +93,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string RoleReassignmentKey = "role-reassignment";
 
+    // The job of Agents that tells the users whose agents run where the exchange is out, named in the same way.
+    private const string ExchangeOutageAlerts = "Ecnanib.Agents.ExchangeOutageAlertsJob";
+
+    /// <summary>
+    /// The key under which the job that tells users of an outage of the exchange is kept: the
+    /// scheduler of no application of the tests runs it, and a test runs it from there itself,
+    /// at a moment of its choosing.
+    /// </summary>
+    public const string ExchangeOutageAlertsKey = "exchange-outage-alerts";
+
     // The job of the Decision Engine that has the lessons of the closed positions written, named in the same way.
     private const string LessonWriting = "Ecnanib.DecisionEngine.LessonWritingJob";
 
@@ -390,6 +400,18 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
             services.Remove(reassigning);
             services.AddKeyedSingleton(typeof(IBackgroundJob), RoleReassignmentKey, reassigning.ImplementationType!);
+
+            // The job that tells the users whose agents run where the exchange is out is due
+            // as the background work starts, and then every minute: it raises a notification
+            // for each of them once an outage has lasted. Many tests have their Binance leave
+            // calls without an answer for a reason of their own, and count the notifications of
+            // a user. So no application of a test runs this job on a schedule: a test that is
+            // about what a run does finds it by its key, and runs it itself.
+            var alerting = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == ExchangeOutageAlerts);
+
+            services.Remove(alerting);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), ExchangeOutageAlertsKey, alerting.ImplementationType!);
 
             // The job that has the lessons of the closed positions written is due as the
             // background work starts, and then every few minutes: it calls the model of the

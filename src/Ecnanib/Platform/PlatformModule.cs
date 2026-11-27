@@ -58,7 +58,8 @@ public static class PlatformModule
             .AddSingleton(settings.Experience)
             .AddSingleton(settings.Retention)
             .AddSingleton(settings.Backup)
-            .AddSingleton(settings.Limits);
+            .AddSingleton(settings.Limits)
+            .AddSingleton(settings.Breakers);
 
         AddLogging(builder, settings);
 

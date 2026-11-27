@@ -197,4 +197,4 @@ No test of these drives a browser. `AccessibilityBrowserTests` does, when a run 
 - What changes a figure and is said by no table that a page follows: a fee that is valued later, funding that is stored, and the UTC day that begins. The page shows it the next time that it is written.
 - The dashboard as the page that a user lands on after signing in. A user arrives at the start page, `/`, which leads to the dashboard: see "The start page" in [layout.md](layout.md).
 - The badge of the mode on the page of the notifications: see [notifications.md](notifications.md).
-- An alert when Binance does not answer (NFR-REL-4): nothing raises one yet. See "Not built yet" in [exchange.md](exchange.md).
+- A banner of its own for an outage of Binance. The users whose agents run where Binance is out are told with a notification, which the dashboard shows among its alerts as it shows every other (NFR-REL-4): see "A Binance outage" in [reliability.md](reliability.md).

@@ -76,14 +76,17 @@ internal sealed class AiProviderRouter : IAiProviderGateway
     }
 
     /// <summary>
-    /// Logs a call by how it ended: one that gave no result is a warning. The duration is the
-    /// latency of the result, which is what the caller records, and the tokens are there when the
-    /// provider counted them. A call that asked for live search says how many searches the
-    /// provider ran, which it charges for beside the tokens (FR-CYC-3).
+    /// Logs a call by how it ended: one that gave no result is a warning, but for one that was
+    /// not made because of a pause, which is said once, as a warning, when the pause begins
+    /// (NFR-REL-4). The duration is the latency of the result, which is what the caller records,
+    /// and the tokens are there when the provider counted them. A call that asked for live search
+    /// says how many searches the provider ran, which it charges for beside the tokens (FR-CYC-3).
     /// </summary>
     private void Log(AiCallRequest request, AiCallResult result)
     {
-        var level = result.Outcome == AiCallOutcome.Succeeded ? LogLevel.Information : LogLevel.Warning;
+        var level = result.Outcome is AiCallOutcome.Succeeded or AiCallOutcome.ProviderPaused or AiCallOutcome.KeyPaused
+            ? LogLevel.Information
+            : LogLevel.Warning;
         var outcome = result.Outcome.ToString();
         var duration = Math.Round(result.Latency.TotalMilliseconds, 1);
         var searches = request.LiveSearch ? result.LiveSearches : null;

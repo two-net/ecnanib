@@ -108,6 +108,7 @@ public class AgentStateTests
                 "DrawdownLimitReached",
                 "DailyLossHaltEnded",
                 "AccountDisabled",
+                "CallsFailRepeatedly",
             ],
             Enum.GetNames<AgentStateCause>());
     }
@@ -145,6 +146,11 @@ public class AgentStateTests
             "stays open with its stop-loss order, unless the reason says that it has none",
             AgentPages.Explain(AgentState.AttentionRequired));
         Assert.Contains("open with no stop-loss", AgentPages.Says(AgentStateCause.PositionUnprotected));
+
+        // An agent that waits because a provider keeps refusing its user's key says what a
+        // provider refuses a key for, and what its user can do about it (NFR-REL-4).
+        Assert.Contains("kept refusing the calls with your key", AgentPages.Says(AgentStateCause.CallsFailRepeatedly));
+        Assert.Contains("give the role another model", AgentPages.Says(AgentStateCause.CallsFailRepeatedly));
         Assert.Contains("closed or kept, as you chose", AgentPages.Explain(AgentState.Stopped));
 
         // Every state that runs no cycle says so, and that it opens no position.

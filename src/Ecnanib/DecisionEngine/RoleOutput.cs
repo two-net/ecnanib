@@ -11,8 +11,9 @@ namespace Ecnanib.DecisionEngine;
 /// data and needs a migration.
 /// </summary>
 /// <remarks>
-/// The first six are the outcomes of the gateway, by the same names: see "Outcomes" in
-/// docs/ai-providers.md. The last two are the pipeline's own.
+/// The first six and the last two are the outcomes of the gateway, by the same names: see
+/// "Outcomes" in docs/ai-providers.md. <see cref="NoKey"/> and <see cref="Canceled"/> are the
+/// pipeline's own.
 /// </remarks>
 public enum RoleCallOutcome
 {
@@ -39,6 +40,18 @@ public enum RoleCallOutcome
 
     /// <summary>The call was under way when the cycle was stopped.</summary>
     Canceled,
+
+    /// <summary>
+    /// No call was made: the calls to the provider are paused after failures in a row, of all
+    /// users, and are made again later (NFR-REL-4).
+    /// </summary>
+    ProviderPaused,
+
+    /// <summary>
+    /// No call was made: the calls with the key of the user are paused after the provider
+    /// refused them in a row, and are made again later (NFR-REL-4).
+    /// </summary>
+    KeyPaused,
 }
 
 /// <summary>

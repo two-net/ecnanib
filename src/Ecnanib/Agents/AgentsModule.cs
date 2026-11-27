@@ -71,6 +71,11 @@ public static class AgentsModule
         services.AddSingleton<RoleReassignments>();
         services.AddBackgroundJob<RoleReassignmentJob>();
 
+        // What tells the users whose agents run where the exchange is out, and tells them when
+        // it answers again, and the job that has it do so every minute (NFR-REL-4).
+        services.AddSingleton<ExchangeOutageAlerts>();
+        services.AddBackgroundJob<ExchangeOutageAlertsJob>();
+
         // What Accounts asks before it deletes an account: whether an agent of the user is
         // active (FR-ACC-9).
         services.AddSingleton<IAgentActivity, AgentActivity>();

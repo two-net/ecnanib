@@ -105,6 +105,7 @@ internal sealed class AgentOrders(
     IExchangeOrders exchange,
     IExchangeAdapter account,
     IExchangeClock entries,
+    IExchangeOutages outages,
     IExchangeMarketData market,
     IKeyHandOver keys,
     IKeyValidation keyChecks,
@@ -306,6 +307,15 @@ internal sealed class AgentOrders(
         {
             // The Risk Guard accepts no plan that opens a position without both.
             return NotEntered(cycle, NoEntryReason.NoSizeOrStopLoss);
+        }
+
+        // An exchange that leaves calls without an answer takes no entry that could be followed
+        // and protected: none is placed while it is out there (NFR-REL-4). The watch pauses
+        // nothing by itself, and is asked before the watch on the clock, which an outage leaves
+        // unread as well: so the record says which of the two it was.
+        if (outages.EntriesPaused(agent.Market, agent.Mode))
+        {
+            return NotEntered(cycle, NoEntryReason.ExchangeOutage);
         }
 
         // The watch on the clock pauses nothing by itself: what places an entry asks (FR-BIN-5).

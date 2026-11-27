@@ -24,7 +24,7 @@ public interface IAiProviderGateway
 public sealed record AiCallRequest(string Model, string Prompt, string ResultSchema, bool LiveSearch = false);
 
 public sealed record AiCallResult(
-    AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency, int? LiveSearches = null);
+    AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency, int? LiveSearches = null, int? KeyTrips = null);
 
 public readonly record struct AiTokenUsage(int InputTokens, int OutputTokens);
 ```
@@ -35,6 +35,7 @@ public readonly record struct AiTokenUsage(int InputTokens, int OutputTokens);
 | **The prompt is sent as it is** (FR-PRM-10). | It is the one message of the user in every provider's request. An adapter adds no instruction to it, and sends no system prompt, no sampling parameter, and no setting for how much a model reasons. A live search is a tool of the request, and no text. |
 | The result schema is a JSON Schema, as text. | An adapter puts it where its provider takes a schema, unchanged. See "Result schemas" for what all four take. |
 | **The call is made once.** | The gateway does not call again after a failure. Whether a call is made again is its caller's to decide (FR-TEAM-9). |
+| **A call may not be made at all.** | After failures in a row the gateway pauses the calls to a provider, or the calls with one key, and makes them again later (NFR-REL-4). A call that it holds back ends as `ProviderPaused` or `KeyPaused`. See "Breakers". |
 | **The model that was asked for answers, or none.** | A provider may offer to hand a refused request to another model. The gateway does not take that: the system never puts another model in the place of the one that was chosen (FR-CAT-8), and experience is measured for each model. |
 | The key comes with the call. | See "The key". |
 | **Only the Decision Engine calls a model** (NFR-SEC-8). | The prompt is what a provider is sent, and `IPromptComposition` composes it from market data, agent settings, position state, and lessons, with no secret and no personal data in it (FR-PRM-9). `PromptRulesTests` fails for a call of a model from another component. It makes two kinds of call: that of a role in a cycle, and that which has the model of an agent's Risk Manager write the lesson of a closed position (FR-EXP-6), with a schema of its own and no search. See [prompts.md](prompts.md). |
@@ -52,12 +53,15 @@ A call that gives no result is not an error. Its result says how it ended, so th
 | `TimedOut` | The call took longer than the provider's time limit. | The call may be made again (FR-TEAM-9). |
 | `AuthenticationFailed` | The provider answered as it answers a wrong key. | The key is checked again, with `IKeyValidation.RevalidateAiKeyAsync` (FR-KEY-3). The outcome does not say that the key is wrong: the check decides that. |
 | `ModelNotFound` | The provider's own error says that it has no such model. | The agent needs its user (FR-CAT-8). |
-| `Failed` | Anything else: no connection, a limit on requests, a fault of the provider, a request that it would not take, or an answer that is not what the provider sends. | Counted where repeated failures are (NFR-REL-4). |
+| `Failed` | Anything else: no connection, a limit on requests, a fault of the provider, a request that it would not take, or an answer that is not what the provider sends. | Counted by the breakers (NFR-REL-4): for the provider when it did not answer or was at fault, and for the key when it answered and refused. |
+| `ProviderPaused` | The call was not made: the calls to the provider are paused, after failures in a row of the calls of all users. | Nothing was sent, used, or charged. The calls are made again when the pause is over. |
+| `KeyPaused` | The call was not made: the calls with this key are paused, after the provider refused them in a row. | The same. The calls with other keys go on. |
 
 - **`ResultJson` is there when the call succeeded, and never otherwise.** What a model wrote before it was cut short is not handed on.
 - **The gateway does not check a result against its schema.** It asks the provider for one that matches, and takes a finished answer that is a JSON object. Whether the object matches the schema, and whether its values are in range, is for what validates the result (FR-TEAM-6, NFR-SEC-7).
 - **Only a provider's own word is a missing model.** A 404 from a wrong address in the configuration file, or from something between the application and the provider, is `Failed`. It must not send a user to look after a model that is there.
 - **`Usage` is null when the provider did not count.** Null is unknown, and not none: a call that timed out may still be charged for. An `InvalidResult` carries its usage, because the tokens were spent.
+- **`KeyTrips` is there on the call whose refusal began a pause of the calls with its key,** and says how many pauses the key has had in a row, with no answer between them. It is null on every other call, also on one that was not made. See "Calls that fail repeatedly" in [reliability.md](reliability.md).
 - **`LiveSearches` is null when no answer was read,** for the same reason. An answer that was read says how many searches it shows, also when it is an `InvalidResult`. See "Live search".
 
 ## What each provider is sent, and how its answer reads
@@ -125,6 +129,18 @@ A model searches live with the search that its own provider runs for it, on the 
 - The event of a call that asked for live search says how many ran, as `LiveSearches`: see [logging.md](logging.md).
 - What a model asks the search is its own doing, from the prompt that it was sent, and goes to its own provider under the user's key (NFR-SEC-8).
 
+## Breakers
+
+Repeated failures for a provider or a key trip a breaker that pauses calls and retries later (NFR-REL-4). `AiCallBreakers` is asked before `ModelCall` sends anything, and told how the call ended. The whole of it is in "The breakers of the AI providers" in [reliability.md](reliability.md).
+
+| Rule | Detail |
+|---|---|
+| **There is one breaker for each provider, and one for each key.** | That of a provider counts the calls of all users that ended with no answer, or with a fault of the provider: no connection, an answer that broke off, a call that ran into its time limit, a status from 500 on or 408, and a success that is not the provider's answer. That of a key counts the calls with it that the provider answered and refused: any other status from 400 to 499. |
+| **An answer ends what was counted.** | A result and an answer without a result end it for the provider and for the key. A refusal, a key that the provider does not know, and a model that it does not have end it for the provider: it answers. |
+| **After as many in a row as `Breakers` says, no call is made for a while.** | Then every call is made again, and the first that fails begins a pause of twice the length, up to the longest of the file. See [configuration.md](configuration.md). |
+| **The check of a key and the list of the models are not paused.** | They are other calls, and neither is counted. |
+| **`IAiCallPauses` says where calls are paused now.** | For each provider of the file: until when, the failures and the pauses in a row, and how many keys the provider refuses. It names no key. The Decision Engine says it on to the operator status screen. |
+
 ## The time limit
 
 `AiProviders:<Provider>:TimeoutSeconds` in the configuration file, from 1 to 600, is how long a call to a model of that provider may take, and `AiProviders:<Provider>:BaseUrl` is where it goes. See [configuration.md](configuration.md).
@@ -141,6 +157,7 @@ A user's key for the provider is given with each call (FR-KEY-1).
 | Rule | Detail |
 |---|---|
 | **The gateway keeps no key.** | An adapter puts the key into a header of the one request, and holds it nowhere else: not in a field, and not in a header that a client sends by default. The adapters are the same objects for every user. |
+| **A key that a provider refuses is known by a mark, in memory.** | The breakers count the refusals of a key, so they must tell that two calls came with the same one. The mark is worked out from the key with a secret of the process, which is made at the start and kept nowhere: nothing leads back from it to the key, and it means nothing outside the process. It is in no log event and in no row, and is dropped when the provider takes the key again. |
 | **The gateway fetches no key.** | It may use neither Credentials nor the service's own `CatalogKey`: the architecture rules and `NoSharedKeyTests` hold it to that. What decrypts a stored key hands it over for the one call (FR-KEY-9). |
 | A key is never in an address. | Gemini would also take it there. An address is logged, so it travels in the header. |
 | A key is in no log event and no error. | The log of outbound calls leaves headers out. An error of the gateway names the provider, and not what it was given. |
@@ -256,5 +273,5 @@ Run it when an adapter is added or changed, and when a provider changes its API.
 - What follows a call that ends as `ModelNotFound` (FR-CAT-8). What runs the team of an agent records the call, and its role gave no result: see "When a role gives no valid result" in [team.md](team.md).
 - Taking up a turn that a provider paused while its model searched. It is an invalid result.
 - A setting for how much a call may search, and a limit for GPT and Gemini. The time limit of the call ends a search that goes on.
-- Breakers for repeated failures of a provider or a key (NFR-REL-4).
+- Reading how long a provider asks to be left alone, from its answer to a call that it refused for a limit. A pause lasts as long as the configuration file says.
 - Limits on how many calls a provider or a key takes at once. The gateway has none. What starts the cycles limits how many cycles use a provider, and the key of a user for it, at once (FR-CYC-11): see "The queue" in [cycles.md](cycles.md).

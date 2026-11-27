@@ -77,6 +77,8 @@ public class SettingsFileTests
         Assert.Equal(4, settings.Binance.ReconcileMinutes);
         Assert.Equal(45, settings.Binance.ClockCheckSeconds);
         Assert.Equal(400, settings.Binance.ClockToleranceMilliseconds);
+        Assert.Equal(50, settings.Binance.OutageFailures);
+        Assert.Equal(90, settings.Binance.OutageAlertSeconds);
 
         Assert.Equal(
             new DefaultRolesSettings(
@@ -121,6 +123,12 @@ public class SettingsFileTests
                 Registration: new AttemptLimitSettings(PerClient: 300, PerAddress: 100, Minutes: 50),
                 PasswordReset: new AttemptLimitSettings(PerClient: 350, PerAddress: 150, Minutes: 40)),
             settings.Limits);
+        Assert.Equal(
+            new BreakersSettings(
+                AiProvider: new AiProviderBreakerSettings(Failures: 6, PauseSeconds: 40, LongestPauseSeconds: 600),
+                AiKey: new AiKeyBreakerSettings(
+                    Failures: 4, PauseSeconds: 50, LongestPauseSeconds: 700, TripsBeforeAttention: 2, ProviderWideKeys: 5)),
+            settings.Breakers);
     }
 
     /// <summary>Each row is a key to change, its new value as JSON, and the key that must be reported.</summary>
@@ -160,6 +168,28 @@ public class SettingsFileTests
         { "Binance:ClockCheckSeconds", "3601", "Binance:ClockCheckSeconds" },
         { "Binance:ClockToleranceMilliseconds", "0", "Binance:ClockToleranceMilliseconds" },
         { "Binance:ClockToleranceMilliseconds", "1000", "Binance:ClockToleranceMilliseconds" },
+        { "Binance:OutageFailures", "0", "Binance:OutageFailures" },
+        { "Binance:OutageFailures", "1001", "Binance:OutageFailures" },
+        { "Binance:OutageAlertSeconds", "-1", "Binance:OutageAlertSeconds" },
+        { "Binance:OutageAlertSeconds", "3601", "Binance:OutageAlertSeconds" },
+
+        // A breaker that never pauses, or that pauses for longer than a day, is none. Its
+        // longest pause is no shorter than its first, and a key counts itself among the keys
+        // that are refused at once.
+        { "Breakers:AiProvider:Failures", "0", "Breakers:AiProvider:Failures" },
+        { "Breakers:AiProvider:Failures", "101", "Breakers:AiProvider:Failures" },
+        { "Breakers:AiProvider:PauseSeconds", "0", "Breakers:AiProvider:PauseSeconds" },
+        { "Breakers:AiProvider:PauseSeconds", "86401", "Breakers:AiProvider:PauseSeconds" },
+        { "Breakers:AiProvider:LongestPauseSeconds", "39", "Breakers:AiProvider:LongestPauseSeconds" },
+        { "Breakers:AiProvider:LongestPauseSeconds", "86401", "Breakers:AiProvider:LongestPauseSeconds" },
+        { "Breakers:AiKey:Failures", "0", "Breakers:AiKey:Failures" },
+        { "Breakers:AiKey:Failures", "101", "Breakers:AiKey:Failures" },
+        { "Breakers:AiKey:PauseSeconds", "0", "Breakers:AiKey:PauseSeconds" },
+        { "Breakers:AiKey:LongestPauseSeconds", "49", "Breakers:AiKey:LongestPauseSeconds" },
+        { "Breakers:AiKey:TripsBeforeAttention", "0", "Breakers:AiKey:TripsBeforeAttention" },
+        { "Breakers:AiKey:TripsBeforeAttention", "101", "Breakers:AiKey:TripsBeforeAttention" },
+        { "Breakers:AiKey:ProviderWideKeys", "1", "Breakers:AiKey:ProviderWideKeys" },
+        { "Breakers:AiKey:ProviderWideKeys", "10001", "Breakers:AiKey:ProviderWideKeys" },
         { "CatalogSync:IntervalHours", "0", "CatalogSync:IntervalHours" },
         { "CatalogSync:IntervalHours", "8761", "CatalogSync:IntervalHours" },
         { "CatalogSync:MissedSyncsBeforeUnavailable", "0", "CatalogSync:MissedSyncsBeforeUnavailable" },

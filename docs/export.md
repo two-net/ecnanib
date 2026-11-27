@@ -74,7 +74,7 @@ One row for each recorded cycle.
 | `outcome` | How it ended: `Hold`, `Unreviewed`, `Approved`, `Reduced`, `Vetoed`, `Stale`, `NoDecision`, `Failed`, `Stopped`, or `Halted`. See "The outcome of a cycle" in [team.md](team.md). |
 | `no_entry_reason` | Why no entry was placed for a plan that the Risk Guard accepted. Empty otherwise. |
 | `<role>_model` | For each of `market_analyst`, `sentiment_analyst`, `strategist`, and `risk_manager`: the model that was called, as the name of its provider and its identifier there. |
-| `<role>_call` | How the call ended: `Succeeded`, `InvalidResult`, `TimedOut`, `AuthenticationFailed`, `ModelNotFound`, `Failed`, `NoKey`, or `Canceled`. |
+| `<role>_call` | How the call ended: `Succeeded`, `InvalidResult`, `TimedOut`, `AuthenticationFailed`, `ModelNotFound`, `Failed`, `NoKey`, `Canceled`, `ProviderPaused`, or `KeyPaused`. The last two are of a call that was not made while the calls were paused: see "The breakers of the AI providers" in [reliability.md](reliability.md). |
 | `<role>_answer` | What the model answered, as the one line of JSON that the record keeps. Empty for a call whose answer is not kept. |
 | `risk_guard_verdicts` | `Accepted` or `Rejected`, for each check of the cycle in their order, with `;` between two. Empty when nothing went on to the Risk Guard. |
 | `risk_guard_failed_rules` | The rules that the plan did not pass, for each check in the same order: each as `Rule:Failed` or `Rule:Unknown`, with a space between two rules and `;` between two checks. Empty where every check passed. |

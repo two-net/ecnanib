@@ -43,6 +43,14 @@ public static class ExchangeGatewayModule
         services.AddSingleton<IExchangeClock>(provider => provider.GetRequiredService<BinanceClock>());
         services.AddBackgroundJob<BinanceClockJob>();
 
+        // The watch on whether Binance answers: several calls in a row that it leaves without an
+        // answer are an outage, and new entries pause there until it answers again (NFR-REL-4).
+        // It is one object, which hears of every call that the one exchange above sends, and
+        // says where Binance is out. The readings of the clocks are the calls that find out,
+        // every minute at the least, that it answers again.
+        services.AddSingleton<BinanceOutages>();
+        services.AddSingleton<IExchangeOutages>(provider => provider.GetRequiredService<BinanceOutages>());
+
         // The account event feed: Binance says what changes in the account of a user as it
         // happens, where the configuration file names the address of the feed (FR-BIN-7). It is
         // one object, which holds the connections in memory, as the limiter counts. It follows

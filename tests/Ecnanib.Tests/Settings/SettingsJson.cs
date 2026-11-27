@@ -83,7 +83,9 @@ internal sealed class SettingsJson
             "LimitSharePercent": 60,
             "ReconcileMinutes": 4,
             "ClockCheckSeconds": 45,
-            "ClockToleranceMilliseconds": 400
+            "ClockToleranceMilliseconds": 400,
+            "OutageFailures": 50,
+            "OutageAlertSeconds": 90
           },
           "Trading": {
             "DefaultRoles": { "MarketAnalyst": "Claude", "SentimentAnalyst": "Grok", "Strategist": "GPT", "RiskManager": "Gemini" },
@@ -123,6 +125,10 @@ internal sealed class SettingsJson
             "SignIn": { "PerClient": 400, "PerAddress": 200, "Minutes": 20 },
             "Registration": { "PerClient": 300, "PerAddress": 100, "Minutes": 50 },
             "PasswordReset": { "PerClient": 350, "PerAddress": 150, "Minutes": 40 }
+          },
+          "Breakers": {
+            "AiProvider": { "Failures": 6, "PauseSeconds": 40, "LongestPauseSeconds": 600 },
+            "AiKey": { "Failures": 4, "PauseSeconds": 50, "LongestPauseSeconds": 700, "TripsBeforeAttention": 2, "ProviderWideKeys": 5 }
           }
         }
         """)

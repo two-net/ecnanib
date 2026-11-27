@@ -49,8 +49,9 @@ public class TeamRulesTests
                 .Select(property => property.PropertyType));
 
         // And what a call gives back is text, counts, and a time: nothing that is carried out.
+        // One of the counts is of the pauses that the calls with the key have had (NFR-REL-4).
         Assert.Equal(
-            ["Latency", "LiveSearches", "Outcome", "ResultJson", "Usage"],
+            ["KeyTrips", "Latency", "LiveSearches", "Outcome", "ResultJson", "Usage"],
             typeof(AiCallResult).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => property.Name)
                 .Order(StringComparer.Ordinal));

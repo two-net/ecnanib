@@ -1,5 +1,6 @@
 using System.Globalization;
 using Ecnanib.Catalog;
+using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Persistence;
@@ -10,8 +11,9 @@ namespace Ecnanib.WebUi.Pages.Operator;
 /// The texts of what the operator status screen shows, in one place (NFR-USA-4): the health of
 /// the scheduler, the depth of the queue of the cycles, the last catalog sync of each provider,
 /// the use of the request limits of Binance, the drift of the clock, the sizes of the tables,
-/// and the rates of errors (FR-OPS-2). What frames the screen, and the pages that it leads to,
-/// have their texts in <see cref="OperatorPages"/>.
+/// and the rates of errors (FR-OPS-2), and with them where the calls to the AI providers are
+/// paused and where Binance is out (NFR-REL-4). What frames the screen, and the pages that it
+/// leads to, have their texts in <see cref="OperatorPages"/>.
 /// </summary>
 /// <remarks>
 /// A state is said as words, and never as a colour alone. What is not known is said as not
@@ -28,11 +30,17 @@ public static class OperatorStatusPages
     /// <summary>The id of the heading of the catalog syncs.</summary>
     public const string CatalogId = "status-catalog";
 
+    /// <summary>The id of the heading of the calls to the AI providers.</summary>
+    public const string CallsId = "status-ai-calls";
+
     /// <summary>The id of the heading of the request limits.</summary>
     public const string LimitsId = "status-limits";
 
     /// <summary>The id of the heading of the clock.</summary>
     public const string ClockId = "status-clock";
+
+    /// <summary>The id of the heading of the outages of Binance.</summary>
+    public const string OutagesId = "status-outages";
 
     /// <summary>The id of the heading of the tables.</summary>
     public const string TablesId = "status-tables";
@@ -50,8 +58,9 @@ public static class OperatorStatusPages
 
     /// <summary>Which of the readings are of one instance alone.</summary>
     public static string OfThisInstance =>
-        "The queue of the cycles, the request limits, the clock, and the counts of errors are kept in memory by the instance " +
-        "that answered this page. The rest is read from the database.";
+        "The queue of the cycles, the pauses of the calls to the AI providers, the request limits, the clock, the outages of " +
+        "Binance, and the counts of errors are kept in memory by the instance that answered this page. The rest is read from " +
+        "the database.";
 
     /// <summary>What is written in place of something that is not known.</summary>
     public static string NotKnown => "Not known";
@@ -271,6 +280,50 @@ public static class OperatorStatusPages
         return run is null ? "None yet" : times.At(run.StartedAt);
     }
 
+    /// <summary>The heading of the calls to the AI providers.</summary>
+    public static string CallsHeading => "Calls to the AI providers";
+
+    /// <summary>What the table of the calls holds, and what a pause is.</summary>
+    public static string CallsExplained =>
+        "Whether the calls to the models of each provider are made. After failures in a row the calls to a provider, of all " +
+        "users, are paused for a while and then made again, and so are the calls with one key that a provider keeps refusing. " +
+        "A key is counted, and is shown nowhere.";
+
+    /// <summary>The name of the table of the calls.</summary>
+    public static string CallsCaption => "The calls to each AI provider";
+
+    /// <summary>The heading of an AI provider.</summary>
+    public static string CallProviderHeading => "Provider";
+
+    /// <summary>The heading of whether the calls to a provider are made.</summary>
+    public static string CallStateHeading => "Calls";
+
+    /// <summary>The heading of the calls in a row that a provider left without an answer.</summary>
+    public static string CallFailuresHeading => "Failures in a row";
+
+    /// <summary>The heading of the pauses in a row of the calls to a provider.</summary>
+    public static string CallTripsHeading => "Pauses in a row";
+
+    /// <summary>The heading of the keys that a provider keeps refusing.</summary>
+    public static string KeysInTroubleHeading => "Keys that it refuses";
+
+    /// <summary>The heading of the keys that no call is made with now.</summary>
+    public static string KeysPausedHeading => "Of them paused now";
+
+    /// <summary>Whether the calls to a provider are made, and until when they are not (NFR-REL-4).</summary>
+    public static string NameOf(CallPause pause, PageTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(pause);
+        ArgumentNullException.ThrowIfNull(times);
+
+        return pause switch
+        {
+            { PausedUntil: { } until } => $"Paused until {times.AtSecond(until)}: the provider left calls without an answer",
+            { Trips: > 0 } => "Made again after a pause: the next failure pauses them again",
+            _ => "Made",
+        };
+    }
+
     /// <summary>The heading of the use of the request limits of Binance.</summary>
     public static string LimitsHeading => "Request limits of Binance";
 
@@ -406,6 +459,44 @@ public static class OperatorStatusPages
         ArgumentNullException.ThrowIfNull(times);
 
         return at is { } read ? times.AtSecond(read) : "Not read yet";
+    }
+
+    /// <summary>The heading of the outages of Binance.</summary>
+    public static string OutagesHeading => "Outages of Binance";
+
+    /// <summary>What the table of the outages holds, and what follows from an outage.</summary>
+    public static string OutagesExplained =>
+        "Whether Binance answers the calls of the service on each market. While it is out on a market, new entries are " +
+        "paused there, and the users whose agents run there are told. Every other call goes on being made: what is open " +
+        "is protected and closed whenever Binance takes it.";
+
+    /// <summary>The name of the table of the outages.</summary>
+    public static string OutagesCaption => "Whether Binance answers on each market";
+
+    /// <summary>The heading of whether Binance answers.</summary>
+    public static string AnswersHeading => "State";
+
+    /// <summary>The heading of the calls in a row that Binance left without an answer.</summary>
+    public static string UnansweredHeading => "Calls in a row without an answer";
+
+    /// <summary>The heading of when Binance last answered a call.</summary>
+    public static string AnsweredHeading => "Last answered";
+
+    /// <summary>Whether Binance answers on a market, and since when it does not, with what follows (NFR-REL-4).</summary>
+    public static string NameOf(ExchangeAnswers answers, PageTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(answers);
+        ArgumentNullException.ThrowIfNull(times);
+
+        return answers.OutageSince is { } since ? $"Out since {times.AtSecond(since)}: new entries are paused" : "Answers";
+    }
+
+    /// <summary>When Binance last answered a call on a market, or that it has answered none since the start.</summary>
+    public static string Answered(DateTimeOffset? at, PageTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(times);
+
+        return at is { } answered ? times.AtSecond(answered) : "Not since the start";
     }
 
     /// <summary>The heading of the sizes of the tables.</summary>

@@ -262,6 +262,26 @@ The watch says how the clock of the service stands against each of Binance's: Sp
 | `Tolerance` | `Binance:ClockToleranceMilliseconds`. |
 | `EntriesPaused` | Whether new entries are paused there, which they are in every state but `Within`. The method says the same for one market in one environment. |
 
+## Outages
+
+A Binance outage pauses entries and raises an alert (NFR-REL-4). `Adapters/Binance/BinanceOutages.cs` is the watch on whether Binance answers: `BinanceCall` tells it of every call that it sent, and `OutageWatchTests` holds it to the rules below. The whole of it, with who is told, is in "A Binance outage" in [reliability.md](reliability.md).
+
+| Setting | In the tracked file | |
+|---|---|---|
+| `Binance:OutageFailures` | 5 | The calls in a row without an answer that are an outage, from 1 to 1000. |
+| `Binance:OutageAlertSeconds` | 60 | How long an outage lasts before the users whose agents run there are told, from 0 to 3600. |
+
+| Rule | Detail |
+|---|---|
+| **An answer is whatever Binance itself says.** | A result, a refusal, an error of its own, and its signal of too many requests: every status below 500 other than 408. |
+| **No answer is a call that reached nothing.** | No connection, an answer that broke off before its status, a call that ran into its time limit, and a status from 500 on or 408, which the address gives in Binance's place. |
+| **Each market is watched in each environment, on its own.** | As the clocks are. `Binance:OutageFailures` calls in a row without an answer are an outage there, and the first answer ends it. |
+| **Two calls are not counted.** | One that the limiter did not send, and the call that asks what a key may do, which is of Binance's wallet API. A call that its caller cancelled is not counted either. |
+| The watch pauses nothing by itself. | What places an entry asks `IExchangeOutages.EntriesPaused` first, before it asks the watch on the clock, and places none while it says so: `AgentOrders` of the Decision Engine does. Every other call goes on being made, which is how the watch learns that Binance answers again: the job `clock-watch` reads all four clocks on its schedule. |
+| It watches in memory, for one process. | As the limiter counts. A start begins with no outage. |
+
+`IExchangeOutages.Answers` says how Binance answers on each of the four, for the operator status screen and for what tells the users: the calls in a row without an answer, since when an outage lasts, and when a call was last answered.
+
 ## Outcomes
 
 A call that gives no answer is not an error. Its result says how it ended, so that a caller, which may name no type of the network, can tell what to do next.
@@ -272,7 +292,7 @@ A call that gives no answer is not an error. Its result says how it ended, so th
 | `AuthenticationFailed` | Binance answered as it answers a wrong credential: 401, or one of its errors `-1002`, `-1022`, `-2008`, `-2014`, `-2015`. | The credential is checked again, with `IKeyValidation.RevalidateExchangeKeyAsync` (FR-KEY-3). The outcome does not say that the credential is wrong: the check decides that. |
 | `TimedOut` | The call ended without an answer, and its caller did not cancel it. | A call that reads may be made again. What became of a call that placed an order is not known: see "The orders". |
 | `RateLimited` | The limit on requests: the limiter held the call back for longer than a call waits, and it was not sent, or Binance answered with its signal of too many, 429 or 418. | The call is made again later, and not at once: until the limiter has room again, the same call ends the same. It is no failure of Binance, and says nothing about a credential. |
-| `Failed` | Anything else: no connection, a clock that is off, a block of the service's address by the firewall in front of Binance, a fault of the exchange, or an answer that is not what Binance sends. | Counted where repeated failures are (NFR-REL-4). |
+| `Failed` | Anything else: no connection, a clock that is off, a block of the service's address by the firewall in front of Binance, a fault of the exchange, or an answer that is not what Binance sends. | Counted by the watch on outages when Binance gave no answer (NFR-REL-4): see "Outages". |
 
 - **Only Binance's answer to a wrong credential is `AuthenticationFailed`.** A status that could also mean something else, such as 403, is `Failed`: a block of the service's address must not have every stored key checked, or marked.
 - **`Failed` does not say which failure it was.** A clock that is off is told apart by what acts on it: the watch on the clock hears of Binance's error `-1021`, and pauses new entries. See "The clock".
@@ -559,7 +579,7 @@ public sealed record ExchangeCandle(
 | **Only the symbols of `Binance:Symbols` are served.** | Any other symbol is no call: it ends with an error, and nothing is sent. So what is held has a bound, and no text of a caller reaches Binance. |
 | **The price of a symbol of `Binance:FeeSymbols` is served as well, and nothing else of it.** | `GetPriceAsync` takes a symbol of either list. A fee that Binance took in an asset of neither side of the symbol that was traded, such as BNB, is valued by the price that such a symbol last traded at (FR-BIN-10): see "The value of a fee" in [orders.md](orders.md). Its candles, its mark price, and its open interest are not read, and `GetSymbolsAsync` does not list it: no agent trades it for being listed there. |
 | **A read belongs to nobody who waits for it.** | An asker that cancels stops waiting, with the error of a cancelled call, and the others get the answer. The read ends when the application stops. |
-| **A read that failed is shared too, and is not made again for 5 seconds.** | Whoever waited gets how it ended, and so does whoever asks in those seconds, with no call. So agents that ask one after the other while Binance does not answer do not each make the call. It is no breaker: after the seconds the next ask reads again. |
+| **A read that failed is shared too, and is not made again for 5 seconds.** | Whoever waited gets how it ended, and so does whoever asks in those seconds, with no call. So agents that ask one after the other while Binance does not answer do not each make the call. It pauses no call: after the seconds the next ask reads again. Every read that Binance leaves without an answer counts for the watch on outages: see "Outages". |
 
 ### For how long it counts
 
@@ -730,6 +750,16 @@ The clock of the service is within 500 ms of Binance's on Futures Live again. Ne
 - **A pause is a warning, said once,** when it begins, and not with every reading while it lasts: the clock is further off than `ToleranceMs`, it could not be read for as long as a reading counts, or Binance refused a call for its time. Why a clock could not be read is with the call, in the log of outbound calls or in the events above.
 - **That it is over is said once too,** at the information level, with the first reading that is within the tolerance again.
 
+The watch on outages says when one begins and when it is over, under `Ecnanib.ExchangeGateway.Adapters.Binance.BinanceOutages`:
+
+```
+Binance left 5 calls in a row without an answer on Futures Live. New entries are paused there until it answers again
+Binance answers again on Futures Live, after 187 s without an answer. New entries go on there
+```
+
+- **The beginning of an outage is an error, said once,** with `Market`, `Environment`, and `Unanswered`, the calls in a row that had no answer. Why each call had none is with the call, in the log of outbound calls.
+- **That it is over is said once,** at the information level, with the first call that Binance answers. `OutageSeconds` is how long it lasted.
+
 ## Checking against Binance itself
 
 The tests answer in Binance's place, with what its documentation says it sends. `LiveBinanceTests` asks Binance itself. It is skipped unless a credential is given for an environment, in the environment of the run, so the suite never reaches Binance by itself and no key is stored:
@@ -816,4 +846,4 @@ The calls of the market data were asked of Binance itself on 16 November 2026, o
 - Reading the prices of every symbol of a market with one call, where many are followed. Each price that is followed is a read of its own.
 - A count of the connections that the account event feeds hold, for the operator status screen (FR-OPS-2).
 - Noticing a connection of a feed that is dead without saying so before the network does. Binance asks every connection whether it is still there, and the gateway answers, but it does not ask Binance. Until the connection breaks, what changes in the account is found by the reconciliation that runs on a schedule.
-- Breakers for repeated failures of Binance (NFR-REL-4). That a read of market data which failed is not made again for 5 seconds is none.
+- Pausing the calls to Binance while it is out. An outage pauses new entries, and every call goes on being made: a position is protected and closed whenever Binance takes the call. That a read of market data which failed is not made again for 5 seconds is no pause of the calls.

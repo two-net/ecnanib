@@ -163,6 +163,14 @@ public enum NotificationType
     /// is over, and the service resumed it (FR-RSK-8, FR-NTF-1).
     /// </summary>
     AgentResumed,
+
+    /// <summary>
+    /// The exchange is out on a market in an environment in which an agent of the user runs: it
+    /// left several calls in a row without an answer, and new entries are paused there. It is
+    /// raised again, by the same name, when the exchange answers (NFR-REL-4). It is about no
+    /// agent: a user is told once for all their agents there.
+    /// </summary>
+    ExchangeOutage,
 }
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>

@@ -136,6 +136,10 @@ public static class DecisionEngineModule
         // agent's user, the validation of its answer, and the one call more (FR-TEAM-9).
         services.AddSingleton<RoleRuns>();
 
+        // What follows when a provider keeps refusing the key of a user: the agent whose call it
+        // was waits for its user (NFR-REL-4).
+        services.AddSingleton<CallTrouble>();
+
         // The lessons that the prompts of a cycle recall, for its Strategist and its Risk
         // Manager (FR-EXP-7). Experience says which, for the user of the agent alone.
         services.AddSingleton<RecalledLessons>();
@@ -177,6 +181,10 @@ public static class DecisionEngineModule
         // screen (FR-OPS-2). In memory, of every user, and with nothing of any.
         services.AddSingleton<CycleLoads>();
         services.AddSingleton<ICycleLoad>(provider => provider.GetRequiredService<CycleLoads>());
+
+        // Where the calls to the models are paused now, which the gateway keeps and an operator
+        // status screen shows (NFR-REL-4, FR-OPS-2).
+        services.AddSingleton<ICallPauses, CallPauses>();
 
         // Runs a test cycle of an agent for its user, on demand: it produces a full decision
         // record, which its kind tells apart, and places no orders (FR-CYC-12). It runs inside

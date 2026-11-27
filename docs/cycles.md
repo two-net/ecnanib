@@ -89,6 +89,7 @@ The cycles of a close wait in one queue, `CycleQueue`, which one run of the job 
 | **A provider that holds two roles of a team counts once.** | A cycle is one place with a provider, whatever the number of its roles there (FR-TEAM-5). The two analysts are called at the same time, so one cycle can be two calls with one key. |
 | **A cycle that finds no place waits, and reserves none.** | Whenever something changes, the queue is gone through in its order, and every cycle that finds all its places starts. So a cycle of a longer timeframe that needs other providers starts before a cycle of a shorter one that waits for a provider that is full. |
 | **A provider that is slow or full holds back the cycles that need it, and no others** (NFR-REL-4). | It is why nothing is reserved: a cycle that held the places of its other providers while it waited for one would keep cycles waiting that never call that one. The order is strict among cycles that need the same places. |
+| **A provider whose calls are paused holds back nothing.** | After failures in a row the gateway makes no call to it for a while (NFR-REL-4). A cycle that needs it ends without waiting, and gives its places back. See "The breakers of the AI providers" in [reliability.md](reliability.md). |
 | **The first cycles start once the candles of every symbol are in.** | Or 5 seconds after the run began, whichever is first: `DecisionCyclesJob.Gather`. Binance closes the candles of two symbols a moment apart, and a cycle of a day must not take a place ahead of a cycle of 15 minutes whose candle arrives a moment later. A symbol whose candle is late joins the queue when it has it, at its place in the order. |
 | **A place is free again however a cycle ends.** | An error that leaves a cycle ends that cycle alone. It is logged once, as an error, with the user, the agent, and the cycle, and the others go on. |
 
@@ -645,7 +646,6 @@ A limit is held to through what the stand-in counted while the cycles were held,
 - A limit on how many test cycles a user runs in a day. Its models are called on the user's own keys, and one runs at a time.
 - Settling the orders of an agent before its test cycle, by reading the exchange alone. The team of a test cycle decides on the records as the job that settles the orders left them, which runs every minute for the agents that have something to settle.
 - Limits on calls. The places are of cycles: a cycle is two calls with one key while the two analysts work.
-- Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A provider that is slow holds back the cycles that need it, and nothing pauses its calls.
 - Stopping the cycle of an agent when its user pauses or stops it. What places an entry asks again whether the agent takes new entries.
 - The depth of the queue on an instance that stands by, and what a close counted once it is over, on the operator status screen. The summary of each close is in the log.
 - The load test at 500 running agents, with real cycles (NFR-PRF-3).

@@ -21,7 +21,8 @@ public sealed record EcnanibSettings(
     ExperienceSettings Experience,
     RetentionSettings Retention,
     BackupSettings Backup,
-    LimitsSettings Limits)
+    LimitsSettings Limits,
+    BreakersSettings Breakers)
 {
     /// <summary>The names of the file's top-level sections, which are the properties above. They ignore case.</summary>
     internal static IReadOnlySet<string> Sections { get; } = typeof(EcnanibSettings)
@@ -44,9 +45,10 @@ public sealed record EcnanibSettings(
         var retention = RetentionSettings.Read(file);
         var backup = BackupSettings.Read(file);
         var limits = LimitsSettings.Read(file);
+        var breakers = BreakersSettings.Read(file);
 
         return new EcnanibSettings(
             application, connectionStrings, security, logging, email, aiProviders, catalogSync, binance, trading,
-            experience, retention, backup, limits);
+            experience, retention, backup, limits, breakers);
     }
 }

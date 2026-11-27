@@ -94,6 +94,10 @@ internal sealed class CyclesApplication : IDisposable
     /// It is asked beside the halt that an operator switches, which is off unless a test switches
     /// it: so unless a test says so no halt is on, as in an application that was never halted.
     /// </param>
+    /// <param name="further">
+    /// Further services of the test's own, which are registered last: a stand-in for something
+    /// that no other parameter stands in for.
+    /// </param>
     public CyclesApplication(
         DateTimeOffset now,
         int? maxPerProvider = null,
@@ -105,7 +109,8 @@ internal sealed class CyclesApplication : IDisposable
         StandInSystem? providers = null,
         StandInHoldings? holdings = null,
         Func<SettingsJson, SettingsJson>? settings = null,
-        StandInHalt? halt = null)
+        StandInHalt? halt = null,
+        Action<IServiceCollection>? further = null)
     {
         buildsPackages |= providers is not null;
         storedAgents |= providers is not null;
@@ -168,6 +173,8 @@ internal sealed class CyclesApplication : IDisposable
                 {
                     services.AddSingleton<IGlobalHalt>(halt);
                 }
+
+                further?.Invoke(services);
             }),
             runsCycles: true);
 

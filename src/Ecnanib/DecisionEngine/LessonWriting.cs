@@ -129,6 +129,13 @@ internal sealed class LessonWriting(
 
         var run = await runs.RunAsync(due.UserId, due.AgentId, riskManager, parts, cancellationToken);
 
+        if (run.Paused)
+        {
+            // The calls are paused, and none was made. The row stays as it was taken: the lesson
+            // is due again when the hour of that is over (NFR-REL-4).
+            return null;
+        }
+
         if (run is not { Outcome: LessonOutcome.Written, Draft: { } draft, TemplateId: { } templateId })
         {
             return await EndAsync(due, parts, run.Outcome, cancellationToken);

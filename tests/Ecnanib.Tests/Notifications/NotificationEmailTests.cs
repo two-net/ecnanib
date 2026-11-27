@@ -166,6 +166,7 @@ public class NotificationEmailTests
     [InlineData(NotificationType.ModelUnavailable, true)]
     [InlineData(NotificationType.ProtectionFailure, true)]
     [InlineData(NotificationType.LiquidationWarning, true)]
+    [InlineData(NotificationType.ExchangeOutage, true)]
     [InlineData(NotificationType.EntrySkipped, false)]
     [InlineData(NotificationType.ReconciliationMismatch, false)]
     [InlineData(NotificationType.RolesReassigned, false)]

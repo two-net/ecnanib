@@ -14,6 +14,7 @@ using Ecnanib.Tests.Credentials;
 using Ecnanib.Tests.ExchangeGateway;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -1167,6 +1168,21 @@ internal sealed class StandInEntries : IExchangeClock
 }
 
 /// <summary>
+/// Stands for the watch on whether the exchange answers: it is out where the test says so, and
+/// nowhere else. Many tests have Binance lose a call or fail one, as part of what they are about,
+/// and none of them is about an outage unless it says so here.
+/// </summary>
+internal sealed class StandInOutages : IExchangeOutages
+{
+    /// <summary>Whether the exchange is out, everywhere.</summary>
+    public bool Out { get; set; }
+
+    public IReadOnlyList<ExchangeAnswers> Answers() => [];
+
+    public bool EntriesPaused(Market market, TradingMode mode) => Out;
+}
+
+/// <summary>
 /// The position of BTCUSDT that an account holds on the Futures market, as the exchange says it
 /// with its prices: the one that the plans of the tests open, entered at 60000 for 0.02.
 /// </summary>
@@ -1342,22 +1358,38 @@ internal sealed class OrdersApplication : IDisposable
     /// </param>
     /// <param name="runsCycles">Whether the application starts the cycles of the agents that run, which only a test of the cycles wants.</param>
     /// <param name="feed">What stands for the account event feed of the gateway, for a test of what follows it.</param>
+    /// <param name="watchesOutages">
+    /// Whether the watch on outages is the gateway's own, which hears of every call that this
+    /// Binance leaves without an answer, for a test of an outage. Without it the watch is
+    /// <see cref="Outages"/>, which says that Binance is out only where a test says so.
+    /// </param>
+    /// <param name="settings">Other settings of the file of the tests, such as how many calls without an answer are an outage.</param>
+    /// <param name="further">Further services of the test's own, which are registered last.</param>
     public OrdersApplication(
         bool settlesOrders = false,
         TestDatabase? database = null,
         TradingBinance? binance = null,
         bool reconciles = false,
         bool runsCycles = false,
-        StandInFeed? feed = null)
+        StandInFeed? feed = null,
+        bool watchesOutages = false,
+        Func<SettingsJson, SettingsJson>? settings = null,
+        Action<IServiceCollection>? further = null)
     {
         Binance = binance ?? new TradingBinance();
         Application = new AccountsApplication(
             clock: Clock,
             database: database,
+            settings: settings,
             host: host => host.ConfigureServices(services =>
             {
                 services.AddHttpClient(ExchangeGatewayModule.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Binance.System);
                 services.AddSingleton<IExchangeClock>(Entries);
+
+                if (!watchesOutages)
+                {
+                    services.AddSingleton<IExchangeOutages>(Outages);
+                }
 
                 if (feed is not null)
                 {
@@ -1373,6 +1405,8 @@ internal sealed class OrdersApplication : IDisposable
                 services.AddSingleton(gateway);
                 services.AddSingleton<IExchangeMarketData>(
                     provider => FundingTimes.Before((IExchangeMarketData)provider.GetRequiredService(gateway)));
+
+                further?.Invoke(services);
             }),
             settlesOrders: settlesOrders,
             reconciles: reconciles,
@@ -1394,6 +1428,8 @@ internal sealed class OrdersApplication : IDisposable
     public TradingBinance Binance { get; }
 
     public StandInEntries Entries { get; } = new();
+
+    public StandInOutages Outages { get; } = new();
 
     /// <summary>
     /// The prices that a position is valued at, which are the price of <see cref="Binance"/>, and

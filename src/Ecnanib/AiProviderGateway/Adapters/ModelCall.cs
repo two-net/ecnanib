@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -25,10 +26,15 @@ namespace Ecnanib.AiProviderGateway.Adapters;
 /// <para>
 /// The call is made once. Whether it is made again is the caller's to decide (FR-TEAM-9).
 /// </para>
+/// <para>
+/// Before anything is sent the breakers are asked, and they are told how the call ended
+/// (NFR-REL-4). A call that they hold back is not made, and ends as paused.
+/// </para>
 /// </remarks>
 internal sealed class ModelCall(
     IHttpClientFactory clients,
     AiProvidersSettings settings,
+    AiCallBreakers breakers,
     TimeProvider clock,
     ILogger<ModelCall> logger)
 {
@@ -55,6 +61,14 @@ internal sealed class ModelCall(
 
         var schema = SchemaOf(request);
 
+        // The calls to the provider, or the calls with this key, may be paused. Nothing is sent
+        // then, and no time is taken.
+        var pass = breakers.Enter(format.Provider, apiKey);
+        if (pass.Paused is { } paused)
+        {
+            return Without(paused, TimeSpan.Zero);
+        }
+
         // The one limit on the call: the client of the gateway has none of its own. It runs on
         // the application's clock, and covers the sending and the reading of the answer.
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(endpoint.TimeoutSeconds), clock);
@@ -77,14 +91,16 @@ internal sealed class ModelCall(
 
             if (!response.IsSuccessStatusCode)
             {
-                return Without(format.OutcomeOfError(response.StatusCode, body), latency);
+                var outcome = format.OutcomeOfError(response.StatusCode, body);
+
+                return breakers.Leave(pass, Without(outcome, latency), EndOf(outcome, response.StatusCode));
             }
 
             // A success that is not the provider's answer: the page of something in between, or
             // an answer of a kind that this code does not know.
             if (body is not { } answer || format.Read(answer) is not { } read)
             {
-                return Without(AiCallOutcome.Failed, latency);
+                return breakers.Leave(pass, Without(AiCallOutcome.Failed, latency), CallEnd.ProviderFault);
             }
 
             if (read.End == AnswerEnd.Complete && IsJsonObject(read.Text))
@@ -97,7 +113,8 @@ internal sealed class ModelCall(
                     logger.LogWarning("The model was offered a live search, and its answer shows none");
                 }
 
-                return new AiCallResult(AiCallOutcome.Succeeded, read.Text, read.Usage, latency, read.LiveSearches);
+                return breakers.Leave(
+                    pass, new AiCallResult(AiCallOutcome.Succeeded, read.Text, read.Usage, latency, read.LiveSearches), CallEnd.Healthy);
             }
 
             // The status says that the call went well, so the log of outbound calls does too.
@@ -114,24 +131,48 @@ internal sealed class ModelCall(
                 logger.LogWarning("The answer of the model holds no structured result: {Reason}", WhyNot(read));
             }
 
-            // The searches ran, and are charged for, as the tokens are.
-            return Without(AiCallOutcome.InvalidResult, latency, read.Usage, read.LiveSearches);
+            // The searches ran, and are charged for, as the tokens are. The provider answered
+            // the key: that the model gave no result is no failure of either.
+            return breakers.Leave(
+                pass, Without(AiCallOutcome.InvalidResult, latency, read.Usage, read.LiveSearches), CallEnd.Healthy);
         }
         catch (HttpRequestException)
         {
             // No answer. The call is in the log of outbound calls, with why.
-            return Without(AiCallOutcome.Failed, clock.GetElapsedTime(started));
+            return breakers.Leave(pass, Without(AiCallOutcome.Failed, clock.GetElapsedTime(started)), CallEnd.ProviderFault);
         }
         catch (IOException)
         {
             // The answer broke off while it was read.
-            return Without(AiCallOutcome.Failed, clock.GetElapsedTime(started));
+            return breakers.Leave(pass, Without(AiCallOutcome.Failed, clock.GetElapsedTime(started)), CallEnd.ProviderFault);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // The provider took longer than its limit. The caller did not cancel.
-            return Without(AiCallOutcome.TimedOut, clock.GetElapsedTime(started));
+            return breakers.Leave(pass, Without(AiCallOutcome.TimedOut, clock.GetElapsedTime(started)), CallEnd.ProviderFault);
         }
+
+        // A caller that cancels ends the call with its error, and the breakers hear nothing of
+        // it: a call that was not waited for says nothing about the provider or the key.
+    }
+
+    /// <summary>
+    /// How a call that the provider answered with an error counts for the breakers. A refusal of
+    /// the key and a model that is not there have a handling of their own, and say that the
+    /// provider answers. A fault that the provider reports of itself, or a time limit of its own
+    /// that ran out, is a fault of the provider. Any other refusal is of the calls with this key:
+    /// a limit on its requests, an account that has run out, or a request that is not taken.
+    /// </summary>
+    private static CallEnd EndOf(AiCallOutcome outcome, HttpStatusCode status)
+    {
+        if (outcome is AiCallOutcome.AuthenticationFailed or AiCallOutcome.ModelNotFound)
+        {
+            return CallEnd.Answered;
+        }
+
+        var refused = (int)status is >= 400 and < 500 && status != HttpStatusCode.RequestTimeout;
+
+        return refused ? CallEnd.KeyRefused : CallEnd.ProviderFault;
     }
 
     /// <summary>A call without a result. Only an answer that was read says its usage and its searches.</summary>

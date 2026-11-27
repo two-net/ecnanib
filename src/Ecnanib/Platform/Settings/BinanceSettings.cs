@@ -24,6 +24,14 @@ namespace Ecnanib.Platform.Settings;
 /// How far the clock of the service may be from Binance's, ahead of it or behind it, before new
 /// entries pause (FR-BIN-5): from 1 to 999.
 /// </param>
+/// <param name="OutageFailures">
+/// How many calls in a row Binance may leave without an answer on a market in an environment
+/// before that counts as an outage there, and new entries pause (NFR-REL-4): from 1 to 1000.
+/// </param>
+/// <param name="OutageAlertSeconds">
+/// How long an outage lasts before the users whose agents run there are told of it
+/// (NFR-REL-4): from nothing to an hour.
+/// </param>
 public sealed record BinanceSettings(
     BinanceMarketSettings Spot,
     BinanceMarketSettings Futures,
@@ -33,7 +41,9 @@ public sealed record BinanceSettings(
     int LimitSharePercent,
     int ReconcileMinutes,
     int ClockCheckSeconds,
-    int ClockToleranceMilliseconds)
+    int ClockToleranceMilliseconds,
+    int OutageFailures,
+    int OutageAlertSeconds)
 {
     // The share must hold the heaviest call that the service makes, or that call would never
     // pass. That is the read of funding on the Futures market, which Binance counts as 30 of the
@@ -51,6 +61,11 @@ public sealed record BinanceSettings(
     // Binance refuses a signed call that says it was made a second or more after Binance's own
     // time. The tolerance is less than that, so that entries pause before calls are refused.
     private const int MostClockToleranceMilliseconds = 999;
+
+    // A thousand calls with no answer are an outage whatever the file says, and an alert that
+    // waits for longer than an hour is told to nobody who could still use it.
+    private const int MostOutageFailures = 1000;
+    private const int MostOutageAlertSeconds = 3600;
 
     /// <summary>The endpoint for a market in a trading mode (FR-BIN-2).</summary>
     public Uri BaseUrl(Market market, TradingMode mode)
@@ -119,6 +134,9 @@ public sealed record BinanceSettings(
         var clockToleranceMilliseconds = file.WholeNumber(
             "Binance:ClockToleranceMilliseconds", minimum: 1, maximum: MostClockToleranceMilliseconds);
 
+        var outageFailures = file.WholeNumber("Binance:OutageFailures", minimum: 1, maximum: MostOutageFailures);
+        var outageAlertSeconds = file.WholeNumber("Binance:OutageAlertSeconds", minimum: 0, maximum: MostOutageAlertSeconds);
+
         return new BinanceSettings(
             spot,
             futures,
@@ -128,7 +146,9 @@ public sealed record BinanceSettings(
             limitSharePercent,
             reconcileMinutes,
             clockCheckSeconds,
-            clockToleranceMilliseconds);
+            clockToleranceMilliseconds,
+            outageFailures,
+            outageAlertSeconds);
     }
 
     private static string Symbol(SettingsReader file, string key)

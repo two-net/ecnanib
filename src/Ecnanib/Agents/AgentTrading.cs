@@ -40,9 +40,11 @@ internal sealed class AgentTrading(
 
     public async Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, AgentStateCause cause, CancellationToken cancellationToken)
     {
-        if (cause is not (AgentStateCause.PositionUnprotected or AgentStateCause.ExchangeSettingConflict))
+        if (cause is not (AgentStateCause.PositionUnprotected
+            or AgentStateCause.ExchangeSettingConflict
+            or AgentStateCause.CallsFailRepeatedly))
         {
-            throw new ArgumentOutOfRangeException(nameof(cause), cause, "What places the orders of an agent finds no such cause.");
+            throw new ArgumentOutOfRangeException(nameof(cause), cause, "What runs the cycles of an agent finds no such cause.");
         }
 
         await using var context = await contexts.CreateDbContextAsync(cancellationToken);

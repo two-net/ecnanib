@@ -150,7 +150,10 @@ internal sealed class AiUsage(
         var calls =
             from output in context.Set<RoleOutput>().AsNoTracking().OwnedBy(userId)
             join cycle in context.Set<DecisionCycle>().AsNoTracking().OwnedBy(userId) on output.CycleId equals cycle.Id
-            where output.CalledAt >= start && output.Outcome != RoleCallOutcome.NoKey
+            where output.CalledAt >= start
+                && output.Outcome != RoleCallOutcome.NoKey
+                && output.Outcome != RoleCallOutcome.ProviderPaused
+                && output.Outcome != RoleCallOutcome.KeyPaused
             select new
             {
                 cycle.AgentId,
@@ -254,7 +257,11 @@ internal sealed class AiUsage(
             var counted = await (
                 from output in context.Set<RoleOutput>().AsNoTracking().OwnedBy(userId)
                 join model in context.Set<AiModel>().AsNoTracking() on output.ModelId equals model.Id
-                where model.Provider == provider && output.CalledAt >= since && output.Outcome != RoleCallOutcome.NoKey
+                where model.Provider == provider
+                    && output.CalledAt >= since
+                    && output.Outcome != RoleCallOutcome.NoKey
+                    && output.Outcome != RoleCallOutcome.ProviderPaused
+                    && output.Outcome != RoleCallOutcome.KeyPaused
                 group output by output.ModelId into slice
                 select new
                 {

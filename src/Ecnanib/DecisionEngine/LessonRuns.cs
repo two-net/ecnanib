@@ -35,6 +35,11 @@ namespace Ecnanib.DecisionEngine;
 /// <b>Every call is billed to that user, so there are two at the most.</b> A lesson that neither
 /// gave is not written, and nothing calls for it again.
 /// </para>
+/// <para>
+/// <b>A call that the gateway holds back was not made, and is no call of the two.</b> The calls
+/// to the provider, or the calls with the key, are paused after failures in a row (NFR-REL-4).
+/// The lesson is left as it is, for a later run to write.
+/// </para>
 /// </remarks>
 internal sealed class LessonRuns(
     IPromptComposition composition,
@@ -104,6 +109,19 @@ internal sealed class LessonRuns(
             }
 
             var answer = await providers.CompleteAsync(provider, call.Request, handed, cancellationToken);
+
+            if (answer.Outcome is AiCallOutcome.ProviderPaused or AiCallOutcome.KeyPaused)
+            {
+                // Nothing was sent, and nothing was billed: the lesson waits for a run in which
+                // the calls are made again. That they are paused was said when the pause began.
+                logger.LogInformation(
+                    "The lesson of a position of agent {AgentId} is left for a later run: the calls to the AI provider {Provider} are paused ({AiCallOutcome})",
+                    agentId,
+                    provider.Value,
+                    answer.Outcome);
+
+                return new LessonRun(LessonOutcome.NoResult, Draft: null, prompt.Templates[0].Id, Paused: true);
+            }
 
             if (answer.Outcome == AiCallOutcome.AuthenticationFailed && !revalidated)
             {
@@ -180,4 +198,8 @@ internal sealed class LessonRuns(
 /// <param name="Outcome">Written, or why not.</param>
 /// <param name="Draft">The lesson, when it is written, and null otherwise.</param>
 /// <param name="TemplateId">The version of the lesson instructions that the prompt was composed from, or null when none was composed.</param>
-internal sealed record LessonRun(LessonOutcome Outcome, LessonDraft? Draft, int? TemplateId);
+/// <param name="Paused">
+/// Whether no call was made because the calls are paused (NFR-REL-4). Nothing came of the lesson
+/// then, and its row is left as it is: a later run has it written.
+/// </param>
+internal sealed record LessonRun(LessonOutcome Outcome, LessonDraft? Draft, int? TemplateId, bool Paused = false);

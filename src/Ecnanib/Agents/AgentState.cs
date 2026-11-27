@@ -112,6 +112,14 @@ public enum AgentStateCause
     /// agent waits for its user, who resumes it once the account is enabled again.
     /// </summary>
     AccountDisabled,
+
+    /// <summary>
+    /// The AI provider of a role of the agent's team kept refusing the calls with the key of the
+    /// agent's user while the agent ran: the calls with the key were paused and made again
+    /// several times in a row, and the provider took none (NFR-REL-4). A provider that does not
+    /// answer anyone is no cause: its calls are paused and made again, and the agent goes on.
+    /// </summary>
+    CallsFailRepeatedly,
 }
 
 /// <summary>What a user does to the state of an agent (FR-AGT-1).</summary>

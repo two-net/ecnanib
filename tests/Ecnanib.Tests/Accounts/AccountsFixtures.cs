@@ -257,6 +257,12 @@ internal sealed class AccountsApplication : IDisposable
             .Single(job => job.Name == "decision-cycles")
             .RunAsync(new BackgroundJobRun(closedAt), cancellationToken ?? TestContext.Current.CancellationToken);
 
+    /// <summary>The watch of the gateway on whether the exchange answers, which pauses new entries where it does not.</summary>
+    public IExchangeOutages ExchangeOutages => _application.Services.GetRequiredService<IExchangeOutages>();
+
+    /// <summary>The market data of the exchange, as the application reads it.</summary>
+    public IExchangeMarketData MarketData => _application.Services.GetRequiredService<IExchangeMarketData>();
+
     /// <summary>What says which agents run cycles, of every user.</summary>
     public IRunningAgents RunningAgents => _application.Services.GetRequiredService<IRunningAgents>();
 
@@ -423,6 +429,17 @@ internal sealed class AccountsApplication : IDisposable
         RoleReassignment.RunAsync(
             new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
             cancellationToken ?? TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// Runs the job that tells the users whose agents run where the exchange is out, now, as the
+    /// scheduler does every minute. A test runs it itself: the scheduler of no application of
+    /// the tests does.
+    /// </summary>
+    public Task TellOfOutagesAsync(CancellationToken? cancellationToken = null) =>
+        _application.Services.GetRequiredKeyedService<IBackgroundJob>(EcnanibApplicationFactory.ExchangeOutageAlertsKey)
+            .RunAsync(
+                new BackgroundJobRun(_application.Services.GetRequiredService<TimeProvider>().GetUtcNow()),
+                cancellationToken ?? TestContext.Current.CancellationToken);
 
     /// <summary>The job that reassigns the roles of agents by strength, which only a test runs.</summary>
     public IBackgroundJob RoleReassignment =>

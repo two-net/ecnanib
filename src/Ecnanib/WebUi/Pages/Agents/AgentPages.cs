@@ -587,6 +587,11 @@ public static class AgentPages
         AgentStateCause.AccountDisabled =>
             "An operator of the service disabled your account while the agent ran, so the agent stopped running. Now " +
             "that your account is enabled again, resume the agent.",
+        AgentStateCause.CallsFailRepeatedly =>
+            "The AI provider of a role of the agent kept refusing the calls with your key while the agent ran: a limit on " +
+            "the requests of the key, an account at the provider that has run out, or a model that does not take the call. " +
+            "The notification of the agent says which role. See to it at the provider, or give the role another model, " +
+            "and resume the agent.",
         _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, "The cause has no description."),
     };
 

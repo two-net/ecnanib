@@ -172,8 +172,17 @@ public class TeamRetryTests
         Assert.Equal((RoleValidation.Rejected, "riskFraction: OutOfRange", answered), (first.Validation, first.Rejection, first.Result));
     }
 
+    // The last two are of a call that the gateway held back: the calls to the provider, or the
+    // calls with the key, are paused after failures in a row (NFR-REL-4).
     public static TheoryData<Role, AiCallOutcome> CallsThatAreNotMadeAgain => new MatrixTheoryData<Role, AiCallOutcome>(
-        Enum.GetValues<Role>(), [AiCallOutcome.Failed, AiCallOutcome.AuthenticationFailed, AiCallOutcome.ModelNotFound]);
+        Enum.GetValues<Role>(),
+        [
+            AiCallOutcome.Failed,
+            AiCallOutcome.AuthenticationFailed,
+            AiCallOutcome.ModelNotFound,
+            AiCallOutcome.ProviderPaused,
+            AiCallOutcome.KeyPaused,
+        ]);
 
     [Theory]
     [MemberData(nameof(CallsThatAreNotMadeAgain))]
@@ -187,8 +196,9 @@ public class TeamRetryTests
 
         await application.RunAsync(Quarter).Within();
 
-        // The same key and the same model would be refused again, and a provider that is down
-        // is not asked twice: the role gave no result.
+        // The same key and the same model would be refused again, a provider that is down is
+        // not asked twice, and a call that is held back would be held back again: the role gave
+        // no result.
         var call = Assert.Single(application.Records.Of(agent).Of(role));
 
         Assert.Single(models.CallsOf(role));

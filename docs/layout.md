@@ -131,7 +131,7 @@ It uses no container query, no `:has()`, and no nesting.
 
 ## The operator status screen and its parts
 
-Every screen of the specification is built. The last was the operator status screen, `/operator`, which shows how the service stands: the scheduler, the queue of the cycles, the catalog syncs, the request limits and the clock of Binance, the sizes of the tables, and the rates of errors, each under a heading of its own and most of them as a table (FR-OPS-2). It says of when it is, and is loaded again for how the service stands now. See "The operator status screen" in [ownership.md](ownership.md).
+Every screen of the specification is built. The last was the operator status screen, `/operator`, which shows how the service stands: the scheduler, the queue of the cycles, the catalog syncs, the calls to the AI providers, the request limits, the clock, and the outages of Binance, the sizes of the tables, and the rates of errors, each under a heading of its own and most of them as a table (FR-OPS-2, NFR-REL-4). It says of when it is, and is loaded again for how the service stands now. See "The operator status screen" in [ownership.md](ownership.md).
 
 **What an operator does is a part of that screen, on a page of its own,** which the screen leads to with a link, and which leads back. None of them is a screen of the specification, as the page that deletes an account is none: the bar marks "Operator status" on each, as a part of that screen. Each is for operators alone, and is an operator function: see "Operators" in [ownership.md](ownership.md).
 
@@ -161,7 +161,7 @@ No test of these drives a browser. `AccessibilityBrowserTests` does, when a run 
 3. Register, sign in, and open each screen of the map at both widths. On the phone, "Menu" opens and closes the navigation, by a pointer and by the keyboard, in any order of the two, and a page that is opened from it has it closed. The link of the open screen is marked.
 4. With the keyboard alone: a page that opens has the focus at its heading, so the first Tab is in the content. Shift and Tab from there go back through the bar to "Skip to the content", which shows while it has the focus. Enter follows it, and the next Tab is in the content again. In Safari, a link is a stop of the keyboard with Option and Tab.
 5. Do the same in Chrome or Edge, in Firefox, and in Safari. The console of the browser shows no report of the content security policy.
-6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status". The screen shows the seven readings of the service, at both widths. It leads to "Global halt", where one button switches the halt on, and then off, to "Disable or enable an account", where the address of a second account finds it, and one button disables it and then enables it, and to "Sync the model catalog", where one button syncs the providers that the file holds a catalog key for.
+6. List your address under `Application:Operators` in the configuration file, start again, and the bar has "Operator status". The screen shows the nine readings of the service, at both widths. It leads to "Global halt", where one button switches the halt on, and then off, to "Disable or enable an account", where the address of a second account finds it, and one button disables it and then enables it, and to "Sync the model catalog", where one button syncs the providers that the file holds a catalog key for.
 
 ## Not built yet
 

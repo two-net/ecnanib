@@ -36,6 +36,11 @@ public static class AiProviderGatewayModule
         services.AddSingleton<IAiProviderAdapter, GptAdapter>();
         services.AddSingleton<IAiProviderAdapter, GrokAdapter>();
 
+        // What pauses the calls to a provider, or the calls with a key, after failures in a row,
+        // and where they are paused now (NFR-REL-4).
+        services.AddSingleton<AiCallBreakers>();
+        services.AddSingleton<IAiCallPauses>(provider => provider.GetRequiredService<AiCallBreakers>());
+
         // Whether a provider takes a key: a call that only reads, one for each provider (FR-KEY-3).
         services.AddSingleton<IAiKeyChecks, AiKeyCheckRouter>();
         services.AddSingleton<KeyCheckCall>();

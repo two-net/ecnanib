@@ -60,6 +60,11 @@ public class TrackedFileTests
         // a second from them, which is half of what Binance takes a signed call with (FR-BIN-5).
         Assert.Equal(60, settings.Binance.ClockCheckSeconds);
         Assert.Equal(500, settings.Binance.ClockToleranceMilliseconds);
+
+        // Five calls in a row that Binance leaves without an answer are an outage, which the
+        // users whose agents run there are told of when it has lasted a minute (NFR-REL-4).
+        Assert.Equal(5, settings.Binance.OutageFailures);
+        Assert.Equal(60, settings.Binance.OutageAlertSeconds);
         Assert.Equal(
             new AggressiveSettings(
                 RiskPerTradePercent: new Bounded<decimal>(0.5m, 2m, 5m),
@@ -112,5 +117,16 @@ public class TrackedFileTests
                 Registration: new AttemptLimitSettings(PerClient: 10, PerAddress: 3, Minutes: 60),
                 PasswordReset: new AttemptLimitSettings(PerClient: 10, PerAddress: 3, Minutes: 60)),
             settings.Limits);
+
+        // The calls to an AI provider pause after five failures in a row, and the calls with a
+        // key after three refusals in a row: for a minute at first, and for an hour at the most.
+        // The third pause in a row of a key moves the agent to Attention required, unless three
+        // keys of the provider are refused at once (NFR-REL-4).
+        Assert.Equal(
+            new BreakersSettings(
+                AiProvider: new AiProviderBreakerSettings(Failures: 5, PauseSeconds: 60, LongestPauseSeconds: 3600),
+                AiKey: new AiKeyBreakerSettings(
+                    Failures: 3, PauseSeconds: 60, LongestPauseSeconds: 3600, TripsBeforeAttention: 3, ProviderWideKeys: 3)),
+            settings.Breakers);
     }
 }

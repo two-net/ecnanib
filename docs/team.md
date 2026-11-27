@@ -267,6 +267,8 @@ public static class StaleLimit
 | **A call is made with the key of the agent's own user** (FR-KEY-1). | The user is that of the agent's row. There is no key of the service to fall back on. |
 | **A role whose user has no key that can be used is not called.** | No key, a key that its provider refused, or one that does not decrypt. The role gave no result, and is not asked again. The call is recorded as `NoKey`. |
 | **A key that a provider refuses is checked again.** | A call that ends as `AuthenticationFailed` starts `IKeyValidation.RevalidateAiKeyAsync`, once in a cycle for each provider. A key that the provider then refuses is marked invalid, and the agents that run with it move to Attention required (FR-KEY-3, FR-KEY-10). The check is started and not waited for, and is over when the cycle is. |
+| **A call that the gateway holds back is not made.** | The calls to its provider, or the calls with the key, are paused after failures in a row (NFR-REL-4). The call is recorded as `ProviderPaused` or `KeyPaused`, with no time and no tokens, and the role gave no result. |
+| **A provider that keeps refusing the key of the user moves the agent to Attention required.** | A call whose refusal began one more pause of the calls with the key says how many the key has had in a row: `AiCallResult.KeyTrips`. `CallTrouble` is told, once in a cycle for each provider, as the check of a key is started, and never in a test cycle. See "Calls that fail repeatedly" in [reliability.md](reliability.md). |
 | Every event of a call says its role. | The call is made inside `Correlation(Role: ...)`, so what the gateway logs of it carries the role with the user, the agent, and the cycle (NFR-LOG-3). |
 
 ## When a role gives no valid result
@@ -281,6 +283,7 @@ public static class StaleLimit
 | `Failed`: no connection, a limit of the provider, or a fault of it. | No |
 | `AuthenticationFailed`, `ModelNotFound`: the same key and the same model would be refused again. | No |
 | `NoKey`: no call was made. | No |
+| `ProviderPaused`, `KeyPaused`: no call was made, and none would be made now either. | No |
 
 A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle when a role gave no valid result:**
 
@@ -291,6 +294,7 @@ A role is called twice at most: `RoleRuns.Attempts`. **What becomes of the cycle
 | Risk Manager | **Ends with no decision and no new entry.** It is asked only about a plan that opens a position, so a review that fails blocks no close. |
 
 - **A cycle with no decision has ended, and has not failed.** `RunAsync` returns, the job counts the cycle as ended, and the record says `NoDecision`. It is a warning in the log, and no error: a provider that does not answer is no fault of the service.
+- **A provider that does not answer ends the cycles that need it, and no others** (NFR-REL-4): see "One provider's outage" in [reliability.md](reliability.md).
 - An open position stays as it is, with its protective orders, which rest on the exchange.
 
 ## The outcome of a cycle
@@ -371,7 +375,7 @@ public interface ICycleRecords
 | `latency_ms` | How long the call took, as the gateway measured it, in whole milliseconds. |
 | `input_tokens`, `output_tokens` | What the provider counted, or null when it did not say: a call that timed out or failed has none. |
 | `live_searches` | How many searches the provider ran, for a call that offered the model a search (FR-CYC-3). Null for a call that offered none. |
-| `outcome` | How the call ended, as the name of a member of `RoleCallOutcome`: the six outcomes of the gateway, `NoKey`, or `Canceled`. |
+| `outcome` | How the call ended, as the name of a member of `RoleCallOutcome`: the eight outcomes of the gateway, `NoKey`, or `Canceled`. |
 | `validation` | `Valid`, `Rejected`, or `NoResult` for a call that gave no answer. |
 | `rejection` | Why an answer was rejected, as `RoleRejection` writes it. |
 | `result` | What the model answered, on one line of JSON, with its rationale. An answer that was rejected is kept as well. Null for a call that gave no answer, and for an answer that is no JSON, is too long, or holds what a prompt never holds. |
@@ -509,7 +513,7 @@ public sealed record UsageFigures(
 | Rule | Detail |
 |---|---|
 | **Nothing of it is stored.** | It is worked out from the rows of `role_outputs` each time it is asked for, so it says what they say. The calls of an agent go with the agent when it is deleted, and its usage with them. |
-| **Every call that was made counts.** | Whatever came of it, and in a test cycle as in a cycle that a close started. A row with the outcome `NoKey` is no call: none was made. |
+| **Every call that was made counts.** | Whatever came of it, and in a test cycle as in a cycle that a close started. A row with the outcome `NoKey`, `ProviderPaused`, or `KeyPaused` is no call: none was made. |
 | **Demo and Live are added up.** | A provider charges a key the same for a call in each. Elsewhere the two are never added up (FR-BIN-11): this is what the calls cost, and no result of trading. |
 | **A day is a UTC day.** | A call is of the day of its `called_at`, whatever time zone the database goes by. A period ends with today, and starts at midnight UTC of its first day. |
 | **What is not known is null, and never zero.** | `UsageFigures.Of` is the one rule. A call whose provider counted no tokens is among `Calls` and among `NotCounted`: it timed out or failed, and may be charged for all the same. The tokens are of the calls that were counted, and are null when none was. |
@@ -597,7 +601,6 @@ An event names a field of a schema and a rule, an action, and an outcome, and a 
 - Leaving out the calls of a cycle that can decide nothing: one that is stale as it starts, for an agent that holds no position. Its team is called, and what it plans ends as `Hold` or `Stale`.
 - Saying in the record of a cycle which lessons its prompts recalled: see "Not built yet" in [experience.md](experience.md).
 - Moving an agent to Attention required when a call reports that its model does not exist (FR-CAT-8). The call is recorded as `ModelNotFound`, and the cycle ends as its role says. The catalog marks a model that its provider no longer lists, which moves the agents that run with it: see "When a model goes" in [agents.md](agents.md).
-- Breakers for a provider or a key that fails repeatedly (NFR-REL-4). A call that ends as `Failed` is not made again, and the next close calls again.
 - Recording a cycle that never started: one that was skipped, or whose agent no longer ran. It is no run of a team, and leaves its events in the log: see "Not built yet" in [cycles.md](cycles.md).
 - The cycles before the latest 50. A cycle is shown once it is recorded, on a page of its own, and the latest five that a candle close started are on the screen of their agent as well, each with every role's output and the Risk Guard result (FR-RPT-2): see "Decision timeline" in [agent-screen.md](agent-screen.md).
 - What a role answered, while its cycle runs. A cycle that runs says the steps that it has come to on the pages of its agent, and its timeline shows what each role answered once the cycle is recorded: see "The progress of a cycle" in [cycles.md](cycles.md).

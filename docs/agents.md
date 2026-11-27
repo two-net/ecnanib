@@ -188,7 +188,7 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `Running` | Its user starts or resumes it, or the service resumes it when the UTC day in which its daily loss limit halted it is over (FR-RSK-8). | Yes | Yes | Managed by the team | Yes |
 | `Paused` | Its user pauses it. | No | No | Stays open with its protective orders | Yes |
 | `Halted` | A loss limit of the Risk Guard is reached while it runs: its daily loss limit, or its drawdown limit (FR-RSK-8). See "Halting an agent". | No | No | Closed by the system | Yes |
-| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2), or an operator disables the account of its user (FR-OPS-4). The other causes of the specification are not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
+| `AttentionRequired` | The Binance key that it runs with is deleted or refused, the key of an AI provider that a role of its team uses is, the provider of a model of its team no longer offers the model, its position is open with no stop-loss and could not be closed (FR-RSK-7), the account of its user at Binance conflicts with how an agent of Futures trades (FR-BIN-F2), an operator disables the account of its user (FR-OPS-4), or an AI provider keeps refusing the calls with the key of its user (NFR-REL-4). The other cause of the specification is not built. | No | No | Stays open with its protective orders, unless the cause says that it has none | Yes |
 | `Stopped` | Its user stops it. | No | No | Closed or kept, as its user chose | No |
 
 - **Only a running agent runs cycles and opens positions.** `AgentStates.RunsCycles` and `AgentStates.TakesNewEntries` say so, for what runs a cycle and what places an entry to ask. What starts the cycles asks `IRunningAgents`, which goes by `AgentStates.RunsCycles`: when a candle closes, and again as the turn of a cycle comes. See "What other components ask of Agents".
@@ -248,6 +248,8 @@ An agent has one of the six states of the specification (SRS 3.3). It is created
 | `DailyLossLimitReached` | Its loss in the UTC day reached its daily loss limit, while it ran: the service closes its position, and halts it until the next UTC day (FR-RSK-8). |
 | `DrawdownLimitReached` | Its equity fell from its peak by its drawdown limit, while it ran: the service closes its position, and halts it until its user resumes it (FR-RSK-8). |
 | `DailyLossHaltEnded` | The UTC day in which its daily loss limit halted it was over, and the service resumed it (FR-RSK-8). |
+| `AccountDisabled` | An operator disabled the account of its user, while it ran (FR-OPS-4). |
+| `CallsFailRepeatedly` | An AI provider kept refusing the calls with the key of its user, while it ran: the calls with the key were paused and made again several times in a row, and the provider took none (NFR-REL-4). |
 
 - What changes the state of an agent adds the members of its causes when it is built.
 - **A change says the mode that the agent was in when it happened,** and keeps saying it when the agent is switched (FR-BIN-11). A switch of the mode is no change of the state, and has no cause: the audit trail has it. See "Demo is labeled as Demo".
@@ -310,7 +312,7 @@ Futures agents use isolated margin and one-way position mode. The system does no
 
 ### What places the orders asks
 
-The Decision Engine places the orders of an agent, and asks Agents two things for it, through `IAgentTrading`:
+The Decision Engine runs the cycles and places the orders of an agent, and asks Agents two things for it, through `IAgentTrading`:
 
 ```csharp
 public interface IAgentTrading
@@ -324,10 +326,11 @@ public interface IAgentTrading
 | Member | What it does |
 |---|---|
 | `StateUnderLockAsync` | Says the state that the agent is in now, read under the lock of its account, inside the transaction that writes an order of the agent. The lock is the one that the controls of its user take. So an entry and a stop of the agent's user cannot cross: either the entry is written first, and the stop finds it and asks for the choice, or the agent is stopped first, and no entry is written (`AgentStates.TakesNewEntries`). It changes nothing. |
-| `RequireAttentionAsync` | Moves an agent that runs to Attention required, with the cause that it is given. `PositionUnprotected`: its position is open with no stop-loss on the exchange, and could not be closed at market either (FR-RSK-7). `ExchangeSettingConflict`: the account of its user at Binance conflicts with how it trades (FR-BIN-F2). It takes no other cause. An agent in any other state stays as it is: one that its user paused or stopped is not made to look as if it could be resumed for this. |
+| `RequireAttentionAsync` | Moves an agent that runs to Attention required, with the cause that it is given. `PositionUnprotected`: its position is open with no stop-loss on the exchange, and could not be closed at market either (FR-RSK-7). `ExchangeSettingConflict`: the account of its user at Binance conflicts with how it trades (FR-BIN-F2). `CallsFailRepeatedly`: an AI provider keeps refusing the calls with the key of its user, which the calls were paused for and made again several times in a row (NFR-REL-4): see "Calls that fail repeatedly" in [reliability.md](reliability.md). It takes no other cause. An agent in any other state stays as it is: one that its user paused or stopped is not made to look as if it could be resumed for this. |
 
 - Both take the user and the agent by their ids, which are those of the agent's own row: they are asked by background work, where nobody is signed in. See [ownership.md](ownership.md).
-- **The move is the service's doing, and no action of a user.** The change of the state records it, and the audit trail does not. The user is told with a notification, which what places the orders raises: see [notifications.md](notifications.md).
+- **The move is the service's doing, and no action of a user.** The change of the state records it, and the audit trail does not. The user is told with a notification, which what asked for the move raises: see [notifications.md](notifications.md).
+- **A provider that answers nobody is no cause.** Its calls are paused and made again, and its agents run on. Only a provider that answers, and refuses the key of one user, moves that user's agent.
 - The page of the state says of such an agent that its position is open with no stop-loss, that the service keeps trying to protect or close it, and how to close it by hand.
 
 ### Halting an agent
@@ -430,6 +433,14 @@ Accounts tells whatever depends on an account when an operator disables it, thro
 - **The service does it, and no user of the agent:** the change is recorded as a change of the state, and not in the audit trail, which has the disabling of the account, under the operator.
 - **Its user is told of each agent that is moved** (FR-NTF-1), with a notification of the type `AttentionRequired` about the agent, which says that an operator disabled the account, that an open position stays open with its stop-loss order, and what to do once the account is enabled. They read it when they are signed in again, and by email where they opted in.
 - **Enabling the account moves no agent.** Its user signs in, reads why the agent waits, and resumes it.
+
+### When the exchange is out
+
+The Exchange Gateway says where Binance is out, and pauses new entries there: it may tell no user, and knows of none. Agents knows whose agents run where, so `ExchangeOutageAlerts` tells them, and the job `exchange-outage-alerts` has it do so every minute (NFR-REL-4). See "A Binance outage" in [reliability.md](reliability.md).
+
+- **No agent is moved.** An agent whose market is out stays `Running`: its cycles go on, and what they plan to enter is not entered, with `ExchangeOutage` as why. Entries go on by themselves when Binance answers.
+- **Each user who has an agent that runs there is told once,** when the outage has lasted `Binance:OutageAlertSeconds`, and again when Binance answers: a notification of the type `ExchangeOutage`, about no agent and about the environment.
+- It reads which agents run across users, as `IRunningAgents` does: a job has no user who is signed in, and takes the owner from the row. See [ownership.md](ownership.md).
 
 ## The mode
 
@@ -741,18 +752,22 @@ The role {Role} of agent {AgentId} of user {UserId} was not given the model {Mod
 The roles of agent {AgentId} of user {UserId} could not be reassigned by strength
 The user {UserId} could not be told that a role of agent {AgentId} was reassigned
 {RoleCount} roles of {AgentCount} agents were reassigned by strength
+Agent {AgentId} of user {UserId} requires attention: {AgentStateCause}
+{UserCount} users whose agents run on {Market} {Environment} were told that Binance is out there
+{UserCount} users whose agents run on {Market} {Environment} were told that Binance answers again there
+The user {UserId} could not be told of the outage of Binance on {Market} {Environment}
 ```
 
-An event names a user and an agent by their ids, and never holds a name or a number of the settings. What keeps a team from working is said by the names of the roles and of what is wrong with each. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, or that marks the model, and stands for a change that is stored with it. So is the event of an agent that is halted, which is a warning, inside the transaction of what watches the loss limits. An agent that runs again after a daily halt, and one that stays halted, are information, and a halt that could not be ended for an error of the application is an error, said once for the agent. A role that the service gave another model by strength is information, one event for each role, written after the change is stored, and so is a role that was not given its model because the key of its user can no longer use it. A run of the reassignment says how much it did only when it did something. An agent whose roles could not be reassigned for an error of the application is an error, said once for the agent, and so is a notification that could not be stored.
+An event names a user and an agent by their ids, and never holds a name or a number of the settings. What keeps a team from working is said by the names of the roles and of what is wrong with each. A position that could not be closed is a warning. The event of an agent that requires attention is written inside the transaction that changes the key, or that marks the model, and stands for a change that is stored with it. So is the event of an agent that is halted, which is a warning, inside the transaction of what watches the loss limits. An agent that runs again after a daily halt, and one that stays halted, are information, and a halt that could not be ended for an error of the application is an error, said once for the agent. A role that the service gave another model by strength is information, one event for each role, written after the change is stored, and so is a role that was not given its model because the key of its user can no longer use it. A run of the reassignment says how much it did only when it did something. An agent whose roles could not be reassigned for an error of the application is an error, said once for the agent, and so is a notification that could not be stored. An agent that what runs its cycles or places its orders moved to Attention required is a warning, written after the change is stored. That users were told of an outage of Binance, or of its end, is information with how many, and a user who could not be told is an error.
 
 ## Not built yet
 
 - Stopping the cycle of an agent that its user pauses or stops while the cycle runs. Whether an agent runs is asked when its cycle starts, and again, under the lock of its account, as its entry is written: no entry is placed for an agent that no longer runs.
 - Holding a stored risk setting to bounds that the file is given later. An agent whose value is outside bounds that were narrowed since keeps it, and so does a copy of it. Its form shows the value, and is saved only once the value is within the bounds.
-- The other causes of Attention required: a call that reports that a model does not exist (FR-CAT-8), and calls that fail repeatedly (NFR-REL-4). The first takes an operation of Agents that a cycle can ask: what runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
+- The other cause of Attention required: a call that reports that a model does not exist (FR-CAT-8). What runs the team records such a call as `ModelNotFound`, and the cycle ends as its role says, but nothing moves the agent for it. See "Not built yet" in [team.md](team.md).
 - Moving an agent that runs when its user's key for a provider can no longer use a model of its team. Which models a key can use is recorded when its provider lists them: when a key is stored or replaced, and at each check. A list that comes to lack the model, and a key that is replaced, tell Agents nothing, and the list is written apart from the lock of the account, so a start may go by the list as it was a moment before. Such an agent is refused the next time it is started or resumed. Until then its calls of that model fail, and nothing moves it for them: see the item above. See "The models a key can use" in [credentials.md](credentials.md).
 - Moving an agent that runs when the configuration file stops allowing a model of its team. Such a model can no longer be selected, and the agent is not started or resumed with it, but nothing tells an agent that runs. See "Not built yet" in [catalog.md](catalog.md).
-- Telling anyone of the causes of Attention required that are not built, in the items above. A user is told with a notification of every cause that an agent comes to wait for them for, that an agent was halted, that a daily halt has ended, and that an agent stays halted after it because its key or its team keeps it: see [notifications.md](notifications.md). A change of state shows on the pages of the agent without a manual refresh: see [live-updates.md](live-updates.md).
+- Telling anyone of the cause of Attention required that is not built, in the items above. A user is told with a notification of every cause that an agent comes to wait for them for, that an agent was halted, that a daily halt has ended, and that an agent stays halted after it because its key or its team keeps it: see [notifications.md](notifications.md). A change of state shows on the pages of the agent without a manual refresh: see [live-updates.md](live-updates.md).
 - Keeping a model that was only measured in Demo out of the roles of an agent in Live. A recommendation uses Live data where there is enough, otherwise Demo data, and says which (FR-EXP-9): so a model that did well in Demo is recommended for an agent in Live, and given to it by the automatic reassignment, with "Demo data" said on the form and in the notification.
 - Keeping strength from giving several roles to one provider. The rule is of each role by itself. The form warns of the team that it would save, and the notification says so, and nothing prevents it (FR-TEAM-5).
 - Crediting a trade to the models that decided it when its roles are reassigned between the decision and the entry. A cycle is handed the team when its turn comes, and the models of a position are read when it is opened: a reassignment that is stored between the two, for an agent that held nothing, credits the trade to the models that the roles were given. A model that a user gives a role at that moment does the same. See "The record of an order" in [orders.md](orders.md).

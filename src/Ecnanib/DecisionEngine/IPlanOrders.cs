@@ -136,6 +136,12 @@ public enum NoEntryReason
     /// <summary>New entries are paused for the market and the environment: the clock of the service is not near the exchange's (FR-BIN-5).</summary>
     EntriesPaused,
 
+    /// <summary>
+    /// New entries are paused for the market and the environment: the exchange left several
+    /// calls in a row without an answer there, which is an outage (NFR-REL-4).
+    /// </summary>
+    ExchangeOutage,
+
     /// <summary>The symbol takes no stop, or the exchange did not say its rules: no position is opened where no stop-loss can rest.</summary>
     NoStopOrders,
 

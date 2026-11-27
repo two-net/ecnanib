@@ -333,6 +333,53 @@ public class LessonWritingJobTests
         Assert.Equal(("Warning", "NoResult", "BTCUSDT"), (ended.Level, ended.Text("LessonOutcome"), ended.Text("Symbol")));
     }
 
+    [Theory]
+    [InlineData(AiCallOutcome.ProviderPaused)]
+    [InlineData(AiCallOutcome.KeyPaused)]
+    public async Task A_lesson_whose_call_is_held_back_while_the_calls_are_paused_is_left_for_a_later_run(AiCallOutcome paused)
+    {
+        using var writing = new Writing();
+        var application = writing.Application;
+        var user = await application.RegisterVerifiedAsync(Ada);
+        var agent = await application.GiveAgentAsync(user.Id, Now.AddDays(-1));
+
+        await application.GiveCycleAsync(user.Id, agent, Now.AddHours(-1));
+
+        // The gateway holds the call back: the calls to the provider, or the calls with the key,
+        // are paused after failures in a row (NFR-REL-4). Nothing was sent, and nothing billed.
+        writing.Models.SaysLesson(new AiCallResult(paused, null, null, TimeSpan.Zero));
+
+        await application.WriteLessonsAsync();
+
+        // The gateway was asked once, and not once more. The lesson has no outcome: it waits,
+        // and the position is not one that has none.
+        Assert.Single(writing.Models.LessonCalls);
+        Assert.Equal((0, 1, 0), await AllCountsAsync(application, user.Id));
+
+        // It is not an ending of the lesson, and no warning: that the calls are paused was said
+        // when the pause began.
+        Assert.DoesNotContain(application.Events(), written => written.Area == WritingArea);
+
+        var left = Assert.Single(
+            application.Events(),
+            written => written.Template?.StartsWith("The lesson of a position of agent {AgentId} is left for a later run", StringComparison.Ordinal) == true);
+
+        Assert.Equal(("Information", "claude", paused.ToString()), (left.Level, left.Text("Provider"), left.Text("AiCallOutcome")));
+
+        // It was taken before the gateway was asked, so it is due again an hour later, as a
+        // lesson is that a run left when it was stopped. By then the calls are made again.
+        writing.Clock.Set(Now.AddMinutes(59));
+        await application.WriteLessonsAsync();
+
+        Assert.Single(writing.Models.LessonCalls);
+
+        writing.Clock.Set(Now.AddHours(1));
+        await application.WriteLessonsAsync();
+
+        Assert.Equal(2, writing.Models.LessonCalls.Count);
+        Assert.Equal((1, 0, 0), await AllCountsAsync(application, user.Id));
+    }
+
     [Fact]
     public async Task A_key_that_the_provider_refuses_is_checked_again_and_the_model_is_not_called_once_more()
     {

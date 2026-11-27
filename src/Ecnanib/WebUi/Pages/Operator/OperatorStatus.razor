@@ -11,8 +11,10 @@
 @inject IBackgroundWorkStatus Work
 @inject ICycleLoad Cycles
 @inject ICatalogSync Catalog
+@inject ICallPauses Calls
 @inject IExchangeLimits Limits
 @inject IExchangeClock Clock
+@inject IExchangeOutages Outages
 @inject IDatabaseSizes Sizes
 @inject ILoggedProblems Problems
 @inject TimeProvider Time
@@ -25,9 +27,10 @@
 
     It shows the health of the scheduler, the depth of the queue of the cycles, the last catalog
     sync of each provider, the use of the request limits of Binance, the drift of the clock, the
-    sizes of the tables, and the rates of errors. Each is said by the component that keeps it,
-    behind an interface, and each is of the service: none of them names a user, an agent, or a
-    key, so the screen shows nothing of any user (FR-OPS-5).
+    sizes of the tables, and the rates of errors. With them it shows where the calls to the AI
+    providers are paused, and where Binance is out (NFR-REL-4). Each is said by the component
+    that keeps it, behind an interface, and each is of the service: none of them names a user,
+    an agent, or a key, so the screen shows nothing of any user (FR-OPS-5).
 
     It only shows. It has no form, so nothing of it is recorded in the audit trail: what an
     operator does is on a page of its own, which this screen leads to with a link. See
@@ -128,6 +131,41 @@
     <CatalogSyncs Syncs="read.Syncs" />
 
     <section>
+        <h2 id="@OperatorStatusPages.CallsId">@OperatorStatusPages.CallsHeading</h2>
+
+        <p>@OperatorStatusPages.CallsExplained</p>
+
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.CallsId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.CallsCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.CallProviderHeading</th>
+                        <th scope="col">@OperatorStatusPages.CallStateHeading</th>
+                        <th scope="col">@OperatorStatusPages.CallFailuresHeading</th>
+                        <th scope="col">@OperatorStatusPages.CallTripsHeading</th>
+                        <th scope="col">@OperatorStatusPages.KeysInTroubleHeading</th>
+                        <th scope="col">@OperatorStatusPages.KeysPausedHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pause in read.Calls)
+                    {
+                        <tr>
+                            <th scope="row">@NameOf(read, pause)</th>
+                            <td>@OperatorStatusPages.NameOf(pause, Times)</td>
+                            <td>@OperatorStatusPages.Count(pause.Failures)</td>
+                            <td>@OperatorStatusPages.Count(pause.Trips)</td>
+                            <td>@OperatorStatusPages.Count(pause.KeysInTrouble)</td>
+                            <td>@OperatorStatusPages.Count(pause.KeysPaused)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
         <h2 id="@OperatorStatusPages.LimitsId">@OperatorStatusPages.LimitsHeading</h2>
 
         <p>@OperatorStatusPages.LimitsExplained</p>
@@ -196,6 +234,39 @@
                             <td>@OperatorStatusPages.Milliseconds(clock.RoundTrip)</td>
                             <td>@OperatorStatusPages.Read(clock.ReadAt, Times)</td>
                             <td>@OperatorStatusPages.Milliseconds(clock.Tolerance)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2 id="@OperatorStatusPages.OutagesId">@OperatorStatusPages.OutagesHeading</h2>
+
+        <p>@OperatorStatusPages.OutagesExplained</p>
+
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.OutagesId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.OutagesCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.MarketHeading</th>
+                        <th scope="col">@OperatorStatusPages.EnvironmentHeading</th>
+                        <th scope="col">@OperatorStatusPages.AnswersHeading</th>
+                        <th scope="col">@OperatorStatusPages.UnansweredHeading</th>
+                        <th scope="col">@OperatorStatusPages.AnsweredHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var answers in read.Outages)
+                    {
+                        <tr>
+                            <th scope="row">@AgentPages.NameOf(answers.Market)</th>
+                            <td>@AgentPages.NameOf(answers.Environment)</td>
+                            <td>@OperatorStatusPages.NameOf(answers, Times)</td>
+                            <td>@OperatorStatusPages.Count(answers.Unanswered)</td>
+                            <td>@OperatorStatusPages.Answered(answers.AnsweredAt, Times)</td>
                         </tr>
                     }
                 </tbody>
@@ -309,19 +380,28 @@
             await Work.ReadAsync(cancellationToken),
             Cycles.Now(),
             await Catalog.StatusAsync(cancellationToken),
+            Calls.Now(),
             Limits.Usage(),
             Clock.Drift(),
+            Outages.Answers(),
             await Sizes.ReadAsync(cancellationToken),
             Problems.Read());
     }
+
+    // What a provider is called, as the catalog says it, or its code where the catalog has none
+    // of that code: a name is no text of the page.
+    private static string NameOf(Reading read, CallPause pause) =>
+        read.Syncs.FirstOrDefault(sync => sync.Provider == pause.Provider)?.ProviderName ?? pause.Provider.Value;
 
     private sealed record Reading(
         DateTimeOffset At,
         IReadOnlyList<BackgroundJobStatus> Jobs,
         CycleLoad? Load,
         IReadOnlyList<ProviderSyncStatus> Syncs,
+        IReadOnlyList<CallPause> Calls,
         IReadOnlyList<ExchangeLimitUsage> Limits,
         IReadOnlyList<ExchangeClockDrift> Clocks,
+        IReadOnlyList<ExchangeAnswers> Outages,
         IReadOnlyList<TableSize> Tables,
         LoggedProblemCounts Problems);
 }

@@ -542,6 +542,8 @@ public static class CyclePages
         (RoleCallOutcome.Failed, _) => "Call failed",
         (RoleCallOutcome.NoKey, _) => "Not called",
         (RoleCallOutcome.Canceled, _) => "Stopped",
+        (RoleCallOutcome.ProviderPaused, _) => "Provider paused",
+        (RoleCallOutcome.KeyPaused, _) => "Key paused",
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "No such outcome."),
     };
 
@@ -566,6 +568,13 @@ public static class CyclePages
             (RoleCallOutcome.NoKey, _) => "No call was made: you have no key for this provider that can be used.",
             (RoleCallOutcome.Canceled, _) =>
                 "The call was under way when the cycle was stopped. The provider may have charged for it.",
+            (RoleCallOutcome.ProviderPaused, _) =>
+                "No call was made: the calls to this provider were paused, because it had left several calls in a row without " +
+                "an answer, whoever made them. They are made again by themselves when the pause is over.",
+            (RoleCallOutcome.KeyPaused, _) =>
+                "No call was made: the calls with your key for this provider were paused, because the provider had refused " +
+                "several in a row. That is a limit on the requests of the key, an account at the provider that has run out, " +
+                "or a model that does not take the call. They are made again by themselves when the pause is over.",
             _ => throw new ArgumentOutOfRangeException(nameof(call), call.Outcome, "No such outcome."),
         };
     }
@@ -642,7 +651,9 @@ public static class CyclePages
     {
         ArgumentNullException.ThrowIfNull(call);
 
-        var took = call.Outcome == RoleCallOutcome.NoKey ? null : $"It took {Seconds(TimeSpan.FromMilliseconds(call.LatencyMs))}.";
+        // A call that was not made took no time: with no key, or while the calls were paused.
+        var made = call.Outcome is not (RoleCallOutcome.NoKey or RoleCallOutcome.ProviderPaused or RoleCallOutcome.KeyPaused);
+        var took = made ? $"It took {Seconds(TimeSpan.FromMilliseconds(call.LatencyMs))}." : null;
         var tokens = (call.InputTokens, call.OutputTokens) switch
         {
             ({ } input, { } output) => $"The provider counted {Whole(input)} tokens in and {Whole(output)} tokens out.",
@@ -847,6 +858,9 @@ public static class CyclePages
         NoEntryReason.NoSizeOrStopLoss => "The order had no quantity above zero, or the plan had no stop-loss.",
         NoEntryReason.EntriesPaused =>
             "New entries were paused: the clock of the service was not close enough to Binance's, or could not be compared with it.",
+        NoEntryReason.ExchangeOutage =>
+            "New entries were paused: Binance had left several calls in a row without an answer. No position is opened while " +
+            "Binance is out, and entries go on by themselves when it answers again.",
         NoEntryReason.NoStopOrders =>
             "The symbol takes no stop order, or Binance did not say its rules. No position is opened where no stop-loss can rest.",
         NoEntryReason.NoPairOrders =>

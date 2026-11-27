@@ -3,11 +3,13 @@ using Ecnanib.Platform.Persistence;
 namespace Ecnanib.Agents;
 
 /// <summary>
-/// What whatever places the orders of an agent asks of Agents: the state that the agent is in
-/// as an order of it is written, under the lock that its user's controls take, and that the
-/// agent wait for its user when its position is left without protection (FR-RSK-7), or when the
-/// account of its user at the exchange stands in the way of its entries (FR-BIN-F2). Agents
-/// places no order. See docs/agents.md and docs/orders.md.
+/// What whatever runs the cycles and places the orders of an agent asks of Agents: the state
+/// that the agent is in as an order of it is written, under the lock that its user's controls
+/// take, and that the agent wait for its user when its position is left without protection
+/// (FR-RSK-7), when the account of its user at the exchange stands in the way of its entries
+/// (FR-BIN-F2), or when an AI provider keeps refusing the calls with the key of its user
+/// (NFR-REL-4). Agents places no order and calls no model. See docs/agents.md, docs/orders.md,
+/// and docs/reliability.md.
 /// </summary>
 /// <remarks>
 /// It is asked by background work, where nobody is signed in: it takes the user and the agent by
@@ -34,19 +36,21 @@ public interface IAgentTrading
 
     /// <summary>
     /// Moves an agent that runs to Attention required: because its position is open with no
-    /// stop-loss on the exchange and could not be closed at market either, or because a setting
-    /// of its user's account at the exchange conflicts with how it trades. An agent in any other
-    /// state stays as it is: one that its user paused or stopped is not made to look as if it
-    /// could be resumed for this.
+    /// stop-loss on the exchange and could not be closed at market either, because a setting of
+    /// its user's account at the exchange conflicts with how it trades, or because an AI
+    /// provider keeps refusing the calls with the key of its user. An agent in any other state
+    /// stays as it is: one that its user paused or stopped is not made to look as if it could be
+    /// resumed for this.
     /// </summary>
     /// <param name="userId">The user whose agent it is.</param>
     /// <param name="agentId">The agent.</param>
     /// <param name="cause">
-    /// Why: <see cref="AgentStateCause.PositionUnprotected"/> or
-    /// <see cref="AgentStateCause.ExchangeSettingConflict"/>.
+    /// Why: <see cref="AgentStateCause.PositionUnprotected"/>,
+    /// <see cref="AgentStateCause.ExchangeSettingConflict"/>, or
+    /// <see cref="AgentStateCause.CallsFailRepeatedly"/>.
     /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether the agent was moved.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The cause is none that what places the orders finds.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The cause is none that what runs the cycles finds.</exception>
     Task<bool> RequireAttentionAsync(Guid userId, Guid agentId, AgentStateCause cause, CancellationToken cancellationToken);
 }

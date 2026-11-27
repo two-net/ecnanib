@@ -63,6 +63,62 @@ public class PlanOrderTests
         Assert.Equal(2, application.Binance.Asked.Count);
     }
 
+    [Fact]
+    public async Task No_entry_is_placed_while_binance_is_out()
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync();
+
+        // Binance left several calls in a row without an answer (NFR-REL-4). The clock could not
+        // be read either, as it cannot in an outage: the record says that it was the outage.
+        application.Outages.Out = true;
+        application.Entries.Paused = true;
+
+        await application.PlaceAsync(agent, GuardCases.OpenLong);
+
+        // Nothing is asked of Binance for the entry, and no order is written.
+        Assert.Empty(application.Binance.Asked);
+        Assert.Empty(application.Binance.System.Calls);
+        Assert.Empty(await application.OrdersOfAsync(agent.Id));
+        Assert.Equal("ExchangeOutage", Assert.Single(application.Application.Events(), said => said.Template == NotEntered).Text("NoEntryReason"));
+
+        // Once Binance answers again, and its clock is read, the same plan is placed.
+        application.Outages.Out = false;
+        application.Entries.Paused = false;
+        await application.PlaceAsync(agent, GuardCases.OpenLong);
+
+        Assert.Equal(2, application.Binance.Asked.Count);
+    }
+
+    [Theory]
+    [InlineData(Market.Spot)]
+    [InlineData(Market.Futures)]
+    public async Task A_position_is_closed_and_its_protection_moved_while_new_entries_are_paused_for_an_outage(Market market)
+    {
+        using var application = new OrdersApplication();
+        var agent = await application.GiveAgentAsync(market: market);
+
+        await application.PlaceAsync(agent, market == Market.Spot ? GuardCases.OpenLong : GuardCases.OpenLongOnFutures);
+
+        // From here on new entries are paused, for an outage and for the clock. Only entries
+        // are: what reduces risk is sent whenever Binance takes it (NFR-REL-2).
+        application.Outages.Out = true;
+        application.Entries.Paused = true;
+
+        var before = application.Binance.OrderCalls.Count;
+
+        await application.PlaceAsync(agent, GuardCases.Close with { Market = market });
+
+        // The protection is taken off and the position is closed at market, as at any other time.
+        Assert.True(application.Binance.OrderCalls.Count > before);
+
+        var position = Assert.Single(await application.PositionsOfAsync(agent.Id));
+
+        Assert.Equal(ExitReason.TeamClose, position.ExitReason);
+        Assert.NotNull(position.ClosedAt);
+        Assert.DoesNotContain(application.Application.Events(), said => said.Template == NotEntered);
+    }
+
     [Theory]
     [InlineData(AgentState.Paused)]
     [InlineData(AgentState.Stopped)]

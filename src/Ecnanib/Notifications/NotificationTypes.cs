@@ -25,6 +25,7 @@ public static class NotificationTypes
         NotificationType.KeyInvalid => "Key invalid",
         NotificationType.ModelUnavailable => "Model unavailable",
         NotificationType.AgentResumed => "Agent runs again",
+        NotificationType.ExchangeOutage => "Exchange outage",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "The type has no description."),
     };
 
@@ -34,9 +35,11 @@ public static class NotificationTypes
     /// </summary>
     /// <remarks>
     /// The specification names no kind. An agent that is halted or waits for its user, a key
-    /// that is invalid, and a model that is unavailable stop an agent. A failure of an order or
-    /// of the protection of a position, and a position that approaches liquidation, put money
-    /// at risk. The others say what went as it should, or what the service put right.
+    /// that is invalid, and a model that is unavailable stop an agent. An exchange that is out
+    /// stops every agent of a market from opening a position, and its user is told the same
+    /// way when it answers again. A failure of an order or of the protection of a position, and
+    /// a position that approaches liquidation, put money at risk. The others say what went as
+    /// it should, or what the service put right.
     /// </remarks>
     public static bool IsCritical(NotificationType type) => type switch
     {
@@ -45,7 +48,8 @@ public static class NotificationTypes
             or NotificationType.KeyInvalid
             or NotificationType.ModelUnavailable
             or NotificationType.ProtectionFailure
-            or NotificationType.LiquidationWarning => true,
+            or NotificationType.LiquidationWarning
+            or NotificationType.ExchangeOutage => true,
         NotificationType.EntrySkipped
             or NotificationType.ReconciliationMismatch
             or NotificationType.RolesReassigned

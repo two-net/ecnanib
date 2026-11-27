@@ -1,7 +1,10 @@
 using System.Net;
 using AngleSharp.Html.Parser;
 using Ecnanib.AiProviderGateway;
+using Ecnanib.DecisionEngine;
+using Ecnanib.ExchangeGateway;
 using Ecnanib.Platform.BackgroundWork;
+using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
 using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Catalog;
@@ -10,7 +13,9 @@ using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Ecnanib.Tests.Settings;
 using Ecnanib.WebUi;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Ecnanib.Tests.Operator;
@@ -20,7 +25,9 @@ namespace Ecnanib.Tests.Operator;
 /// provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2).
 /// These tests read the screen as an operator opens it. Who it opens for is in
 /// <c>LayoutPageTests</c>, that it shows nothing of any user in <c>GlobalHaltTests</c>, and what
-/// each reading is worked out from in the tests of the component that keeps it.
+/// each reading is worked out from in the tests of the component that keeps it. With them the
+/// screen shows where the calls to the AI providers are paused and where Binance is out
+/// (NFR-REL-4).
 /// </summary>
 public class OperatorStatusPageTests
 {
@@ -41,8 +48,13 @@ public class OperatorStatusPageTests
         var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
 
         // The seven readings of the requirement, in its order, each under a heading of its own.
+        // With them, where the calls to the AI providers are paused, after the catalog of the
+        // providers, and where Binance is out, after its limits and its clock (NFR-REL-4).
         Assert.Equal(
-            ["Scheduler", "Queue of the cycles", "Catalog syncs", "Request limits of Binance", "Clock", "Tables", "Errors and warnings"],
+            [
+                "Scheduler", "Queue of the cycles", "Catalog syncs", "Calls to the AI providers", "Request limits of Binance", "Clock",
+                "Outages of Binance", "Tables", "Errors and warnings",
+            ],
             Parsed(page).QuerySelectorAll("main h2").Select(heading => heading.TextContent.Trim()));
 
         // It follows nothing, so it says of when it is, in the time zone of whoever reads it,
@@ -248,6 +260,89 @@ public class OperatorStatusPageTests
     }
 
     [Fact]
+    public async Task The_calls_to_the_AI_providers_and_the_outages_of_Binance_say_where_something_is_paused()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            ["Provider", "Calls", "Failures in a row", "Pauses in a row", "Keys that it refuses", "Of them paused now"],
+            ColumnsOf(page, "status-ai-calls"));
+
+        // Each provider of the file, by what it is called. Nothing has failed: the calls are made.
+        Assert.Equal(
+            [
+                ["Claude", "Made", "0", "0", "0", "0"],
+                ["Gemini", "Made", "0", "0", "0", "0"],
+                ["GPT", "Made", "0", "0", "0", "0"],
+                ["Grok", "Made", "0", "0", "0", "0"],
+            ],
+            RowsOf(page, "status-ai-calls"));
+
+        Assert.Equal(
+            ["Market", "Environment", "State", "Calls in a row without an answer", "Last answered"],
+            ColumnsOf(page, "status-outages"));
+
+        // Each market in each environment. No test reaches Binance, and none has called it here:
+        // it has answered nothing, and has left nothing without an answer either.
+        Assert.Equal(
+            [
+                ["Spot", "Live", "Answers", "0", "Not since the start"],
+                ["Spot", "Demo", "Answers", "0", "Not since the start"],
+                ["Futures", "Live", "Answers", "0", "Not since the start"],
+                ["Futures", "Demo", "Answers", "0", "Not since the start"],
+            ],
+            RowsOf(page, "status-outages"));
+    }
+
+    [Fact]
+    public async Task A_provider_whose_calls_are_paused_and_a_market_where_Binance_is_out_are_said_with_what_follows()
+    {
+        var pauses = new StandInPauses
+        {
+            Said =
+            [
+                new CallPause(new AiProviderCode("claude"), Failures: 6, Trips: 2, Morning.AddSeconds(80), KeysInTrouble: 0, KeysPaused: 0),
+                new CallPause(new AiProviderCode("gemini"), Failures: 7, Trips: 1, PausedUntil: null, KeysInTrouble: 0, KeysPaused: 0),
+                new CallPause(new AiProviderCode("gpt"), Failures: 0, Trips: 0, PausedUntil: null, KeysInTrouble: 3, KeysPaused: 2),
+            ],
+        };
+        var outages = new StandInAnswers
+        {
+            Said =
+            [
+                new ExchangeAnswers(Market.Spot, TradingMode.Live, Unanswered: 0, OutageSince: null, AnsweredAt: Morning.AddSeconds(-5)),
+                new ExchangeAnswers(Market.Futures, TradingMode.Live, Unanswered: 12, OutageSince: Morning.AddMinutes(-3), AnsweredAt: Morning.AddMinutes(-4)),
+            ],
+        };
+
+        using var application = Application(
+            new TestClock(Morning),
+            services: services => services.AddSingleton<ICallPauses>(pauses).AddSingleton<IExchangeOutages>(outages));
+        using var client = await OperatorAsync(application);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // A state is said in words, with what follows from it, and a key is a number alone.
+        Assert.Equal(
+            [
+                ["Claude", "Paused until 16 November 2026, 10:08:20 UTC: the provider left calls without an answer", "6", "2", "0", "0"],
+                ["Gemini", "Made again after a pause: the next failure pauses them again", "7", "1", "0", "0"],
+                ["GPT", "Made", "0", "0", "3", "2"],
+            ],
+            RowsOf(page, "status-ai-calls"));
+
+        Assert.Equal(
+            [
+                ["Spot", "Live", "Answers", "0", "16 November 2026, 10:06:55 UTC"],
+                ["Futures", "Live", "Out since 16 November 2026, 10:04:00 UTC: new entries are paused", "12", "16 November 2026, 10:03:00 UTC"],
+            ],
+            RowsOf(page, "status-outages"));
+    }
+
+    [Fact]
     public async Task The_tables_say_what_each_takes_the_largest_first()
     {
         using var application = Application(new TestClock(Morning));
@@ -310,8 +405,34 @@ public class OperatorStatusPageTests
     }
 
     private static AccountsApplication Application(
-        TestClock clock, TestDatabase? database = null, Func<SettingsJson, SettingsJson>? settings = null) =>
-        new(clock: clock, database: database, settings: settings ?? Operators);
+        TestClock clock,
+        TestDatabase? database = null,
+        Func<SettingsJson, SettingsJson>? settings = null,
+        Action<IServiceCollection>? services = null) =>
+        new(
+            clock: clock,
+            database: database,
+            settings: settings ?? Operators,
+            host: services is null ? null : host => host.ConfigureServices(services));
+
+    /// <summary>Stands for what says where the calls to the models are paused: it says what the test says.</summary>
+    private sealed class StandInPauses : ICallPauses
+    {
+        public IReadOnlyList<CallPause> Said { get; init; } = [];
+
+        public IReadOnlyList<CallPause> Now() => Said;
+    }
+
+    /// <summary>Stands for the watch on whether the exchange answers: it says what the test says.</summary>
+    private sealed class StandInAnswers : IExchangeOutages
+    {
+        public IReadOnlyList<ExchangeAnswers> Said { get; init; } = [];
+
+        public IReadOnlyList<ExchangeAnswers> Answers() => Said;
+
+        public bool EntriesPaused(Market market, TradingMode mode) =>
+            Said.Any(answers => answers.Market == market && answers.Environment == mode && answers.EntriesPaused);
+    }
 
     private static SettingsJson Operators(SettingsJson file) => file.WithJson("Application:Operators", $"[ \"{Olive}\" ]");
 

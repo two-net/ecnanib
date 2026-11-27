@@ -50,6 +50,20 @@ public enum AiCallOutcome
     /// it would not take, or an answer that is not what the provider sends.
     /// </summary>
     Failed,
+
+    /// <summary>
+    /// The call was not made: the calls to the provider are paused, after failures in a row of
+    /// the calls of all users, and are made again later (NFR-REL-4). Nothing was sent, so nothing
+    /// was used and nothing took any time.
+    /// </summary>
+    ProviderPaused,
+
+    /// <summary>
+    /// The call was not made: the calls with this key are paused, after the provider refused
+    /// them in a row, and are made again later (NFR-REL-4). The provider answers, and the calls
+    /// with other keys go on.
+    /// </summary>
+    KeyPaused,
 }
 
 /// <summary>What a structured call returned.</summary>
@@ -69,8 +83,19 @@ public enum AiCallOutcome
 /// be charged for it. An answer that shows no search says 0, which is every answer to a call
 /// that asked for none (FR-CYC-3).
 /// </param>
+/// <param name="KeyTrips">
+/// How many pauses in a row the calls with the key have had, with no answer between them, when
+/// this call is the one whose refusal began the latest of them: otherwise null, also for a call
+/// that was not made because of a pause. It says that the provider keeps refusing the key, which
+/// is for the user of the key to see to (NFR-REL-4).
+/// </param>
 public sealed record AiCallResult(
-    AiCallOutcome Outcome, string? ResultJson, AiTokenUsage? Usage, TimeSpan Latency, int? LiveSearches = null)
+    AiCallOutcome Outcome,
+    string? ResultJson,
+    AiTokenUsage? Usage,
+    TimeSpan Latency,
+    int? LiveSearches = null,
+    int? KeyTrips = null)
 {
     public string? ResultJson { get; } = (Outcome == AiCallOutcome.Succeeded) == (ResultJson is not null)
         ? ResultJson

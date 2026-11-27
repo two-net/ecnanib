@@ -126,6 +126,15 @@ public class AiUsageTests
             new GivenCall(Role.Strategist, Today.AddHours(9).AddSeconds(70), null, null, RoleCallOutcome.AuthenticationFailed),
         ]);
 
+        // Two cycles whose calls were held back, while the calls to the provider were paused,
+        // and while the calls with the key were: nothing was sent, so nothing can be charged for
+        // (NFR-REL-4).
+        await application.GiveCallsAsync(ada.Id, agent, Today.AddHours(9).AddMinutes(15),
+        [
+            new GivenCall(Role.MarketAnalyst, Today.AddHours(9).AddMinutes(15), null, null, RoleCallOutcome.ProviderPaused),
+            new GivenCall(Role.SentimentAnalyst, Today.AddHours(9).AddMinutes(15), null, null, RoleCallOutcome.KeyPaused),
+        ]);
+
         // A test cycle is charged for as any cycle is: its call counts.
         await application.GiveCallsAsync(
             ada.Id, agent, Today.AddHours(10), [new GivenCall(Role.MarketAnalyst, Today.AddHours(10).AddMinutes(20), 800, 50)], CycleKind.Test);
@@ -322,6 +331,13 @@ public class AiUsageTests
             new GivenCall(Role.MarketAnalyst, Today.AddHours(9), 1000, 100),
             new GivenCall(Role.Strategist, Today.AddHours(9), null, null, RoleCallOutcome.TimedOut),
             new GivenCall(Role.RiskManager, Today.AddHours(9), null, null, RoleCallOutcome.NoKey),
+        ]);
+
+        // Calls that were held back while the calls were paused were not made with the key.
+        await application.GiveCallsAsync(ada.Id, second, Today.AddHours(10),
+        [
+            new GivenCall(Role.MarketAnalyst, Today.AddHours(10), null, null, RoleCallOutcome.ProviderPaused),
+            new GivenCall(Role.Strategist, Today.AddHours(10), null, null, RoleCallOutcome.KeyPaused),
         ]);
 
         // The key for Grok is half a year old. A call of 30 days ago is before the period, and

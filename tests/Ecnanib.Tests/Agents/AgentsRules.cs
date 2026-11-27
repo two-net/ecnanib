@@ -108,8 +108,9 @@ internal static class AgentsRules
             "Asked by Agents of whatever keeps positions, after Agents recorded the request of the user. Agents places no order.",
         ["IAgentTrading.RequireAttentionAsync"] =
             "Moves an agent that runs to Attention required, because its position is open with no stop-loss and could not be " +
-            "closed, or because the account of its user at the exchange conflicts with how it trades. It is the service's " +
-            "doing, and no action of a user: it starts nothing, and the change of the state records it.",
+            "closed, because the account of its user at the exchange conflicts with how it trades, or because an AI provider " +
+            "keeps refusing the calls with the key of its user. It is the service's doing, and no action of a user: it starts " +
+            "nothing, and the change of the state records it.",
         ["IAgentHalts.HaltAsync"] =
             "Moves an agent that runs to Halted, because it reached its daily loss limit or its drawdown limit. It is the " +
             "service's doing, and no action of a user: it starts nothing, and the change of the state records it.",

@@ -50,12 +50,20 @@ namespace Ecnanib.ExchangeGateway.Adapters.Binance;
 /// the watch on the clock, which pauses new entries there (FR-BIN-5). It ends as any other
 /// failure does.
 /// </para>
+/// <para>
+/// Every call that was sent tells <see cref="BinanceOutages"/> whether Binance answered it, once:
+/// a status below 500 other than 408 is an answer, whatever it says, and anything else is none.
+/// Several in a row without an answer are an outage, which pauses new entries there
+/// (NFR-REL-4). A call that the limiter did not let through was not sent, and tells nothing, as
+/// one that its caller cancelled tells nothing.
+/// </para>
 /// </remarks>
 internal sealed class BinanceCall(
     IHttpClientFactory clients,
     BinanceSettings settings,
     BinanceLimiter limiter,
     BinanceClock watch,
+    BinanceOutages outages,
     TimeProvider clock,
     ILogger<BinanceCall> logger)
 {
@@ -228,6 +236,9 @@ internal sealed class BinanceCall(
         // The status of the answer, once there is one.
         int? status = null;
 
+        // Whether the watch on outages was told how this call ended. It is told once.
+        var told = false;
+
         try
         {
             // Every parameter is in the query, also of a call that is no GET: the request has no body.
@@ -248,6 +259,11 @@ internal sealed class BinanceCall(
             using var response = await client.SendAsync(request, either.Token);
             var took = clock.GetElapsedTime(sent);
             status = (int)response.StatusCode;
+
+            // There is an answer. Whether it is Binance's own is told by its status: a fault
+            // that the address reports in Binance's place is none.
+            told = true;
+            Tell(endpoint, mode, answered: status < 500 && response.StatusCode != HttpStatusCode.RequestTimeout);
 
             // The limiter hears of every answer: of the signal, which stops the calls, and
             // otherwise of what Binance has counted against the service.
@@ -320,17 +336,34 @@ internal sealed class BinanceCall(
         catch (HttpRequestException)
         {
             // No answer. The call is in the log of outbound calls, with why.
+            TellUnanswered();
+
             return Without(ExchangeCallOutcome.Failed);
         }
         catch (IOException)
         {
             // The answer broke off while it was read.
+            TellUnanswered();
+
             return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.Failed, status);
         }
         catch (OperationCanceledException) when (held || !cancellationToken.IsCancellationRequested)
         {
             // Binance took longer than the limit. The caller did not cancel, or could not.
+            TellUnanswered();
+
             return Without(throttled ? ExchangeCallOutcome.RateLimited : ExchangeCallOutcome.TimedOut, status);
+        }
+
+        // A call that ended before a status came had no answer. One whose status came was told
+        // of already, by that status, whatever became of its body.
+        void TellUnanswered()
+        {
+            if (!told)
+            {
+                told = true;
+                Tell(endpoint, mode, answered: false);
+            }
         }
 
         static BinanceAnswer<T> Without(ExchangeCallOutcome outcome, int? status = null, int? code = null) =>
@@ -366,6 +399,28 @@ internal sealed class BinanceCall(
     /// The request weight that Binance has counted against the address of the service in its
     /// minute, as an answer says it in the header of its limit, or null when it does not.
     /// </summary>
+    /// <summary>
+    /// Tells the watch on outages whether Binance answered a call. The call that asks what a key
+    /// may do is of Binance's wallet API, and says nothing of whether a market takes orders: it
+    /// is not told of.
+    /// </summary>
+    private void Tell(BinanceEndpoint endpoint, TradingMode mode, bool answered)
+    {
+        if (endpoint.Limit == BinanceLimit.KeyPermissions)
+        {
+            return;
+        }
+
+        if (answered)
+        {
+            outages.Answered(endpoint.Market, mode);
+        }
+        else
+        {
+            outages.Unanswered(endpoint.Market, mode);
+        }
+    }
+
     private static int? CountedBy(HttpResponseMessage response, BinanceLimit limit) =>
         response.Headers.TryGetValues(limit.UsageHeader, out var values)
             && int.TryParse(values.FirstOrDefault(), NumberStyles.None, CultureInfo.InvariantCulture, out var weight)

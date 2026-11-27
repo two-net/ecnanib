@@ -155,7 +155,7 @@ AI call TimedOut in 60000.3 ms {"Provider": "gemini", "Model": "...", "AgentId":
 AI call Succeeded in 18420.9 ms, using 9310 input and 388 output tokens, with 3 live searches {"Provider": "grok", "Model": "...", "AgentId": "42", "CycleId": "9001", "Role": "SentimentAnalyst"}
 ```
 
-- `Outcome` is the outcome of the call: `Succeeded`, `InvalidResult`, `TimedOut`, `AuthenticationFailed`, `ModelNotFound`, or `Failed`. See "Outcomes" in [ai-providers.md](ai-providers.md). A call that gave no result is a warning. It is not an error of the application, so the event has no exception.
+- `Outcome` is the outcome of the call: `Succeeded`, `InvalidResult`, `TimedOut`, `AuthenticationFailed`, `ModelNotFound`, `Failed`, `ProviderPaused`, or `KeyPaused`. See "Outcomes" in [ai-providers.md](ai-providers.md). A call that gave no result is a warning. It is not an error of the application, so the event has no exception. A call that was not made because the calls are paused is information, in 0 ms: the pause was said as a warning when it began (NFR-REL-4).
 - `DurationMs` is the latency of the call, as its caller records it.
 - `InputTokens` and `OutputTokens` are there when the provider counted them, also for a call that gave no result: an answer that was cut short was paid for.
 - `LiveSearches` is there for a call that asked for live search and was answered: how many searches the provider ran, which it charges for beside the tokens (FR-CYC-3). A call that asked for none has no such property. A model that was offered a search and ran none is a warning of its own, under `Ecnanib.AiProviderGateway.Adapters.ModelCall`: `The model was offered a live search, and its answer shows none`. See "Live search" in [ai-providers.md](ai-providers.md).

@@ -23,6 +23,12 @@ namespace Ecnanib.DecisionEngine;
 /// kept nowhere (FR-KEY-9). A key that the provider refuses is checked again, which marks it and
 /// tells what depends on it (FR-KEY-3, FR-KEY-10).
 /// </para>
+/// <para>
+/// <b>A call that the gateway holds back is not made, and not made again in the cycle.</b> The
+/// calls to its provider, or the calls with the key, are paused after failures in a row, and
+/// the role ends as one whose call failed. A provider that keeps refusing the key of the user is
+/// for the user to see to: <see cref="CallTrouble"/> is told of it (NFR-REL-4).
+/// </para>
 /// </remarks>
 internal sealed class RoleRuns(
     IPromptComposition composition,
@@ -31,6 +37,7 @@ internal sealed class RoleRuns(
     IKeyHandOver keys,
     IKeyValidation keyValidation,
     IAiProviderGateway providers,
+    CallTrouble trouble,
     TimeProvider clock,
     ILogger<RoleRuns> logger)
 {
@@ -137,6 +144,14 @@ internal sealed class RoleRuns(
             // The provider refused the key: it is asked about it, which marks a key that it
             // refuses again, and tells what depends on it (FR-KEY-3).
             kept.Revalidate(role.Provider, () => RevalidateAsync(userId, role.Provider, cancellationToken));
+        }
+
+        if (answer.KeyTrips is { } trips && !cycle.IsTest)
+        {
+            // The provider refused the call, and that began one more pause of the calls with the
+            // key. Whether the agent waits for its user for it is asked once in the cycle, and a
+            // cycle that only tests moves no agent (NFR-REL-4).
+            kept.SeeTo(role.Provider, () => trouble.SeenAsync(cycle.Agent, role.Role, role.Provider, trips));
         }
 
         if (answer.ResultJson is not { } answered)
@@ -260,6 +275,8 @@ internal sealed class RoleRuns(
         AiCallOutcome.AuthenticationFailed => RoleCallOutcome.AuthenticationFailed,
         AiCallOutcome.ModelNotFound => RoleCallOutcome.ModelNotFound,
         AiCallOutcome.Failed => RoleCallOutcome.Failed,
+        AiCallOutcome.ProviderPaused => RoleCallOutcome.ProviderPaused,
+        AiCallOutcome.KeyPaused => RoleCallOutcome.KeyPaused,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "No such outcome of a call."),
     };
 
@@ -288,6 +305,7 @@ internal sealed class CycleCalls
     private readonly List<RoleOutput> _outputs = [];
     private readonly List<RiskCheckRecord> _guarded = [];
     private readonly HashSet<AiProviderCode> _checked = [];
+    private readonly HashSet<AiProviderCode> _seenTo = [];
     private readonly List<Task> _checks = [];
     private DataPackageSummary? _package;
     private NoEntryReason? _noEntry;
@@ -397,6 +415,29 @@ internal sealed class CycleCalls
         }
 
         var started = check();
+
+        lock (_gate)
+        {
+            _checks.Add(started);
+        }
+    }
+
+    /// <summary>
+    /// Starts what follows from a key that a provider keeps refusing, once in the cycle for the
+    /// provider, as <see cref="Revalidate"/> starts the check of a key. It is waited for with
+    /// the checks.
+    /// </summary>
+    public void SeeTo(AiProviderCode provider, Func<Task> escalation)
+    {
+        lock (_gate)
+        {
+            if (!_seenTo.Add(provider))
+            {
+                return;
+            }
+        }
+
+        var started = escalation();
 
         lock (_gate)
         {
