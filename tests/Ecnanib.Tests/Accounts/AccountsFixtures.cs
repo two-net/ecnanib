@@ -334,6 +334,12 @@ internal sealed class AccountsApplication : IDisposable
     public void BeginStopping() => _application.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
 
     /// <summary>
+    /// What says when the application begins to stop, and when it has stopped: for a test that
+    /// tells it to stop as a signal to its process does, and reads what it left once it has.
+    /// </summary>
+    public IHostApplicationLifetime Lifetime => _application.Services.GetRequiredService<IHostApplicationLifetime>();
+
+    /// <summary>
     /// Runs the job that settles the orders with the exchange, now, as the scheduler does every
     /// minute. A test runs it itself to have a run at a moment of its choosing.
     /// </summary>

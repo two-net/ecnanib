@@ -16,19 +16,26 @@ namespace Ecnanib.Tests.DecisionEngine;
 public class OrderSettlingTests
 {
     [Fact]
-    public async Task The_job_runs_every_minute_and_is_due_as_the_work_starts_only_when_there_is_something_to_settle()
+    public async Task The_job_runs_every_minute_and_first_as_the_work_starts_and_last_as_the_application_stops()
     {
         using var application = new OrdersApplication();
         var job = application.Application.OrderSettling;
-        var atStart = Assert.IsAssignableFrom<IDueAtStart>(job);
         var now = application.Clock.GetUtcNow();
 
         Assert.Equal("order-settling", job.Name);
         Assert.Equal(now.AddMinutes(1), job.Schedule.NextRun(now, now));
 
-        // With nothing to settle it waits for its minute, also when the application starts.
+        // A restart settles first: the scheduler runs the job before any other, whatever its
+        // minute says (NFR-REL-3). And it settles once more as the application stops, when
+        // the cycles have ended (NFR-REL-5). See StartupSequenceTests and GracefulShutdownTests.
+        Assert.IsAssignableFrom<IRunsFirst>(job);
+        Assert.IsAssignableFrom<IRunsLast>(job);
+
+        // With nothing to settle, the run that comes first asks Binance nothing.
         var agent = await application.GiveAgentAsync();
-        Assert.False(await atStart.IsDueAtStartAsync(TestContext.Current.CancellationToken));
+        await application.Application.SettleOrdersAsync(now);
+
+        Assert.Empty(application.Binance.System.Calls);
 
         // An entry whose outcome is unknown: the cycle was stopped as the call ended without an answer.
         using var stopping = new CancellationTokenSource();
@@ -40,10 +47,13 @@ public class OrderSettlingTests
         };
 
         await application.Orders.PlaceAsync(application.CycleOf(agent), GuardCheck.Of(GuardCases.OpenLong), stopping.Token);
+        var asked = application.Binance.AskedAbout.Count;
 
-        // An application that starts now settles first: the job is due at once, and not when
-        // its minute has passed.
-        Assert.True(await atStart.IsDueAtStartAsync(TestContext.Current.CancellationToken));
+        // An application that starts now settles first: the order is asked about by the run
+        // that comes first, and not when a minute has passed.
+        await application.Application.SettleOrdersAsync(now);
+
+        Assert.True(application.Binance.AskedAbout.Count > asked);
     }
 
     [Fact]

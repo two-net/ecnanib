@@ -64,8 +64,11 @@ internal sealed class BinanceMarketData : IExchangeMarketData, IDisposable
         _listed = new HashSet<string>(settings.Symbols, StringComparer.Ordinal);
         _priced = new HashSet<string>(settings.Symbols.Concat(settings.FeeSymbols), StringComparer.Ordinal);
 
-        // A read ends when the application stops, and not when an asker cancels.
-        var stopping = lifetime.ApplicationStopping;
+        // A read ends when the application has stopped, and not when an asker cancels. Not as
+        // it begins to stop: what is settled with the exchange last, as the application stops,
+        // reads the rules of a symbol and the price that values a fee, for the position that
+        // it protects (NFR-REL-5). A read ends by its own time limit before long.
+        var stopping = lifetime.ApplicationStopped;
 
         _candles = new(clock, stopping);
         _prices = new(clock, stopping);

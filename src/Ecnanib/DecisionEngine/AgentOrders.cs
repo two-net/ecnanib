@@ -206,6 +206,41 @@ internal sealed class AgentOrders(
         await SettleAsync(agentId, new Pace(cancellationToken, clock));
     }
 
+    public async Task<bool> SettleBeforeStopAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        using var turn = await EnterAsync(agentId, cancellationToken);
+
+        var pace = new Pace(cancellationToken, clock);
+        DateTimeOffset? waitedUntil = null;
+
+        while (true)
+        {
+            await SettleAsync(agentId, pace, new Pass(compares: false) { Stops = true });
+
+            // An order of which the exchange has not said whether it has it: its word that it
+            // has none counts only once the order could no longer arrive. So that moment is
+            // waited for, and the order is asked about once more: an entry that a stopped cycle
+            // left so is then a position with its protection, or was not placed. It is waited
+            // for once: an exchange that says nothing more keeps the application from stopping
+            // for no longer.
+            var final = (await stored.LiveOrdersAsync(agentId, CancellationToken.None))
+                .Where(order => OrderStatuses.IsUnsettled(order.Status))
+                .Select(order => (DateTimeOffset?)(order.UpdatedAt + (order.Status == OrderStatus.Sending ? OnItsWay : ExchangeOrderTimes.FinalAfter)))
+                .Max();
+
+            if (final is not { } moment || moment <= waitedUntil || !await pace.UntilAsync(moment, moment - clock.GetUtcNow()))
+            {
+                break;
+            }
+
+            waitedUntil = moment;
+        }
+
+        return await stored.IsSettledAsync(agentId, CancellationToken.None)
+            && !(await stored.LiveOrdersAsync(agentId, CancellationToken.None))
+                .Any(order => order.Purpose == OrderPurpose.Entry && OrderStatuses.IsResting(order.Status));
+    }
+
     public async Task<bool> ReconcileAsync(Guid agentId, CancellationToken cancellationToken)
     {
         using var turn = await EnterAsync(agentId, cancellationToken);
@@ -1425,8 +1460,12 @@ internal sealed class AgentOrders(
                 pass.TakenOff.Add(heard);
             }
 
-            // An entry that still rests, and is not to rest any longer (FR-BIN-S2).
-            if (heard.Purpose == OrderPurpose.Entry && OrderStatuses.IsResting(heard.Status) && await DueAsync(heard) is { } why)
+            // An entry that still rests, and is not to rest any longer (FR-BIN-S2). None rests
+            // on when the application stops: what it bought while the service is down would
+            // have no stop-loss until the next start (NFR-REL-5).
+            if (heard.Purpose == OrderPurpose.Entry
+                && OrderStatuses.IsResting(heard.Status)
+                && (pass.Stops ? "Stopping" : await DueAsync(heard)) is { } why)
             {
                 await TakeOffEntryAsync(heard, why);
                 takenOff = true;
@@ -1522,7 +1561,9 @@ internal sealed class AgentOrders(
     /// <summary>
     /// Why an entry that rests is taken off the exchange now, or null when it rests on: the
     /// next candle of its agent has closed, a part of it is executed that can be protected, its
-    /// agent no longer opens positions (FR-BIN-S2), or a global halt is on (FR-OPS-3).
+    /// agent no longer opens positions (FR-BIN-S2), or a global halt is on (FR-OPS-3). The last
+    /// pass before the application stops does not ask: it takes every entry off, as
+    /// <c>Stopping</c> (NFR-REL-5).
     /// </summary>
     private async Task<string?> DueAsync(Order entry)
     {
@@ -2884,6 +2925,12 @@ internal sealed class AgentOrders(
     {
         public bool Compares => compares;
 
+        /// <summary>
+        /// Whether the pass is the last one before the application stops: an entry that rests
+        /// is taken off the exchange then, whatever time it has left (NFR-REL-5).
+        /// </summary>
+        public bool Stops { get; init; }
+
         /// <summary>Whether the exchange did not say what became of an order of the agent, or the pass was cut short.</summary>
         public bool Unanswered { get; set; }
 
@@ -2948,6 +2995,31 @@ internal sealed class AgentOrders(
         public async Task<bool> UntilAsync(DateTimeOffset moment)
         {
             while (!Stopping && clock.GetUtcNow() < moment)
+            {
+                try
+                {
+                    await Task.Delay(Beat, clock, stopping);
+                }
+                catch (OperationCanceledException)
+                {
+                    return false;
+                }
+            }
+
+            return !Stopping;
+        }
+
+        /// <summary>
+        /// Waits until a moment of the application's clock, and for no longer than a time that
+        /// no change of the time of day moves: a clock that was set back keeps what waits as
+        /// the application stops from waiting on.
+        /// </summary>
+        /// <returns>Whether the wait is over. It is not when what asked was stopped first.</returns>
+        public async Task<bool> UntilAsync(DateTimeOffset moment, TimeSpan atMost)
+        {
+            var began = clock.GetTimestamp();
+
+            while (!Stopping && clock.GetUtcNow() < moment && clock.GetElapsedTime(began) < atMost)
             {
                 try
                 {

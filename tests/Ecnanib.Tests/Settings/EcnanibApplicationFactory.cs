@@ -319,12 +319,14 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
                     job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == Cycles));
             }
 
-            // The job that settles the orders runs every minute, for the agents whose orders
+            // The job that settles the orders runs first as the background work starts, then
+            // every minute, and once more as the application stops, for the agents whose orders
             // or positions have something to settle, and asks the exchange about them. Many
             // tests give a user orders and positions for a reason of their own: their
             // application would ask a Binance that is not there about them, and write what
-            // came of it, at a moment that the test does not choose. So the application of a
-            // test is without this job as well, unless the test is about it.
+            // came of it, at a moment that the test does not choose, and take the entries off
+            // that rest as it is disposed of. So the application of a test is without this job
+            // as well, unless the test is about it.
             if (!_settlesOrders)
             {
                 var settling = services.Single(job =>
@@ -482,8 +484,8 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
                 services.AddKeyedSingleton(typeof(IBackgroundJob), key, backing.ImplementationType!);
             }
 
-            // The job that reconciles the agents with the exchange is due as the background
-            // work starts when an agent holds anything, and then every few minutes: it asks
+            // The job that reconciles the agents with the exchange runs first as the background
+            // work starts, before any other job, and then every few minutes: it asks
             // the exchange about every order that is not over, and about what the account of
             // each agent holds. And a cycle waits for an agent that holds something from before
             // the application started until that job has reconciled it. Many tests give a user

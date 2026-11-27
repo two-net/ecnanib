@@ -58,8 +58,9 @@ public enum BackgroundJobRunState
 /// <param name="Overdue">
 /// Whether that run is overdue: it was due longer ago than a run takes to start, and the database
 /// has no start of it. A scheduler that runs starts a job within a second of when it is due, so a
-/// job that is overdue says that no instance runs the background work, or that the run before it
-/// outlasts its schedule.
+/// job that is overdue says that no instance runs the background work, that the run before it
+/// outlasts its schedule, or that the work has just started and the jobs that run first have
+/// not ended yet: the other jobs wait for those, for two minutes at the most.
 /// </param>
 public sealed record BackgroundJobStatus(
     string Name,

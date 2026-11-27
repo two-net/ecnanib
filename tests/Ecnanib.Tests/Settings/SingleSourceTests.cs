@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Ecnanib.Tests.Settings;
 
@@ -134,6 +135,25 @@ public sealed class SingleSourceTests : IDisposable
 
         // A section of the platform's own, even one whose name contains a section of the file.
         Assert.Equal("1024", builder.Configuration["Kestrel:Limits:MaxRequestBodySize"]);
+    }
+
+    [Fact]
+    public void The_host_waits_for_the_application_to_stop_for_as_long_as_the_file_says_unless_the_platforms_own_variable_says()
+    {
+        // A minute and a half in the file of the tests: the cycles that run are stopped, and
+        // what they left is settled with the exchange, within it (NFR-REL-5). The host's own
+        // default is 30 seconds.
+        using (var application = new EcnanibApplicationFactory(_contentRoot))
+        {
+            Assert.Equal(TimeSpan.FromSeconds(90), application.Services.GetRequiredService<IOptions<HostOptions>>().Value.ShutdownTimeout);
+        }
+
+        // The platform has a variable of its own for this time. Where a deployment sets it,
+        // it keeps its default behavior, as every variable of the platform does (NFR-CFG-3).
+        using var variable = new EnvironmentVariable("DOTNET_SHUTDOWNTIMEOUTSECONDS", "200");
+        using var other = new EcnanibApplicationFactory(_contentRoot);
+
+        Assert.Equal(TimeSpan.FromSeconds(200), other.Services.GetRequiredService<IOptions<HostOptions>>().Value.ShutdownTimeout);
     }
 
     private static void AssertOnlyTheFileCounts(EcnanibApplicationFactory application)

@@ -36,6 +36,18 @@ public class Program
     /// non-zero exit code when an error stops the application, after logging it (NFR-LOG-6). A
     /// database that cannot be migrated is such an error: the application does not start (NFR-DAT-3).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It starts in an order</b> (NFR-REL-3): the database is migrated, then the host starts,
+    /// and its scheduler settles the orders and reconciles the agents with the exchange before
+    /// it starts any other job, the cycles among them. See "Starting" in docs/reliability.md.
+    /// </para>
+    /// <para>
+    /// <b>It stops in an order</b> (NFR-REL-5): the scheduler stops the cycles that run, waits
+    /// for them, and settles what they left with the exchange, within the time that the
+    /// configuration file gives the application to stop in. See "Stopping" in docs/reliability.md.
+    /// </para>
+    /// </remarks>
     public static int Run(string[] args, TextWriter errors)
     {
         // Settings come from the one configuration file and nowhere else. See docs/configuration.md.
@@ -127,7 +139,13 @@ public class Program
             // there is something to do. It does not keep the application from starting.
             app.ReencryptStoredSecrets();
 
+            // Starting the host starts the scheduler, which runs what settles and what
+            // reconciles first, and then everything else on its schedule (NFR-REL-3).
             app.Start();
+
+            // Returns once the application was told to stop and has stopped: the scheduler
+            // has ended its runs and done what is done last, or the time to stop in is over
+            // (NFR-REL-5).
             app.WaitForShutdown();
 
             return 0;

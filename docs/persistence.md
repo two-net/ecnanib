@@ -33,6 +33,8 @@ After the migrations, and still before the host starts, the application encrypts
 
 Once it runs, the application holds another advisory lock, with the key `BackgroundJobs.LockKey`, for as long as it is the instance that runs the background work. The same holds for that one: it needs a direct connection or a pooler in session mode. See [background-work.md](background-work.md).
 
+The migration is the first step of a start. The instance that runs the background work then settles the orders and reconciles the agents with the exchange before it schedules anything (NFR-REL-3): see "Starting" in [reliability.md](reliability.md).
+
 The log says what happened:
 
 ```

@@ -84,7 +84,8 @@ public static class OperatorStatusPages
     {
         ArgumentNullException.ThrowIfNull(jobs);
 
-        const string means = "no instance runs the background work, or a run outlasts its schedule.";
+        const string means =
+            "no instance runs the background work, a run outlasts its schedule, or the work has just started and still settles and reconciles first.";
 
         return jobs.Count(job => job.Overdue) switch
         {

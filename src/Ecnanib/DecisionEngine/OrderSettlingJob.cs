@@ -20,8 +20,17 @@ namespace Ecnanib.DecisionEngine;
 /// It runs for the agents that have something to settle, and for no other: most runs find none.
 /// A stop-loss that rests is asked about when it was last asked about longer ago than the time
 /// between reconciliations of the configuration file, and an entry that rests with every run.
-/// It is due as the background work starts when there is anything to settle, so a restart
-/// settles first (NFR-REL-3).
+/// </para>
+/// <para>
+/// <b>It runs first as the background work starts,</b> before what reconciles the agents, and
+/// before any other job: a restart settles first (NFR-REL-3). An order that was under way when
+/// the application stopped is asked about before anything is scheduled.
+/// </para>
+/// <para>
+/// <b>It settles once more as the application stops,</b> when every cycle has ended: what a
+/// stopped cycle left is finished then, and not at the next start, and every entry that rests
+/// is taken off the exchange, so that no entry is left without protection while the service is
+/// down (NFR-REL-5). See "Stopping" in docs/reliability.md.
 /// </para>
 /// <para>
 /// The agents are settled a few at a time, each on its own: what cannot be settled for one,
@@ -40,7 +49,7 @@ internal sealed class OrderSettlingJob(
     BinanceSettings binance,
     TimeProvider clock,
     ILogger<OrderSettlingJob> logger)
-    : IBackgroundJob, IDueAtStart
+    : IBackgroundJob, IRunsFirst, IRunsLast
 {
     /// <summary>The name of the job, which is the key of its row of the <c>background_jobs</c> table.</summary>
     public const string JobName = "order-settling";
@@ -55,7 +64,10 @@ internal sealed class OrderSettlingJob(
 
     public BackgroundJobSchedule Schedule { get; } = BackgroundJobSchedule.Every(Interval);
 
-    public async Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken) => (await ToSettleAsync(cancellationToken)).Count > 0;
+    public void TakenUp()
+    {
+        // Nothing is remembered from run to run: what is to settle is read from the rows.
+    }
 
     public async Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
     {
@@ -95,6 +107,73 @@ internal sealed class OrderSettlingJob(
                     logger.LogError(error, "The orders of agent {AgentId} could not be settled with the exchange", agentId);
                 }
             });
+    }
+
+    public async Task RunLastAsync(CancellationToken cancellationToken)
+    {
+        // Every agent with something to settle, and so every agent with an entry that rests.
+        var agents = await ToSettleAsync(cancellationToken);
+
+        if (agents.Count == 0)
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "The orders of {Agents} agents are settled with the exchange as the application stops, and their entries that rest are taken off",
+            agents.Count);
+
+        var left = new List<Guid>();
+
+        // Not canceled with the time: an agent that is begun is brought to its end, and one
+        // whose turn comes after the time is up is asked nothing, and counts as left.
+        await Parallel.ForEachAsync(
+            agents,
+            new ParallelOptions { MaxDegreeOfParallelism = AtOnce },
+            async (agentId, _) =>
+            {
+                var settled = false;
+
+                try
+                {
+                    settled = await orders.SettleBeforeStopAsync(agentId, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // The time is up.
+                }
+                catch (Exception error)
+                {
+                    // Said once, with the agent. The others go on, and the next start settles first.
+                    logger.LogError(
+                        error, "The orders of agent {AgentId} could not be settled with the exchange as the application stops", agentId);
+                }
+
+                if (!settled)
+                {
+                    lock (left)
+                    {
+                        left.Add(agentId);
+                    }
+                }
+            });
+
+        if (left.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var agentId in left.Order())
+        {
+            logger.LogWarning(
+                "Agent {AgentId} is not settled with the exchange as the application stops: it has an order of unknown outcome, an entry that rests, or an open position without a stop-loss that rests",
+                agentId);
+        }
+
+        logger.LogWarning(
+            "{NotSettled} of {Agents} agents are not settled with the exchange as the application stops. The next start settles them first",
+            left.Count,
+            agents.Count);
     }
 
     private Task<IReadOnlyList<Guid>> ToSettleAsync(CancellationToken cancellationToken) =>

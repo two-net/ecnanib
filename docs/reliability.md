@@ -1,10 +1,12 @@
 # Reliability
 
-Failures are safe: any internal error, timeout, or dependency outage results in no new entry. Open positions stay protected by orders resting on the exchange, which do not depend on Ecnanib being up (NFR-REL-2). An outage at one AI provider affects only the cycles that need it. Repeated failures for a provider or a key trip a breaker that pauses calls and retries later. A Binance outage pauses entries and raises an alert (NFR-REL-4).
+Failures are safe: any internal error, timeout, or dependency outage results in no new entry. Open positions stay protected by orders resting on the exchange, which do not depend on Ecnanib being up (NFR-REL-2). An outage at one AI provider affects only the cycles that need it. Repeated failures for a provider or a key trip a breaker that pauses calls and retries later. A Binance outage pauses entries and raises an alert (NFR-REL-4). On startup the application migrates the database, reconciles every running agent with the exchange, then resumes scheduling. A restart never creates a duplicate order (NFR-REL-3). Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is left without protection (NFR-REL-5).
 
 Providers have outages, and so has an exchange (risk R5 of the specification). Nothing that fails opens a position, and what fails again and again is not called again and again: the calls to a provider, and the calls with one key, are paused for a while and then made again, and new entries wait while Binance does not answer.
 
-The code is `AiCallBreakers` in `src/Ecnanib/AiProviderGateway/Adapters`, `BinanceOutages` in `src/Ecnanib/ExchangeGateway/Adapters/Binance`, `CallTrouble` in `src/Ecnanib/DecisionEngine`, and `ExchangeOutageAlerts` with its job in `src/Ecnanib/Agents`. The rules below are enforced by the tests in `tests/Ecnanib.Tests/Reliability`, and by `AiCallBreakerTests`, `OutageWatchTests`, `CallTroubleTests`, and `ExchangeOutageAlertTests`.
+A service is also restarted, for a deployment and after a fault. It starts in an order, so that nothing is scheduled on records that the exchange was not asked about, and it stops in an order, so that what a cycle was doing with the exchange is brought to its end before the process is gone.
+
+The code is `AiCallBreakers` in `src/Ecnanib/AiProviderGateway/Adapters`, `BinanceOutages` in `src/Ecnanib/ExchangeGateway/Adapters/Binance`, `CallTrouble` in `src/Ecnanib/DecisionEngine`, and `ExchangeOutageAlerts` with its job in `src/Ecnanib/Agents`. The order of a start and of a stop is in `BackgroundJobScheduler` in `src/Ecnanib/Platform/BackgroundWork`, with `OrderSettlingJob` and `ReconciliationJob` in `src/Ecnanib/DecisionEngine`, which are what runs first and what runs last. The rules below are enforced by the tests in `tests/Ecnanib.Tests/Reliability`, and by `AiCallBreakerTests`, `OutageWatchTests`, `CallTroubleTests`, `ExchangeOutageAlertTests`, `BackgroundJobRunsFirstTests`, and `BackgroundJobRunsLastTests`.
 
 ## Safe failure
 
@@ -121,6 +123,67 @@ The watch on the clock pauses new entries as well when a clock was not read for 
 
 Whoever runs the service is told by the log, where the beginning of an outage is an error, and by the operator status screen.
 
+## Starting
+
+On startup the application migrates the database, reconciles every running agent with the exchange, then resumes scheduling (NFR-REL-3). It does so in these steps, each after the one before it:
+
+| Step | What | See |
+|---|---|---|
+| 1 | **The database is migrated,** under a lock, before the host starts. A migration that fails stops the start. | "At startup" in [persistence.md](persistence.md) |
+| 2 | **The host starts, and its scheduler takes the lock of the background work.** An instance that finds the lock taken stands by, and does none of what follows. | "The lock" in [background-work.md](background-work.md) |
+| 3 | **The orders are settled.** `order-settling` runs first: an order that was under way when the application stopped is asked about by its identifier, and an open position without a stop-loss that rests is protected. | "Settling" in [orders.md](orders.md) |
+| 4 | **The agents are reconciled.** `reconciliation` runs next, for every agent that holds an open position or an order that is not over: its orders are asked about, and what the account of its user holds is held against its records, which are corrected. | "Reconciling" in [orders.md](orders.md) |
+| 5 | **The schedule starts:** every other job, the cycles among them. | "Schedules" in [background-work.md](background-work.md) |
+
+| Rule | Detail |
+|---|---|
+| **No other job starts before the two have ended.** | They are jobs that run first: the scheduler runs them one after the other, in the order that the Decision Engine registers them in, and starts nothing else meanwhile. See "A job that runs first" in [background-work.md](background-work.md). |
+| **They run at every start, whatever their rows say.** | Also when their time has not come, and when the process ended during their latest run: a start after a process that was cut off is the one that needs them most. |
+| **Every agent that holds something is reconciled, whatever state it is in.** | One that runs, is paused, waits for its user, or was stopped with its position kept. An agent that holds nothing has nothing that an account could differ from, and nobody is asked about it. |
+| **A restart never creates a duplicate order.** | Every order is written before it is sent, with an identifier of its own, and an entry is never sent again (FR-BIN-6). A restart goes on with no cycle: the queue of a close is in memory, and a close that passed is not made up for (FR-CYC-8). So all that a start finds of what was under way is rows, and it asks Binance about each before anything is placed. See "An order is never sent twice" in [orders.md](orders.md). |
+| **The schedule waits for two minutes at the most.** | `BackgroundJobScheduler.FirstRunsWithin`, from when the instance took up the work. It is fixed, and no setting. An exchange that does not answer keeps no backup, no email, and no alert of the outage waiting for longer: the other jobs then start beside the run that still goes on, which is said once, as a warning. |
+| **An agent that is not settled or not reconciled gets no cycle, after that as before it.** | What starts a cycle asks for each agent: see "After a restart" in [cycles.md](cycles.md). So nothing is placed for an agent that the exchange was not asked about, however the start went. Its position is protected by what rests on the exchange (NFR-REL-2). |
+| **What fails for one agent, or for one run, keeps nothing waiting.** | Each agent is settled and reconciled on its own. A run that fails is an error in the log, and what comes after it starts. |
+| **A close that comes meanwhile has its cycles late, or not at all.** | The run of a close that waited starts when the schedule does, and starts no cycle five minutes after its close or later: see "When time runs out" in [cycles.md](cycles.md). A decision that completes late opens no position: the stale limit of its timeframe holds (FR-CYC-9). |
+| **The same holds when the lock was lost and taken back.** | Another instance may have placed orders meanwhile. The scheduler tells the job that reconciles that the work is taken up, and what it reconciled before counts no more. |
+| **Requests are served meanwhile.** | The web server starts with the host. A page shows the records as they are, and what a user asks for, such as a close, settles the orders of its agent with the exchange first. |
+
+## Stopping
+
+Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is left without protection (NFR-REL-5). The application stops when its process is told to, by a signal or by Ctrl+C, in these steps:
+
+| Step | What |
+|---|---|
+| 1 | **Nothing more starts.** The scheduler hears that the application begins to stop, and tells every run to stop. It does not wait for the host to get to it: the host stops its services one after the other, and the web server, which waits for its requests, before the scheduler. |
+| 2 | **The cycles that run end.** One that has not sent its entry sends none. One whose entry is on its way lets that call end, and sends the stop-loss of what it bought, once. Each is recorded. See "When time runs out" in [cycles.md](cycles.md), and "The stop-loss" in [orders.md](orders.md). |
+| 3 | **The scheduler waits until every run has ended.** A run never outlives the lock that it began under. |
+| 4 | **The orders are settled once more.** `order-settling` does last what must not wait for the next start. |
+| 5 | **The lock of the background work is let go,** and the process ends. |
+
+**What is settled last** is every agent with something to settle, through `IPlanOrders.SettleBeforeStopAsync`:
+
+| Rule | Detail |
+|---|---|
+| **An order of unknown outcome is asked about.** | An entry that a stopped cycle left so is found executed, and is then a position with its protection, or was not placed. Binance's word that it has no such order counts ten seconds after the call: that moment is waited for, once, and the order is asked about again. |
+| **An open position without a stop-loss that rests gets it.** | As with every run of the job: it is placed at most twice, and where it cannot be placed the position is closed at market. On Futures the take-profit that a stopped cycle owes is placed beside the stop-loss. |
+| **Every entry that rests is taken off the exchange.** | An entry at a price can be executed while the service is down, and what it bought would have no stop-loss until the next start. So none rests on, whatever time it has left, and the log says `Stopping` as why. A part of it that was executed by then is a position, and has its protection before the application has stopped. An entry is never sent again: the next cycle of its agent decides anew. |
+| **It opens nothing.** | What it places is the protection of a position, or its close at market where no protection can be placed. |
+| **Only the instance that runs the background work does it.** | Under the lock, as a run. An instance that stands by stops, and takes nothing off. And it is not done when the lock is lost: the application runs on then. |
+| **No position is closed because the application stops.** | Maintenance never closes positions (NFR-REL-6). A position whose stop-loss rests is left as it is: its protection does not depend on the service (NFR-REL-2). |
+
+**How long a stop may take:**
+
+| Rule | Detail |
+|---|---|
+| **The application has `Application:ShutdownSeconds` to stop in.** | 120 in the tracked file, from 90 to 3600. It is how long the host waits for its services, counted from when the application began to stop. The host's own default, 30 seconds, is less than a cycle that is being stopped may take, which is 45: see "When time runs out" in [cycles.md](cycles.md). |
+| **What is done last ends 45 seconds before that.** | `BackgroundJobScheduler.EndsBefore`, which is fixed. Nothing more is begun then. A call to the exchange that is under way is not given up: it ends within 15 seconds, and one more call that protects takes 25 at the most. So what was left is in the log before the host waits no longer. |
+| **Nothing is waited for that time does not change.** | An exchange that does not answer is asked once for each agent, and the application stops. Only an order whose outcome may still come is waited for. |
+| **What is left is said, and the next start settles it first.** | A warning for each agent that is not settled, and one that says how many. Such an agent gets no cycle until it is settled, as after every start. |
+| **When the runs have not ended in time, nothing is done last.** | A warning says which still run. They are waited for all the same, for as long as the host waits. |
+| **When the host waits no longer, the process ends.** | With an event at the critical level that names the jobs which still ran. Their rows say a start with no end, which the next start reports. |
+| **Whatever supervises the process must wait for longer than the setting.** | A container runtime or a service manager that kills the process sooner cuts the stop short. Docker waits for 10 seconds unless it is told otherwise (`docker stop --time`, `stop_grace_period`), and systemd for 90 (`TimeoutStopSec`). |
+| **The platform's own variable keeps its default behavior.** | Where a deployment sets `DOTNET_SHUTDOWNTIMEOUTSECONDS`, the host waits for as long as that says, and not for as long as the file says (NFR-CFG-3). |
+
 ## The settings
 
 | Setting | Tracked file | What it is |
@@ -135,6 +198,7 @@ Whoever runs the service is told by the log, where the beginning of an outage is
 | `Breakers:AiKey:ProviderWideKeys` | 3 | The keys of one provider that are refused at the same time from which no agent is moved: from 2 to 10000. |
 | `Binance:OutageFailures` | 5 | The calls in a row without an answer that are an outage: from 1 to 1000. |
 | `Binance:OutageAlertSeconds` | 60 | How long an outage lasts before users are told: from 0 to 3600. |
+| `Application:ShutdownSeconds` | 120 | How long the application has to stop in: from 90 to 3600. |
 
 Each is read at startup. See [configuration.md](configuration.md).
 
@@ -149,11 +213,13 @@ Two parts of the screen show what is paused (FR-OPS-2):
 
 The pages may not use the AI Provider Gateway, so the Decision Engine says on what the gateway keeps, as `ICallPauses`. Both are of the instance that answered the page. See "The operator status screen" in [ownership.md](ownership.md).
 
-## The job
+## The jobs
 
 | Job | Component | What a run does |
 |---|---|---|
 | `exchange-outage-alerts` | Agents | Tells the users whose agents run where Binance has been out for long enough, and tells them when it answers again. It runs every minute, asks the gateway what it keeps in memory, and reads which agents run only when there is something to tell. It calls no exchange. |
+| `order-settling` | Decision Engine | Settles the orders of the agents that have something to settle, every minute. It runs first as the background work starts, and it settles once more as the application stops: see "Starting" and "Stopping". |
+| `reconciliation` | Decision Engine | Reconciles every agent that holds something with the exchange, every `Binance:ReconcileMinutes`. It runs first as the background work starts, once the orders are settled: see "Starting". |
 
 The breakers and the watch on outages have no job: each is asked and told as a call is made. See [background-work.md](background-work.md).
 
@@ -190,8 +256,39 @@ Binance answers again on {Market} {Environment}, after {OutageSeconds} s without
 The user {UserId} could not be told of the outage of Binance on {Market} {Environment}
 ```
 
+`Ecnanib.Platform.BackgroundWork.BackgroundJobScheduler`, as the work starts and as the application stops:
+
+```
+Background job {Job} did not finish the run it started at {StartedAt}. It runs first all the same, as the background work starts
+The background jobs that run first have ended, so the other jobs start
+The background jobs that run first did not end within {Minutes} minutes of the start of the background work, so the other jobs start beside them. Still to end: {Jobs}
+Background job {Job} did what it does last as the application stops, in {DurationMs} ms
+Background job {Job} did not end what it does last as the application stops, after {DurationMs} ms: the time to stop in is nearly over
+Background job {Job} failed at what it does last as the application stops, after {DurationMs} ms
+The time that the application has to stop in is nearly over before the runs of its background jobs have ended, so nothing is done last: {Jobs}. Still running: {Running}
+The application stops before its background work has ended, because the time that it has to stop in is over. Still running: {Jobs}
+```
+
+`Ecnanib.DecisionEngine.OrderSettlingJob`, as the application stops:
+
+```
+The orders of {Agents} agents are settled with the exchange as the application stops, and their entries that rest are taken off
+The orders of agent {AgentId} could not be settled with the exchange as the application stops
+Agent {AgentId} is not settled with the exchange as the application stops: it has an order of unknown outcome, an entry that rests, or an open position without a stop-loss that rests
+{NotSettled} of {Agents} agents are not settled with the exchange as the application stops. The next start settles them first
+```
+
 | Event | Level |
 |---|---|
+| The jobs that run first have ended, and the schedule starts | Information |
+| The schedule starts beside a run that comes first and has not ended in two minutes | Warning, once |
+| A job that runs first did not finish its run before the start | Warning |
+| A job did what it does last, and the orders are settled as the application stops | Information |
+| An agent is not settled as the application stops, and how many are not | Warning |
+| What is done last did not end in time, or was not begun for the runs that had not ended | Warning |
+| What is done last failed, or failed for an agent | Error |
+| The application stops before its background work has ended | Critical |
+| An entry that rests is taken off as the application stops | Information, by what places the orders, with `Stopping` as `EntryTakenOffReason`: see "The log" in [orders.md](orders.md) |
 | A pause of a provider or of a key begins | Warning, once: not with every call that is not made |
 | A pause is over, because the provider answered | Information |
 | A call that was not made because of a pause | Information, by the gateway: `AI call ProviderPaused in 0 ms` |
@@ -213,6 +310,12 @@ A pause of a key is logged inside the scope of the call that began it, so it car
 
 `AiCallBreakerTests` and `OutageWatchTests` are of the gateways alone, behind a provider and a Binance of the test's, on a clock that the test moves: each way that a call ends, the pauses and how they grow, the calls under way, and what is not counted. `ExchangeOutageTests` has an outage from one end to the other: the calls without an answer, the entry that is not placed, the users who are told, and the entry that is placed when Binance answers again.
 
+`StartupSequenceTests` starts an application again over what an earlier one left, with the background work as it runs outside the tests, and reads the order of what it did from its log: the database, the orders, the agents, and then a job of the test's that is due at once. It has the entry that was under way, which Binance holds once after the restart as before it, and the exchange that does not answer, for which the schedule waits for two minutes and no longer. `UnderWay.EntryAsync` leaves an entry as an application leaves it that was stopped between sending the order and its answer.
+
+`GracefulShutdownTests` tells an application to stop as a signal to its process does, with `Stops`, and reads what it left through an application that starts over the same database and the same `TradingBinance`: an application of a test disposes of itself once it has stopped. A run of a job of the test's stands for a cycle that has decided: it hands what stops it on to what places the orders, as a cycle does, and the application is told to stop from inside the call that places the entry, so the stop begins while Binance has the order. The tests have the entry that is executed, the one whose answer never comes, and the one that never arrived, the entry that rests, with a part of it executed and with none, the exchange that does not answer, and the instance that stands by. That the cycles themselves are stopped and waited for is in `CycleOverloadTests`.
+
+`BackgroundJobRunsFirstTests` and `BackgroundJobRunsLastTests` hold the scheduler to its part, with jobs of the tests: see "Testing a job" in [background-work.md](background-work.md). The file of the tests gives the application 90 seconds to stop in, which is the least, and a test of a stop that takes too long gives its host less.
+
 The file of the tests asks for more failures before a pause than the tracked file, and for 50 calls without an answer before an outage: many tests have a provider or their Binance fail a call for a reason of their own. A test that is about a pause sets what it needs. `OrdersApplication` stands `StandInOutages` in for the watch unless a test asks for the gateway's own, and no test application runs the job that tells of outages on a schedule: `EcnanibApplicationFactory` keeps it under a key, and `AccountsApplication.TellOfOutagesAsync` runs it.
 
 ## Not built yet
@@ -228,3 +331,8 @@ The file of the tests asks for more failures before a pause than the tracked fil
 - Telling a user that the calls to a provider are paused. The timeline of a cycle says it of each call that was not made.
 - A record of a cycle that never started, for the candle that Binance did not give. See "Not built yet" in [cycles.md](cycles.md).
 - A place at the limiter for protective orders ahead of the other calls. See "Not built yet" in [exchange.md](exchange.md).
+- Anything for a stop that is no graceful one. A process that is killed, or a machine that loses power, settles nothing last. What it left is settled first by the next start, and an open position is protected meanwhile by what rests on the exchange (NFR-REL-2). An entry at a price that rests then can be executed while the service is down: see "Not built yet" in [orders.md](orders.md).
+- Waiting beyond the time to stop in for a close that is under way. A close that a user asked for is a request, which the web server waits for within the same time, and a close for a loss limit is waited for with the run that it is part of. A process that ends between taking a stop-loss off and closing the position leaves a position that the next start protects first.
+- Leaving the entries that rest to an instance that stands by and is about to take the work over. An instance that stops takes them off whether another one stands by or not: version 1 targets a single running instance.
+- Asking about an order that rests once at a start. What settles and what reconciles both ask about it, one after the other.
+- A banner that announces maintenance in advance (NFR-REL-6).

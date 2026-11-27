@@ -19,6 +19,13 @@ namespace Ecnanib.DecisionEngine;
 /// answered a moment later, and an agent that is not reconciled after a start gets no cycle.
 /// </para>
 /// <para>
+/// <b>It runs first as the background work starts,</b> once what settles the orders has, and
+/// before any other job: on startup the application reconciles every agent that holds
+/// something with the exchange, and then resumes scheduling (NFR-REL-3). The scheduler says
+/// when this instance takes up the work, and what was reconciled before does not count from
+/// then on. See "Starting" in docs/reliability.md.
+/// </para>
+/// <para>
 /// It is apart from what settles the orders, which runs every minute for the agents that have
 /// something to settle, and from what watches the margin and the funding of the positions of
 /// the Futures market: this asks about every order that is not over, and compares what the
@@ -27,7 +34,7 @@ namespace Ecnanib.DecisionEngine;
 /// </remarks>
 internal sealed class ReconciliationJob(
     AccountReconciliation reconciliation, StoredOrders stored, BinanceSettings binance, TimeProvider clock, ILogger<ReconciliationJob> logger)
-    : IBackgroundJob, IDueAtStart
+    : IBackgroundJob, IRunsFirst
 {
     /// <summary>The name of the job, which is the key of its row of the <c>background_jobs</c> table.</summary>
     public const string JobName = "reconciliation";
@@ -38,70 +45,41 @@ internal sealed class ReconciliationJob(
     // How many agents are reconciled at the same time.
     private const int AtOnce = 8;
 
-    private readonly TimeSpan _every = TimeSpan.FromMinutes(binance.ReconcileMinutes);
-
-    // When the run before of this instance began. The scheduler runs a job once at a time.
-    private DateTimeOffset? _ranAt;
-
     public string Name => JobName;
 
     public BackgroundJobSchedule Schedule { get; } = BackgroundJobSchedule.Every(TimeSpan.FromMinutes(binance.ReconcileMinutes));
 
-    public async Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken)
-    {
-        // Asked as this instance takes up the background work: at the start of the
-        // application, and when the lock was lost and taken back.
-        reconciliation.TakenUp();
-
-        return (await stored.ToReconcileAsync(cancellationToken)).Count > 0;
-    }
+    /// <summary>
+    /// This instance takes up the background work: at the start of the application, and when
+    /// the lock was lost and taken back. What it reconciled before does not count any more:
+    /// another instance may have placed orders meanwhile.
+    /// </summary>
+    public void TakenUp() => reconciliation.TakenUp();
 
     public async Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        var now = clock.GetUtcNow();
+        var agents = await stored.ToReconcileAsync(cancellationToken);
 
-        // A job that is due anyway is not asked whether it is due as the work is taken up. An
-        // instance that did not run it for so long did not do the background work meanwhile.
-        if (_ranAt is { } before && now - before > _every * 2)
+        if (agents.Count == 0)
         {
-            reconciliation.TakenUp();
+            return;
         }
 
-        _ranAt = now;
+        var notYet = await ReconcileAsync(agents, cancellationToken);
 
-        try
+        if (notYet.Count > 0)
         {
-            var agents = await stored.ToReconcileAsync(cancellationToken);
+            await Task.Delay(Again, clock, cancellationToken);
 
-            if (agents.Count == 0)
-            {
-                return;
-            }
-
-            var notYet = await ReconcileAsync(agents, cancellationToken);
-
-            if (notYet.Count > 0)
-            {
-                await Task.Delay(Again, clock, cancellationToken);
-
-                notYet = await ReconcileAsync(notYet, cancellationToken);
-            }
-
-            logger.LogInformation(
-                "{Agents} agents were reconciled with the exchange, and {NotReconciled} were not: those are tried again with the next run",
-                agents.Count - notYet.Count,
-                notYet.Count);
+            notYet = await ReconcileAsync(notYet, cancellationToken);
         }
-        catch (OperationCanceledException)
-        {
-            // The application stops, or this instance no longer does the background work: what
-            // it reconciled does not count for the instance that takes the work up.
-            reconciliation.TakenUp();
 
-            throw;
-        }
+        logger.LogInformation(
+            "{Agents} agents were reconciled with the exchange, and {NotReconciled} were not: those are tried again with the next run",
+            agents.Count - notYet.Count,
+            notYet.Count);
     }
 
     /// <summary>Reconciles agents, a few at a time, and gives those that are not reconciled, in the order of their ids.</summary>

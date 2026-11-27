@@ -1,8 +1,12 @@
 using System.Net;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Shared;
+using Ecnanib.Tests.BackgroundWork;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Ecnanib.Tests.ExchangeGateway;
 
@@ -250,6 +254,47 @@ public class MarketDataSharingTests
         Assert.Equal(read.Symbols, fresh.Symbols);
         Assert.NotSame(read.Symbols, fresh.Symbols);
         Assert.Equal(2, service.CallsTo(path));
+    }
+
+    [Fact]
+    public async Task A_read_is_still_made_while_the_application_stops_and_not_once_it_has_stopped()
+    {
+        // What is settled with the exchange last, as the application stops, reads the rules of
+        // a symbol for the position that it protects (NFR-REL-5). Here a job that has
+        // something to do last reads them, with nothing read before: on a database of its
+        // own, where its application runs the background work.
+        ExchangeSymbols? read = null;
+        IExchangeMarketData? data = null;
+
+        var binance = new StandInSystem(request => StandInSystem.Json(HttpStatusCode.OK, BinanceCalls.AnswerTo(request.RequestUri!.AbsolutePath)));
+        using var application = binance.Behind(
+            ExchangeGatewayModule.HttpClientName,
+            services: services => services.AddSingleton<IBackgroundJob>(provider => new LastJob(
+                "reads-last",
+                BackgroundJobSchedule.Every(TimeSpan.FromHours(1)),
+                last: async stop =>
+                {
+                    data = provider.GetRequiredService<IExchangeMarketData>();
+                    read = await data.GetSymbolsAsync(Market.Spot, TradingMode.Live, stop);
+                })),
+            database: PostgresServer.CreateDatabase());
+
+        var host = application.Services.GetRequiredService<IHost>();
+        await Wait.UntilAsync(
+            () => SchedulerLog.Count(application, SchedulerLog.Active) == 1, "the application running the background work");
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        // Read as the application stopped, with one call.
+        Assert.Equal(ExchangeCallOutcome.Succeeded, read?.Outcome);
+        Assert.NotEmpty(read!.Symbols);
+        Assert.Equal(1, binance.Calls.Count(call => call.Address.AbsolutePath == "/api/v3/exchangeInfo"));
+        Assert.Empty(SchedulerLog.Trouble(application));
+
+        // Once the application has stopped, a read ends as a cancelled call: nothing is asked
+        // of Binance for an application that is gone.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => data!.GetPriceAsync(Market.Spot, TradingMode.Live, Symbol, TestContext.Current.CancellationToken));
     }
 
     [Fact]

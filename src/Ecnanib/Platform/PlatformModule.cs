@@ -65,6 +65,7 @@ public static class PlatformModule
 
         builder.Services.AddPersistence();
         builder.Services.AddBackgroundWork();
+        GiveTimeToStop(builder, settings.Application);
         builder.Services.AddTransportSecurity(settings.Application);
 
         // The signals that tell the open pages of a user that something of theirs changed, and
@@ -77,6 +78,29 @@ public static class PlatformModule
         builder.Services.AddSingleton<StoredSecretReencryptor>();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Has the host wait for the application to stop for as long as the configuration file says:
+    /// the cycles that run are stopped, and what they left is settled with the exchange, before
+    /// the process ends (NFR-REL-5). The host's own default, 30 seconds, is less than a cycle
+    /// that is being stopped may take. See "Stopping" in docs/reliability.md.
+    /// </summary>
+    /// <remarks>
+    /// The platform has a variable of its own for this time, <c>DOTNET_SHUTDOWNTIMEOUTSECONDS</c>.
+    /// Where a deployment sets it, it keeps its default behavior, as every variable of the
+    /// platform does (NFR-CFG-3): the host waits for as long as it says, and the file's value is
+    /// for a deployment that does not set it.
+    /// </remarks>
+    private static void GiveTimeToStop(WebApplicationBuilder builder, ApplicationSettings application)
+    {
+        if (builder.Configuration[WebHostDefaults.ShutdownTimeoutKey] is not null)
+        {
+            return;
+        }
+
+        builder.Services.Configure<HostOptions>(
+            options => options.ShutdownTimeout = TimeSpan.FromSeconds(application.ShutdownSeconds));
     }
 
     /// <summary>

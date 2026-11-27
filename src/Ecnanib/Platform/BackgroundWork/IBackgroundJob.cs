@@ -60,6 +60,65 @@ public interface IDueAtStart
     Task<bool> IsDueAtStartAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A job on an interval that the background work starts with: its run comes first, and no other
+/// job starts until it has ended (NFR-REL-3). What reconciles the records with the exchange is
+/// such a job: nothing is scheduled before it has run. A job implements this beside
+/// <see cref="IBackgroundJob"/>. See "A job that runs first" in docs/background-work.md.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Each time this instance takes up the background work, at the start of the application and
+/// again when the lock was lost and taken back, the scheduler runs the jobs that run first, one
+/// after the other in the order that they were registered in, each as a run like any other. It
+/// runs them whatever their rows say: also one whose interval has not passed, and one whose
+/// latest run never finished.
+/// </para>
+/// <para>
+/// The other jobs wait for them for a limited time. When that is over, they start beside the
+/// runs that still go on.
+/// </para>
+/// <para>
+/// Only a job on an interval can run first. A job on UTC boundaries runs for a boundary, and
+/// the start of the work is none, so the application does not start with one that implements this.
+/// </para>
+/// </remarks>
+public interface IRunsFirst
+{
+    /// <summary>
+    /// Says that this instance takes up the background work now. It is called under the lock
+    /// that the work runs under, before any job starts: what the job remembers of the work that
+    /// it did before is void, because another instance may have done the work meanwhile. An
+    /// error that leaves this is logged, and the job runs first all the same.
+    /// </summary>
+    void TakenUp();
+}
+
+/// <summary>
+/// A job that has something to do last, as the application stops: what must not be left undone
+/// until the next start, such as the protection of a position that a stopped cycle left without
+/// one (NFR-REL-5). A job implements this beside <see cref="IBackgroundJob"/>. See "A job that
+/// runs last" in docs/background-work.md.
+/// </summary>
+/// <remarks>
+/// It is called once, by the instance that runs the background work, when the application
+/// stops: after every run of every job has ended, and before the lock is let go. It is not
+/// called when the lock is lost, and not by an instance that stands by. It is no run of the job:
+/// nothing of it is in the job's row.
+/// </remarks>
+public interface IRunsLast
+{
+    /// <summary>
+    /// Does what is to be done before the application has stopped. An error that leaves this is
+    /// logged, and the application stops all the same.
+    /// </summary>
+    /// <param name="cancellationToken">
+    /// Canceled when the time that the application has to stop in is nearly over. Nothing more
+    /// is begun after that, and what is under way then is brought to its end.
+    /// </param>
+    Task RunLastAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>One run of a job.</summary>
 /// <param name="ScheduledFor">
 /// The time the run was due, in UTC. For a job on UTC boundaries it is the boundary itself, such

@@ -5,6 +5,7 @@ using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Ecnanib.Tests.BackgroundWork;
@@ -28,6 +29,23 @@ internal static class SchedulerLog
     public const string SessionEnded = "The database session that holds the background work lock has ended or does not answer, so this instance stops its jobs and stands by";
     public const string CannotGoOn = "The background work cannot go on. This instance tries again every second until it can";
     public const string CannotSay = "Background job {Job} could not say whether it is due now that the background work starts. It runs when it is next due, at {NextRun}";
+
+    // The jobs that run first, as the background work starts.
+    public const string UnfinishedFirst = "Background job {Job} did not finish the run it started at {StartedAt}. It runs first all the same, as the background work starts";
+    public const string NotTold = "Background job {Job} could not be told that this instance takes up the background work. It runs first all the same";
+    public const string FirstEnded = "The background jobs that run first have ended, so the other jobs start";
+    public const string FirstLate =
+        "The background jobs that run first did not end within {Minutes} minutes of the start of the background work, so the other jobs start beside them. Still to end: {Jobs}";
+
+    // The jobs that run last, as the application stops.
+    public const string DidLast = "Background job {Job} did what it does last as the application stops, in {DurationMs} ms";
+    public const string LastNotEnded =
+        "Background job {Job} did not end what it does last as the application stops, after {DurationMs} ms: the time to stop in is nearly over";
+    public const string LastFailed = "Background job {Job} failed at what it does last as the application stops, after {DurationMs} ms";
+    public const string NothingLast =
+        "The time that the application has to stop in is nearly over before the runs of its background jobs have ended, so nothing is done last: {Jobs}. Still running: {Running}";
+    public const string Unended =
+        "The application stops before its background work has ended, because the time that it has to stop in is over. Still running: {Jobs}";
 
     /// <summary>The events the scheduler has written so far, read while the application is still writing.</summary>
     public static IReadOnlyList<LoggedEvent> Of(LoggedApplication application)
@@ -60,6 +78,16 @@ internal static class ApplicationWithJobs
     /// <param name="clock">The time the scheduler goes by, when the test sets it.</param>
     /// <param name="jobs">In the order the scheduler looks at them.</param>
     public static LoggedApplication On(TestDatabase database, TestClock? clock, params IBackgroundJob[] jobs) =>
+        On(database, clock, stopsWithin: null, jobs);
+
+    /// <param name="database">A database of the test's own: on a shared one, another application may hold the lock.</param>
+    /// <param name="clock">The time the scheduler goes by, when the test sets it.</param>
+    /// <param name="stopsWithin">
+    /// How long the host waits for the application to stop, in place of the time of the file of
+    /// the tests, for a test of what becomes of a stop that takes longer.
+    /// </param>
+    /// <param name="jobs">In the order the scheduler looks at them.</param>
+    public static LoggedApplication On(TestDatabase database, TestClock? clock, TimeSpan? stopsWithin, params IBackgroundJob[] jobs) =>
         new(
             LoggedApplication.Settings(),
             host => host.ConfigureServices(services =>
@@ -73,8 +101,123 @@ internal static class ApplicationWithJobs
                 {
                     services.AddSingleton<TimeProvider>(clock);
                 }
+
+                if (stopsWithin is { } within)
+                {
+                    services.Configure<HostOptions>(options => options.ShutdownTimeout = within);
+                }
             }),
             database);
+}
+
+/// <summary>What jobs did, in the order that they did it, for a test of what comes before what.</summary>
+internal sealed class Sequence
+{
+    private readonly ConcurrentQueue<string> _steps = new();
+
+    public IReadOnlyList<string> Steps => [.. _steps];
+
+    public void Add(string step) => _steps.Enqueue(step);
+}
+
+/// <summary>
+/// A job on an interval that runs first as the background work starts: it records its runs and
+/// how often it was told that the work is taken up, and does what the test gives it to do.
+/// </summary>
+internal sealed class FirstJob(
+    string name,
+    BackgroundJobSchedule schedule,
+    Func<BackgroundJobRun, CancellationToken, Task>? work = null) : IBackgroundJob, IRunsFirst
+{
+    private readonly ConcurrentQueue<BackgroundJobRun> _runs = new();
+    private int _takenUp;
+    private int _ended;
+
+    public string Name => name;
+
+    public BackgroundJobSchedule Schedule => schedule;
+
+    /// <summary>The runs that have started, in order.</summary>
+    public IReadOnlyList<BackgroundJobRun> Runs => [.. _runs];
+
+    /// <summary>How many runs have ended, however they ended.</summary>
+    public int Ended => Volatile.Read(ref _ended);
+
+    /// <summary>How often the scheduler said that the instance takes up the work.</summary>
+    public int TakenUps => Volatile.Read(ref _takenUp);
+
+    /// <summary>What a run does. A test can change it between runs.</summary>
+    public Func<BackgroundJobRun, CancellationToken, Task>? Work { get; set; } = work;
+
+    /// <summary>What being told that the work is taken up does, such as failing.</summary>
+    public Action? OnTakenUp { get; set; }
+
+    public void TakenUp()
+    {
+        Interlocked.Increment(ref _takenUp);
+        OnTakenUp?.Invoke();
+    }
+
+    public async Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
+    {
+        _runs.Enqueue(run);
+
+        try
+        {
+            if (Work is { } doWork)
+            {
+                await doWork(run, cancellationToken);
+            }
+        }
+        finally
+        {
+            Interlocked.Increment(ref _ended);
+        }
+    }
+}
+
+/// <summary>
+/// A job that has something to do last as the application stops: it records its runs and how
+/// often it was called last, and does what the test gives it to do.
+/// </summary>
+internal sealed class LastJob(
+    string name,
+    BackgroundJobSchedule schedule,
+    Func<CancellationToken, Task>? last = null,
+    Func<BackgroundJobRun, CancellationToken, Task>? work = null) : IBackgroundJob, IRunsLast
+{
+    private readonly ConcurrentQueue<BackgroundJobRun> _runs = new();
+    private int _last;
+
+    public string Name => name;
+
+    public BackgroundJobSchedule Schedule => schedule;
+
+    /// <summary>The runs that have started, in order.</summary>
+    public IReadOnlyList<BackgroundJobRun> Runs => [.. _runs];
+
+    /// <summary>How often the scheduler had the job do what it does last.</summary>
+    public int LastRuns => Volatile.Read(ref _last);
+
+    public async Task RunAsync(BackgroundJobRun run, CancellationToken cancellationToken)
+    {
+        _runs.Enqueue(run);
+
+        if (work is not null)
+        {
+            await work(run, cancellationToken);
+        }
+    }
+
+    public async Task RunLastAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _last);
+
+        if (last is not null)
+        {
+            await last(cancellationToken);
+        }
+    }
 }
 
 /// <summary>A job that records its runs, and does what the test gives it to do.</summary>

@@ -39,35 +39,47 @@ public class ReconciliationJobTests
     }
 
     [Fact]
-    public async Task The_agents_are_reconciled_as_the_background_work_starts_when_one_holds_anything()
+    public async Task The_agents_are_reconciled_first_as_the_background_work_starts_when_one_holds_anything()
     {
         using var application = new OrdersApplication();
-        var job = Assert.IsAssignableFrom<IDueAtStart>(application.Application.Reconciliation);
 
-        // An agent that holds nothing has nothing that an account could differ from.
+        // The scheduler runs the job before it starts any other, each time that the instance
+        // takes up the background work: see StartupSequenceTests.
+        Assert.IsAssignableFrom<IRunsFirst>(application.Application.Reconciliation);
+
+        // An agent that holds nothing has nothing that an account could differ from: the run
+        // that comes first asks nobody about it.
         var agent = await application.GiveAgentAsync();
+        await application.ReconcileAllAsync();
 
-        Assert.False(await job.IsDueAtStartAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(application.Binance.System.Calls);
 
         // An open position, on either market, is reconciled from the start: its user may have
         // closed it at the exchange while the application was down.
         await application.PlaceAsync(agent, GuardCases.OpenLong);
+        var asked = application.Binance.AskedAbout.Count;
 
-        Assert.True(await job.IsDueAtStartAsync(TestContext.Current.CancellationToken));
+        await application.ReconcileAllAsync();
+
+        Assert.True(application.Binance.AskedAbout.Count > asked);
     }
 
     [Fact]
     public async Task An_entry_that_rests_is_something_that_an_agent_holds()
     {
         using var application = new OrdersApplication();
-        var job = Assert.IsAssignableFrom<IDueAtStart>(application.Application.Reconciliation);
         var agent = await application.GiveAgentAsync();
 
         // An entry at a price below the market rests, and has opened no position.
         await application.PlaceAsync(agent, GuardCases.OpenLong with { EntryPrice = 59900m });
+        var asked = application.Binance.AskedAbout.Count;
 
         Assert.Empty(await application.PositionsOfAsync(agent.Id));
-        Assert.True(await job.IsDueAtStartAsync(TestContext.Current.CancellationToken));
+
+        // A run reconciles its agent all the same: the entry is asked about.
+        await application.ReconcileAllAsync();
+
+        Assert.True(application.Binance.AskedAbout.Count > asked);
     }
 
     [Fact]

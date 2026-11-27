@@ -64,6 +64,28 @@ public interface IPlanOrders
     Task SettleAsync(Guid agentId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Settles the orders of an agent with the exchange for the last time before the application
+    /// stops, so that no entry is left without protection while the service is down (NFR-REL-5).
+    /// It settles as <see cref="SettleAsync"/> does, and beyond that: an entry at a price that
+    /// rests is taken off the exchange, whatever time it has left, because what it buys while
+    /// nothing asks about it would have no stop-loss, and an order of which the exchange has not
+    /// said yet whether it has it is waited for, and asked about again once its word is final.
+    /// It opens nothing: what it places is the protection of a position, or its close at market
+    /// where no protection can be placed.
+    /// </summary>
+    /// <param name="agentId">The agent.</param>
+    /// <param name="cancellationToken">
+    /// Canceled when the time that the application has to stop in is nearly over. Nothing is
+    /// begun after that, and no wait goes on. What an entry that was taken off bought is still
+    /// protected.
+    /// </param>
+    /// <returns>
+    /// Whether nothing of the agent is left for the next start to settle: every order is known
+    /// to the exchange or over, no entry rests, and an open position has its stop-loss resting.
+    /// </returns>
+    Task<bool> SettleBeforeStopAsync(Guid agentId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Reconciles an agent with the exchange, which is the source of truth (FR-BIN-7, FR-BIN-8):
     /// settles its orders, as <see cref="SettleAsync"/> does, and holds its open position
     /// against what the account of its user holds. A position that the account no longer holds

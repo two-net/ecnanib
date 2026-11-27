@@ -26,6 +26,10 @@ public class TrackedFileTests
         // SRS section 7 and Appendix B.
         Assert.Equal("Ecnanib", settings.Application.Name);
         Assert.True(settings.Application.RegistrationOpen);
+
+        // Two minutes to stop in: the cycles that run are stopped, and what they left is settled
+        // with the exchange, before the process ends (NFR-REL-5).
+        Assert.Equal(120, settings.Application.ShutdownSeconds);
         Assert.Equal(60, settings.Security.SessionIdleMinutes);
         Assert.Equal(LogLevel.Information, settings.Logging.MinimumLevel);
         Assert.True(settings.Logging.Outputs.Console);

@@ -135,7 +135,8 @@ public class OperatorStatusPageTests
             RowsOf(page, "status-scheduler"));
 
         Assert.Contains(
-            "2 jobs are overdue: no instance runs the background work, or a run outlasts its schedule.", SaidIn(page, "status-scheduler"));
+            "2 jobs are overdue: no instance runs the background work, a run outlasts its schedule, or the work has just started and still settles and reconciles first.",
+            SaidIn(page, "status-scheduler"));
     }
 
     [Fact]

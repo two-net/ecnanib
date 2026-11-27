@@ -85,7 +85,11 @@ public static class DecisionEngineModule
         services.AddSingleton<ILossLimits, LossLimitWatch>();
 
         // Settles the orders every minute, for the agents that have something to settle: what
-        // a cycle could not finish, and what was under way when the application stopped.
+        // a cycle could not finish, and what was under way when the application stopped. It
+        // runs first as the background work starts, and it settles once more as the
+        // application stops (NFR-REL-3, NFR-REL-5). The jobs that run first run in the order
+        // that they are registered in, so it stays before what reconciles, below: an order
+        // that was under way is asked about before an account is held against the records.
         services.AddBackgroundJob<OrderSettlingJob>();
 
         // Records the result of every closed position, once all of it is stored: its net profit
@@ -98,9 +102,11 @@ public static class DecisionEngineModule
         // Reconciles the agents with the exchange, which is the source of truth, as the
         // background work starts and at the time between reconciliations: what the account of
         // an agent's user holds is held against the records, which are corrected, so what a
-        // user does at the exchange by hand is in them (FR-BIN-7, FR-BIN-8). What starts a
-        // cycle asks whether its agent was reconciled since this instance took up the work
-        // (NFR-REL-3).
+        // user does at the exchange by hand is in them (FR-BIN-7, FR-BIN-8). It runs first as
+        // the background work starts, once the orders are settled, and no other job starts
+        // before it has: on startup the application reconciles, and then resumes scheduling.
+        // What starts a cycle asks whether its agent was reconciled since this instance took
+        // up the work as well (NFR-REL-3).
         services.AddSingleton<AccountReconciliation>();
         services.AddSingleton<IReconciliation, ReconciledSinceStart>();
         services.AddBackgroundJob<ReconciliationJob>();

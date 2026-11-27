@@ -44,7 +44,8 @@ internal sealed class SettingsJson
             "Name": "Ecnanib Test",
             "PublicUrl": "https://ecnanib.example",
             "RegistrationOpen": false,
-            "Operators": [ "operator@ecnanib.example" ]
+            "Operators": [ "operator@ecnanib.example" ],
+            "ShutdownSeconds": 90
           },
           "ConnectionStrings": { "EcnanibDbContext": "Host=db.example;Database=ecnanib;Username=app;Password=database-password" },
           "Security": {

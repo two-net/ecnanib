@@ -22,6 +22,7 @@ public class SettingsFileTests
         Assert.Equal(new Uri("https://ecnanib.example"), settings.Application.PublicUrl);
         Assert.False(settings.Application.RegistrationOpen);
         Assert.Equal(["operator@ecnanib.example"], settings.Application.Operators);
+        Assert.Equal(90, settings.Application.ShutdownSeconds);
 
         Assert.Equal(
             "Host=db.example;Database=ecnanib;Username=app;Password=database-password",
@@ -172,6 +173,12 @@ public class SettingsFileTests
         { "Binance:OutageFailures", "1001", "Binance:OutageFailures" },
         { "Binance:OutageAlertSeconds", "-1", "Binance:OutageAlertSeconds" },
         { "Binance:OutageAlertSeconds", "3601", "Binance:OutageAlertSeconds" },
+
+        // An application that has less than a minute and a half to stop cannot both stop its
+        // cycles and settle what they left (NFR-REL-5), and nothing waits for a process for
+        // longer than an hour.
+        { "Application:ShutdownSeconds", "89", "Application:ShutdownSeconds" },
+        { "Application:ShutdownSeconds", "3601", "Application:ShutdownSeconds" },
 
         // A breaker that never pauses, or that pauses for longer than a day, is none. Its
         // longest pause is no shorter than its first, and a key counts itself among the keys
