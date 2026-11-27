@@ -1400,6 +1400,21 @@ fieldset {
     border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 
+/* The banner that announces maintenance, under the bar of every page (NFR-REL-6). It says so in
+   words, and is marked by a line at its side in the colour of a warning, which has a value for
+   a light page and one for a dark one: the text keeps the colour of the text around it. */
+.site-notice {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-inline-start: 0.25rem solid var(--warning);
+    overflow-wrap: break-word;
+}
+
+    .site-notice > p {
+        max-width: 75ch;
+        margin: 0;
+    }
+
 /* The content of a page. A paragraph is no wider than reads well, and a table is as wide as the
    page lets it be. A word that is longer than a narrow screen is wide breaks. The content takes
    the focus from the link past the bar, and shows no outline for it: nothing is done there. */
@@ -1539,7 +1554,7 @@ main {
 
 /* On a wide screen the page has more room at its sides. */
 @media (min-width: 48rem) {
-    .site-bar, .site-footer {
+    .site-bar, .site-notice, .site-footer {
         padding-inline: 1.5rem;
     }
 

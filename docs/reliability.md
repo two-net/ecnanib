@@ -1,12 +1,12 @@
 # Reliability
 
-Failures are safe: any internal error, timeout, or dependency outage results in no new entry. Open positions stay protected by orders resting on the exchange, which do not depend on Ecnanib being up (NFR-REL-2). An outage at one AI provider affects only the cycles that need it. Repeated failures for a provider or a key trip a breaker that pauses calls and retries later. A Binance outage pauses entries and raises an alert (NFR-REL-4). On startup the application migrates the database, reconciles every running agent with the exchange, then resumes scheduling. A restart never creates a duplicate order (NFR-REL-3). Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is left without protection (NFR-REL-5).
+Failures are safe: any internal error, timeout, or dependency outage results in no new entry. Open positions stay protected by orders resting on the exchange, which do not depend on Ecnanib being up (NFR-REL-2). An outage at one AI provider affects only the cycles that need it. Repeated failures for a provider or a key trip a breaker that pauses calls and retries later. A Binance outage pauses entries and raises an alert (NFR-REL-4). On startup the application migrates the database, reconciles every running agent with the exchange, then resumes scheduling. A restart never creates a duplicate order (NFR-REL-3). Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is left without protection (NFR-REL-5). Target availability is 99.5% per month, excluding announced maintenance (NFR-REL-1). Maintenance never closes positions, and a banner announces it in advance (NFR-REL-6).
 
 Providers have outages, and so has an exchange (risk R5 of the specification). Nothing that fails opens a position, and what fails again and again is not called again and again: the calls to a provider, and the calls with one key, are paused for a while and then made again, and new entries wait while Binance does not answer.
 
 A service is also restarted, for a deployment and after a fault. It starts in an order, so that nothing is scheduled on records that the exchange was not asked about, and it stops in an order, so that what a cycle was doing with the exchange is brought to its end before the process is gone.
 
-The code is `AiCallBreakers` in `src/Ecnanib/AiProviderGateway/Adapters`, `BinanceOutages` in `src/Ecnanib/ExchangeGateway/Adapters/Binance`, `CallTrouble` in `src/Ecnanib/DecisionEngine`, and `ExchangeOutageAlerts` with its job in `src/Ecnanib/Agents`. The order of a start and of a stop is in `BackgroundJobScheduler` in `src/Ecnanib/Platform/BackgroundWork`, with `OrderSettlingJob` and `ReconciliationJob` in `src/Ecnanib/DecisionEngine`, which are what runs first and what runs last. The rules below are enforced by the tests in `tests/Ecnanib.Tests/Reliability`, and by `AiCallBreakerTests`, `OutageWatchTests`, `CallTroubleTests`, `ExchangeOutageAlertTests`, `BackgroundJobRunsFirstTests`, and `BackgroundJobRunsLastTests`.
+The code is `AiCallBreakers` in `src/Ecnanib/AiProviderGateway/Adapters`, `BinanceOutages` in `src/Ecnanib/ExchangeGateway/Adapters/Binance`, `CallTrouble` in `src/Ecnanib/DecisionEngine`, and `ExchangeOutageAlerts` with its job in `src/Ecnanib/Agents`. The order of a start and of a stop is in `BackgroundJobScheduler` in `src/Ecnanib/Platform/BackgroundWork`, with `OrderSettlingJob` and `ReconciliationJob` in `src/Ecnanib/DecisionEngine`, which are what runs first and what runs last. What measures the availability and keeps the maintenance that is announced is in `src/Ecnanib/Platform/Availability`: `Uptime` with its job, `AvailabilityMeasure`, and `MaintenanceWindows`. What announces maintenance for an operator is `MaintenanceAnnouncements` in `src/Ecnanib/Accounts`, the page is `OperatorMaintenance` in `src/Ecnanib/WebUi/Pages/Operator`, and the banner is `MaintenanceNotice` in `src/Ecnanib/WebUi/Layout`. The rules below are enforced by the tests in `tests/Ecnanib.Tests/Reliability`, and by `AiCallBreakerTests`, `OutageWatchTests`, `CallTroubleTests`, `ExchangeOutageAlertTests`, `BackgroundJobRunsFirstTests`, and `BackgroundJobRunsLastTests`.
 
 ## Safe failure
 
@@ -184,6 +184,80 @@ Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is l
 | **Whatever supervises the process must wait for longer than the setting.** | A container runtime or a service manager that kills the process sooner cuts the stop short. Docker waits for 10 seconds unless it is told otherwise (`docker stop --time`, `stop_grace_period`), and systemd for 90 (`TimeoutStopSec`). |
 | **The platform's own variable keeps its default behavior.** | Where a deployment sets `DOTNET_SHUTDOWNTIMEOUTSECONDS`, the host waits for as long as that says, and not for as long as the file says (NFR-CFG-3). |
 
+## Availability
+
+Target availability is 99.5% per month, excluding announced maintenance (NFR-REL-1). The service measures it itself: it says every minute that it is up, and the time that nothing said so for counts as down.
+
+**The service is up while an instance runs the background work and the database answers it.** That is when cycles run, positions are watched, and pages are answered from what is stored. `Uptime` says so with the job `uptime`, in the table `up_spans`: a row is a time that the service was up for without a break, from `began_at` to `beat_at`.
+
+| Rule | Detail |
+|---|---|
+| **An instance lengthens a row of its own.** | Its first beat writes a row, and each beat after it moves the end of that row to now. So the table grows by a row with each start and each break, and not with each minute. |
+| **The first row of an instance reaches back to its start.** | To the moment that the host started what runs the jobs. The jobs that run first may hold the first beat back for two minutes, and the instance was up meanwhile: see "Starting". |
+| **An instance that takes the work over goes on where the other left off.** | Its row begins where the latest row ends when that is later than its own start, so the time that both were up for is said once, and there is no break between them. |
+| **A beat that comes too late begins a new row.** | When the row was last lengthened longer ago than `Uptime.Tolerance`, which is three minutes and fixed, the database did not answer or nothing ran the work meanwhile. The time since then is not claimed: the new row begins now, and the time between the two rows counts as down. A beat that the scheduler starts late, or that fails once, is no break. |
+| **Nothing is done as the application stops.** | A row ends with its last beat, which is a minute before the stop at the most. So a stop is counted from a little too early, and never from too late: the service is never said to have been up when it was not. |
+| **Only the instance that runs the background work says so.** | Under the lock, as every job. An instance that stands by writes nothing. |
+| **A run that fails says nothing.** | The scheduler logs the error, as of every job. When the runs fail for longer than is tolerated, the time counts as down, which it was for whoever needed the database. |
+
+**The availability of a month** is worked out from those rows and from the maintenance that was announced in advance, by `MonthAvailability.Of`, each time it is asked for. Nothing of it is stored.
+
+| Rule | Detail |
+|---|---|
+| **A month is a month of the calendar, in UTC.** | The month that runs is measured until now, and a month that is over until its end. |
+| **A month that the measure began in is held to what was measured of it.** | It is measured from the moment that the service first said that it was up, and the days before are no downtime. |
+| **Announced maintenance is left out.** | The time of every row of `maintenance_windows` that was announced in advance, as far as it lies in the month, whether the service was down during it or not. Maintenance that overlaps is left out once. See "Announced maintenance". |
+| **Maintenance that was announced late is not left out.** | What the service is down for during it counts as any downtime does. |
+| **The figure is the share of the rest that the service was up for.** | The time that was measured, without the maintenance, is what the service was to be up for. Two instances that were up at the same time are counted once. |
+| **The service counts as up until now while its last beat is recent.** | Within `Uptime.Tolerance`: the next beat is still to come. Otherwise it is down since its last beat, also before anything has said that it is up again. |
+| **A month meets the target when its figure is `Availability:TargetPercent` or more.** | It is held against the figure as it was worked out. The figure that the screen shows is cut after three places and never rounded up, so it says no more than was measured. |
+| **What was not measured is not known.** | A month before the service first said that it was up, and one of which all that was measured was announced maintenance, has no figure: it is no 0 and no 100. |
+
+With the tracked file a month of 30 days may be down for 3 hours and 36 minutes.
+
+**What it does not measure:** whether a browser reaches the service. A proxy, a network, or a certificate between a user and the application is not seen from inside it. `/api/health` answers while the process runs, for a monitor of the deployment.
+
+## Announced maintenance
+
+Maintenance never closes positions, and a banner announces it in advance (NFR-REL-6). An operator announces maintenance on a page of their own: from when to when the service may not answer. What is announced is a row of the table `maintenance_windows`, with when it starts, when it ends, when it was announced, and whether that was in advance.
+
+**An announcement is words on every page, and time that is left out of a measure.** It acts on nothing:
+
+| Rule | Detail |
+|---|---|
+| **Maintenance pauses no agent, takes no order off the exchange, and closes no position.** | Nothing that trades can read what is announced: it is kept in `Ecnanib.Platform.Availability`, which only the platform, Accounts, and the Web UI may use. `ComponentRules` says so, and `MaintenanceRuleTests` holds the application to it. |
+| **Cycles run until the application is stopped.** | The stop itself is graceful, whether maintenance was announced for it or not: see "Stopping". |
+| **A position whose stop-loss rests is left as it is.** | Its protection rests on the exchange, which executes it whether the service runs or not (NFR-REL-2). `GracefulShutdownTests` stops an application for maintenance that is under way, and finds the position open and nothing sent for it. |
+
+**Announcing, cancelling, and ending** are the three things that an operator does, on `/operator/maintenance`, which the operator status screen leads to:
+
+| Rule | Detail |
+|---|---|
+| **Maintenance is announced before it starts.** | Its start is later than the moment that it is announced at, its end is later than its start, and it lasts no longer than `Availability:LongestMaintenanceHours`. The form says what is wrong at the field that it is wrong at, and nothing is stored. |
+| **The start and the end are typed in UTC.** | Each as a date and a time of day in a field of text, as in `2026-11-28 02:00`: the fields say so. The page and the banner write them in the time zone of whoever reads them, as every time: see [times.md](times.md). |
+| **It is announced in advance when it is announced `Availability:MaintenanceNoticeHours` before its start, or earlier.** | That is decided as it is announced, and written to its row: a file that asks for another notice later changes nothing of a month that was measured. |
+| **Maintenance that is announced late is told of all the same.** | Its users are warned, and what the service is down for during it counts. The page says so as it is announced, and in its table. |
+| **Several can be announced, and may overlap.** | The banner tells of what is under way, or else of what starts next. The measure leaves time that two of them cover out once. |
+| **Maintenance that has not started can be cancelled.** | Its row is deleted, and no page tells of it any more. |
+| **Maintenance that is under way can be ended.** | Its end is moved to now: it is over from then on, and what the service is down for after that counts. |
+| **Maintenance that has started is never taken away, and one that is over is not changed.** | What was left out of a month stays left out, and nothing more is. |
+| **Each of the three is recorded in the audit trail,** in the transaction that does it (FR-OPS-5). | `MaintenanceAnnounced`, `MaintenanceCancelled`, and `MaintenanceEnded`, with the operator as the user of the event and `maintenance:<id>` as its target. The row itself says nothing of who announced it, and stays when that account is deleted. |
+| **A form that is sent twice changes nothing more.** | Each is written only where it changes something, and what changed nothing is not recorded. |
+| **Only an operator does any of it.** | The page carries the operator policy, and `MaintenanceAnnouncements` asks again whether the user of its request is an operator (NFR-SEC-3). See "Operators" in [ownership.md](ownership.md). |
+
+`MaintenanceAnnouncements` is of Accounts, because of what it uses: who is an operator, and the audit trail. The row is of the platform, which may name no component. So the platform writes it through `MaintenanceWindows`, inside the transaction that Accounts opens, as the audit trail writes its event: the row is stored when the event is, and not when it is not.
+
+**The banner** is `MaintenanceNotice`, under the bar of every page, for a visitor as for a user:
+
+| Rule | Detail |
+|---|---|
+| **It is there from the moment that maintenance is announced until it is over.** | And not otherwise: a page without announced maintenance has no banner. |
+| **It says from when to when, and once the maintenance has started, until when.** | "Maintenance is announced from … to …", and "Maintenance is under way until …". Both say that the service may not answer, that open positions keep their protective orders on the exchange, and that no position is closed for it. |
+| **It writes its times as the page does.** | In the time zone of the device, or in UTC for a user who chose that, and for a device that has said none. |
+| **It is as it was when the page was written.** | It is read from the database for each request, and nothing is cached: an announcement shows with the next page, on every instance. A page that is open does not change by itself. |
+| **It fails no page.** | The frame is on the page of an error as well. An announcement that cannot be read is a warning in the log, and the page is without the banner. |
+| **It is a part of the page with a name, and nothing to act on.** | A `section` called "Maintenance" between the bar and the content, with one sentence that is a status. It has no link, no form, and takes no focus. Its look is in `app.css`: a line in the colour of a warning at its side, and the text in the colour of the text. |
+
 ## The settings
 
 | Setting | Tracked file | What it is |
@@ -199,19 +273,23 @@ Shutdown is graceful: in-flight cycles finish or abort safely, and no entry is l
 | `Binance:OutageFailures` | 5 | The calls in a row without an answer that are an outage: from 1 to 1000. |
 | `Binance:OutageAlertSeconds` | 60 | How long an outage lasts before users are told: from 0 to 3600. |
 | `Application:ShutdownSeconds` | 120 | How long the application has to stop in: from 90 to 3600. |
+| `Availability:TargetPercent` | 99.5 | The availability that a month is held to, in percent: from 1 to 100. |
+| `Availability:MaintenanceNoticeHours` | 24 | How long before its start maintenance is announced for it to be announced in advance: from 0 to 720. With 0, all that is announced before it starts is. |
+| `Availability:LongestMaintenanceHours` | 8 | How long maintenance that is announced lasts at the most: from 1 to 168. |
 
 Each is read at startup. See [configuration.md](configuration.md).
 
 ## The operator status screen
 
-Two parts of the screen show what is paused (FR-OPS-2):
+Three parts of the screen are of this document: the first shows how available the service was (NFR-REL-1), and the other two what is paused (FR-OPS-2):
 
 | Part | What it shows |
 |---|---|
+| Availability | The target of the configuration file, and the month that runs and the one before it: the figure, whether it meets the target, how long the service was down, how long the maintenance lasted that is left out, and from when to when the month was measured. A month that nothing was measured of says "Not known". |
 | Calls to the AI providers | Each provider of the configuration file: whether its calls are made, paused until when, or made again after a pause, the failures and the pauses in a row, and how many keys the provider refuses and how many of them are paused now. A key is a number, and nothing else. |
 | Outages of Binance | Each market in each environment: whether Binance answers, or since when it is out, the calls in a row without an answer, and when it last answered. |
 
-The pages may not use the AI Provider Gateway, so the Decision Engine says on what the gateway keeps, as `ICallPauses`. Both are of the instance that answered the page. See "The operator status screen" in [ownership.md](ownership.md).
+The availability is read from the database through `IAvailability` of the platform, so every instance answers the same. The pages may not use the AI Provider Gateway, so the Decision Engine says on what the gateway keeps, as `ICallPauses`. The pauses and the outages are of the instance that answered the page. See "The operator status screen" in [ownership.md](ownership.md).
 
 ## The jobs
 
@@ -220,6 +298,7 @@ The pages may not use the AI Provider Gateway, so the Decision Engine says on wh
 | `exchange-outage-alerts` | Agents | Tells the users whose agents run where Binance has been out for long enough, and tells them when it answers again. It runs every minute, asks the gateway what it keeps in memory, and reads which agents run only when there is something to tell. It calls no exchange. |
 | `order-settling` | Decision Engine | Settles the orders of the agents that have something to settle, every minute. It runs first as the background work starts, and it settles once more as the application stops: see "Starting" and "Stopping". |
 | `reconciliation` | Decision Engine | Reconciles every agent that holds something with the exchange, every `Binance:ReconcileMinutes`. It runs first as the background work starts, once the orders are settled: see "Starting". |
+| `uptime` | Platform | Says that the service is up, every minute: it lengthens the row of its instance in `up_spans`, or writes a new one. It calls nothing outside the database. See "Availability". |
 
 The breakers and the watch on outages have no job: each is asked and told as a call is made. See [background-work.md](background-work.md).
 
@@ -278,6 +357,29 @@ Agent {AgentId} is not settled with the exchange as the application stops: it ha
 {NotSettled} of {Agents} agents are not settled with the exchange as the application stops. The next start settles them first
 ```
 
+`Ecnanib.Platform.Availability.Uptime`:
+
+```
+The service says for the first time that it is up. Its availability is measured from {From}
+Nothing said that the service was up from {From} to {Until}. {DownSeconds} s of that count as down: no maintenance was announced in advance for them
+Nothing said that the service was up from {From} to {Until}, during maintenance that was announced in advance. It does not count as down
+```
+
+`Ecnanib.Accounts.MaintenanceAnnouncements`:
+
+```
+User {UserId} announced maintenance {MaintenanceId} from {StartsAt} to {EndsAt}. Announced in advance: {InAdvance}. It acts on no agent
+User {UserId} cancelled maintenance {MaintenanceId} before it started: no page tells of it any more
+User {UserId} ended maintenance {MaintenanceId}, which was under way: it is over from now
+User {UserId} was refused announcing, cancelling, or ending maintenance, which is for an operator
+```
+
+`Ecnanib.WebUi.Layout.MaintenanceNotice`:
+
+```
+The maintenance that is announced could not be read for the banner of a page
+```
+
 | Event | Level |
 |---|---|
 | The jobs that run first have ended, and the schedule starts | Information |
@@ -299,6 +401,12 @@ Agent {AgentId} is not settled with the exchange as the application stops: it ha
 | An outage is over | Information |
 | Users were told of an outage, or of its end | Information, with how many, when there was anyone to tell |
 | A user could not be told, or an agent could not be moved | Error |
+| The service says for the first time that it is up | Information |
+| A break that counts as down, said by the first beat after it, with how many seconds count | Warning |
+| A break that lay in maintenance which was announced in advance | Information |
+| Maintenance was announced, cancelled, or ended | Information, by the id of the account and of the maintenance |
+| Someone who is no operator was refused announcing, cancelling, or ending maintenance | Warning |
+| The banner could not be read for a page | Warning, and the page is written without it |
 
 A pause of a key is logged inside the scope of the call that began it, so it carries the user, the agent, and the cycle of that call. No event holds a key, or anything worked out from one.
 
@@ -318,6 +426,10 @@ A pause of a key is logged inside the scope of the call that began it, so it car
 
 The file of the tests asks for more failures before a pause than the tracked file, and for 50 calls without an answer before an outage: many tests have a provider or their Binance fail a call for a reason of their own. A test that is about a pause sets what it needs. `OrdersApplication` stands `StandInOutages` in for the watch unless a test asks for the gateway's own, and no test application runs the job that tells of outages on a schedule: `EcnanibApplicationFactory` keeps it under a key, and `AccountsApplication.TellOfOutagesAsync` runs it.
 
+`AvailabilityFigureTests` is of the arithmetic of a month alone, which reads nothing: a month that the service was up for all of, time that counts as down held against the target, a month that the measure began in and one that still runs, maintenance that is left out, that overlaps, and that reaches out of the month, two instances at the same time, and what is not known. `UptimeTests` has the service say that it is up at moments of the test's choosing, on a clock that the test moves, and reads the rows and the figures that came of it: the first beat, the beats after it, the beat that comes too late, the instance that starts after another has stopped and the one that takes over, a break during maintenance and one that outlasts it, maintenance that was announced late, and the two months as they are read. An instance counts as started when the test first asks for the job. No application of a test runs the job on a schedule: `EcnanibApplicationFactory` keeps it under a key, and `AvailabilityApplication.BeatAsync` runs it.
+
+`MaintenanceAnnouncementTests` announces, cancels, and ends maintenance as an operator does, on the page, and reads the row, the event of the audit trail, and the log of each. It has maintenance that is announced late, each input that is refused, the form that is sent twice, the user who is no operator, the visitor, the form without its token, what announces it asked past its page, and the account of the operator that is deleted afterwards. A test that moves its clock to the maintenance signs its operator in again: a session does not outlast being idle for that long. `MaintenanceNoticeTests` asks for every page of the application as a visitor and as a user, without announced maintenance and with it, and has the two sentences of the banner, the moment that it changes at and the moment that it is gone, which of several it tells of, its times in the time zone of a device, the rules of the markup, and the announcement that cannot be read. `StoredMaintenance.Give` writes a row as an operator did who announced it. `MaintenanceRuleTests` holds the application to nothing that trades reading what is announced, and `GracefulShutdownTests` has the position whose stop-loss rests, which a stop for maintenance leaves as it is. The operator status screen is in `OperatorStatusPageTests`, and the states of the page of the operator are on the list of [accessibility.md](accessibility.md), where the third of them has the banner.
+
 ## Not built yet
 
 - Checking the stale limit and the global halt once more just before an entry is sent. Both are checked by the Risk Guard, and the reads that what places an entry makes after that can take seconds.
@@ -335,4 +447,14 @@ The file of the tests asks for more failures before a pause than the tracked fil
 - Waiting beyond the time to stop in for a close that is under way. A close that a user asked for is a request, which the web server waits for within the same time, and a close for a loss limit is waited for with the run that it is part of. A process that ends between taking a stop-loss off and closing the position leaves a position that the next start protects first.
 - Leaving the entries that rest to an instance that stands by and is about to take the work over. An instance that stops takes them off whether another one stands by or not: version 1 targets a single running instance.
 - Asking about an order that rests once at a start. What settles and what reconciles both ask about it, one after the other.
-- A banner that announces maintenance in advance (NFR-REL-6).
+- The banner on the page that answers in place of another. An address that has no page, and a page that is not for the user who asked for it, are answered with "Page not found", which the framework writes without waiting for what the frame asks the database for. That page has the bar and no banner. Every page that answers for itself has it.
+- The banner on a page that is open, without a request. A signal is of one user, and a visitor follows none: see [live-updates.md](live-updates.md). The banner shows with the next page.
+- Telling users of maintenance by a notification or by email.
+- Pausing new entries while maintenance is under way. An operator who wants no entry to be under way as the application stops switches the global halt on: see "The global halt" in [risk-guard.md](risk-guard.md).
+- Measuring the availability from outside the application. What lies between a browser and the application is not seen from inside it.
+- Telling an operator that a month has fallen under its target, other than on the status screen.
+- Showing the maintenance that is over. The status screen says how long the maintenance of a month lasted that is left out, and the audit trail has each announcement.
+- Changing maintenance that is announced. It is cancelled, and announced again.
+- Typing the start and the end of maintenance in the time zone of the page. They are typed in UTC.
+- A field of the browser's own for a date and a time. It has several stops of the keyboard in one control, and shows a clock of twelve hours on some devices, which is no way to write a time in UTC. The two fields are of text, in the form that their hints say, and are one stop each.
+- Deleting from `up_spans` and `maintenance_windows`. They grow by a row with each start or break of the service, and with each announcement.

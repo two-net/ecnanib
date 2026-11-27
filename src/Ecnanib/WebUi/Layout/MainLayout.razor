@@ -73,6 +73,9 @@
     </AuthorizeView>
 </header>
 
+@* What every page says of maintenance that is announced, while any is (NFR-REL-6). It asks for that itself. *@
+<MaintenanceNotice />
+
 @* What the link at the top leads to. It takes the focus then, and is no stop of the keyboard otherwise. *@
 <main id="@Screens.ContentId" tabindex="-1">
     @if (Screens.IsOfSettings(Path))

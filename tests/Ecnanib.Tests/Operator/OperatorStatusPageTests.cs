@@ -11,6 +11,7 @@ using Ecnanib.Tests.Catalog;
 using Ecnanib.Tests.DecisionEngine;
 using Ecnanib.Tests.Logging;
 using Ecnanib.Tests.Persistence;
+using Ecnanib.Tests.Reliability;
 using Ecnanib.Tests.Settings;
 using Ecnanib.WebUi;
 using Microsoft.AspNetCore.Hosting;
@@ -49,11 +50,12 @@ public class OperatorStatusPageTests
 
         // The seven readings of the requirement, in its order, each under a heading of its own.
         // With them, where the calls to the AI providers are paused, after the catalog of the
-        // providers, and where Binance is out, after its limits and its clock (NFR-REL-4).
+        // providers, and where Binance is out, after its limits and its clock (NFR-REL-4). And
+        // before them all, how available the service was (NFR-REL-1).
         Assert.Equal(
             [
-                "Scheduler", "Queue of the cycles", "Catalog syncs", "Calls to the AI providers", "Request limits of Binance", "Clock",
-                "Outages of Binance", "Tables", "Errors and warnings",
+                "Availability", "Scheduler", "Queue of the cycles", "Catalog syncs", "Calls to the AI providers",
+                "Request limits of Binance", "Clock", "Outages of Binance", "Tables", "Errors and warnings",
             ],
             Parsed(page).QuerySelectorAll("main h2").Select(heading => heading.TextContent.Trim()));
 
@@ -66,6 +68,56 @@ public class OperatorStatusPageTests
         // And nothing can be done on it: what an operator does is on a page that it leads to.
         Assert.Empty(Parsed(page).QuerySelectorAll("main form, main button, main input"));
         Assert.NotNull(Parsed(page).QuerySelector($"main a[href='{WebUiModule.GlobalHaltPath}']"));
+    }
+
+    [Fact]
+    public async Task The_availability_says_each_month_with_its_figure_held_against_the_target()
+    {
+        var clock = new TestClock(Morning);
+        using var application = Application(clock);
+        using var client = await OperatorAsync(application);
+
+        // The service was up from September on, but for four hours on the 10th of October, of
+        // which the first hour and a half were maintenance that was announced in advance.
+        var october = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+
+        StoredUpSpan.Give(application.Database, october.AddDays(-6), october.AddDays(9));
+        StoredUpSpan.Give(application.Database, october.AddDays(9).AddHours(4), Morning);
+        StoredMaintenance.Give(application.Database, october.AddDays(9), october.AddDays(9).AddMinutes(90), announcedAt: october);
+
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        // The target is the one of the configuration file, which is 99.9% in the file of the tests.
+        Assert.Contains(SaidIn(page, "status-availability"), said => said.Contains("held against a target of 99.9%.", StringComparison.Ordinal));
+        Assert.Equal(
+            ["Month", "Availability", "Target", "Down", "Maintenance left out", "Measured"],
+            ColumnsOf(page, "status-availability"));
+
+        // The month that runs, and the one before it. October was to be up for 742 and a half
+        // hours, and was down for two and a half of them: 99.663%, cut and not rounded.
+        Assert.Equal(
+            [
+                ["November 2026", "100%", "Met", "None", "None", "From 1 November 2026, 00:00 UTC to 16 November 2026, 10:07 UTC"],
+                ["October 2026", "99.663%", "Missed", "2 h 30 min", "1 h 30 min", "From 1 October 2026, 00:00 UTC to 1 November 2026, 00:00 UTC"],
+            ],
+            RowsOf(page, "status-availability"));
+    }
+
+    [Fact]
+    public async Task A_month_that_nothing_was_measured_of_is_said_as_not_known_and_as_no_figure()
+    {
+        using var application = Application(new TestClock(Morning));
+        using var client = await OperatorAsync(application);
+
+        // No application of a test says by itself that it is up, so nothing was measured.
+        var page = await client.PageAsync(WebUiModule.OperatorStatusPath);
+
+        Assert.Equal(
+            [
+                ["November 2026", "Not known", "Not known", "Not known", "Not known", "Nothing of it was measured"],
+                ["October 2026", "Not known", "Not known", "Not known", "Not known", "Nothing of it was measured"],
+            ],
+            RowsOf(page, "status-availability"));
     }
 
     [Fact]

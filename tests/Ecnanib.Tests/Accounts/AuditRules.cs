@@ -102,13 +102,18 @@ internal static class AuditRules
         // operator as its user, and names the halt (FR-OPS-3, FR-OPS-5). So are disabling and
         // enabling the account of a user: the event carries the operator, and names the other
         // account (FR-OPS-4). And so is asking for a sync of the model catalog: the event names
-        // the catalog, and is recorded when the sync is asked for.
+        // the catalog, and is recorded when the sync is asked for. And so are announcing
+        // maintenance, cancelling it, and ending it: the event names what was announced
+        // (NFR-REL-6).
         ["operator actions"] = AuditCoverage.By(
             AuditAction.GlobalHaltSwitchedOn,
             AuditAction.GlobalHaltSwitchedOff,
             AuditAction.AccountDisabled,
             AuditAction.AccountEnabled,
-            AuditAction.CatalogSyncRequested),
+            AuditAction.CatalogSyncRequested,
+            AuditAction.MaintenanceAnnounced,
+            AuditAction.MaintenanceCancelled,
+            AuditAction.MaintenanceEnded),
     };
 
     /// <summary>
@@ -156,11 +161,11 @@ internal static class AuditRules
     {
         [WebUiModule.OperatorStatusPath] =
             "The operator status screen has its route and its place in the bar of an operator (FR-UI-2), and shows how " +
-            "the service stands: the scheduler, the queue of the cycles, the catalog syncs, the request limits and the " +
-            "clock of Binance, the sizes of the tables, and the rates of errors (FR-OPS-2). It only reads, has no form, " +
-            "and shows nothing of any user: it switches no halt, disables no account, and triggers no sync, which are " +
-            "the actions of an operator. It leads to the page of each with a link, and each such page is an operator " +
-            "function of its own.",
+            "the service stands: its availability, the scheduler, the queue of the cycles, the catalog syncs, the request " +
+            "limits and the clock of Binance, the sizes of the tables, and the rates of errors (FR-OPS-2, NFR-REL-1). It " +
+            "only reads, has no form, and shows nothing of any user: it switches no halt, disables no account, triggers no " +
+            "sync, and announces no maintenance, which are the actions of an operator. It leads to the page of each with " +
+            "a link, and each such page is an operator function of its own.",
     };
 
     /// <summary>
@@ -191,6 +196,13 @@ internal static class AuditRules
             // It is of Credentials, which may use both the Catalog and Accounts.
             [WebUiModule.OperatorCatalogSyncPath] = [AuditAction.CatalogSyncRequested],
             ["Ecnanib.Credentials.OperatorCatalogSync"] = [AuditAction.CatalogSyncRequested],
+
+            // The page on which an operator announces maintenance, cancels it, and ends it
+            // (NFR-REL-6). What does each is of Accounts, and asks whether the user of its
+            // request is an operator there. The platform keeps what is announced, and writes
+            // it inside the transaction that records who did.
+            [WebUiModule.OperatorMaintenancePath] =
+                [AuditAction.MaintenanceAnnounced, AuditAction.MaintenanceCancelled, AuditAction.MaintenanceEnded],
         };
 
     /// <summary>The route of the page of one account, as an operator opens it: its parameter is the id of the account.</summary>

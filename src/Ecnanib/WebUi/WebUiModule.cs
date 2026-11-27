@@ -102,6 +102,19 @@ public static class WebUiModule
     /// <summary>The path of that page after a sync that an operator asked for: it says that the sync is over.</summary>
     public static string OperatorCatalogSyncedPath => $"{OperatorCatalogSyncPath}?{CatalogSyncedKey}=true";
 
+    /// <summary>
+    /// The path of the page on which an operator announces maintenance, cancels it, and ends it
+    /// (NFR-REL-6). It is for operators alone, and is a part of the operator status screen,
+    /// which leads to it.
+    /// </summary>
+    public const string OperatorMaintenancePath = "/operator/maintenance";
+
+    /// <summary>The query parameter of that page which says that maintenance was just announced.</summary>
+    public const string MaintenanceAnnouncedKey = "announced";
+
+    /// <summary>The path of that page after maintenance was announced: it says so, and whether it was announced in advance.</summary>
+    public static string OperatorMaintenanceAnnouncedPath => $"{OperatorMaintenancePath}?{MaintenanceAnnouncedKey}=true";
+
     /// <summary>The path of the download of what is stored about the signed-in user (NFR-SEC-9).</summary>
     public const string ExportPath = "/account/export";
 

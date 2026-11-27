@@ -60,7 +60,7 @@ A row that belongs to no user belongs to the service: vocabulary, the catalog, t
 
 | Rows of users | Rows of the service |
 |---|---|
-| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules`, `analyst_calls`, `shadow_trades`, `lessons`, `board_opt_outs`, `email_opt_ins`, `orders`, `fills`, `positions`, `fundings`, `position_roles`, `position_results`, `equity_marks`, `equity_snapshots`, `notifications` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs`, `runtime_flags` |
+| `sessions`, `pending_sign_ins`, `two_factor_recovery_codes`, `legal_acceptances`, `audit_events`, `ai_credentials`, `exchange_credentials`, `agents`, `agent_roles`, `agent_state_changes`, `decision_cycles`, `role_outputs`, `risk_checks`, `risk_check_rules`, `analyst_calls`, `shadow_trades`, `lessons`, `board_opt_outs`, `email_opt_ins`, `orders`, `fills`, `positions`, `fundings`, `position_roles`, `position_results`, `equity_marks`, `equity_snapshots`, `notifications` | `roles`, `ai_providers`, `ai_models`, `catalog_sync_runs`, `prompt_templates`, `background_jobs`, `runtime_flags`, `up_spans`, `maintenance_windows` |
 
 `users` is the account itself. No table holds both kinds of row.
 
@@ -142,10 +142,11 @@ An operator function asks in one of the two ways of "The check", and in no other
 
 ### The operator status screen
 
-The screen shows scheduler health, queue depth, last catalog sync per provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2), and with them where the calls to the AI providers are paused and where Binance is out (NFR-REL-4). It is a page of the Web UI, `Pages/Operator/OperatorStatus.razor`, and no component of its own: each reading is said by the component that keeps it, behind an interface, and the page puts them together and holds the words, in `OperatorStatusPages`.
+The screen shows scheduler health, queue depth, last catalog sync per provider, Binance rate-limit usage, clock drift, table sizes, and error rates (FR-OPS-2), and with them where the calls to the AI providers are paused and where Binance is out (NFR-REL-4). Before them it shows how available the service was, held against its target (NFR-REL-1). It is a page of the Web UI, `Pages/Operator/OperatorStatus.razor`, and no component of its own: each reading is said by the component that keeps it, behind an interface, and the page puts them together and holds the words, in `OperatorStatusPages`.
 
 | Reading | Who says it | From what |
 |---|---|---|
+| Availability | `IAvailability` of `Platform` | When the service said that it was up, in `up_spans`, and the maintenance that was announced in advance, in `maintenance_windows`. See "Availability" in [reliability.md](reliability.md). |
 | Scheduler health | `IBackgroundWorkStatus` of `Platform` | The latest run of each job, in `background_jobs`, and the schedule of each registered job. See "The status of the jobs" in [background-work.md](background-work.md). |
 | Queue depth | `ICycleLoad` of the Decision Engine | The cycles of the close that is under way, in memory. See "The depth of the queue" in [cycles.md](cycles.md). |
 | Last catalog sync | `ICatalogSync.StatusAsync` of the Catalog | The rows of `catalog_sync_runs`. See "The status of the syncs" in [catalog.md](catalog.md). |
@@ -158,11 +159,11 @@ The screen shows scheduler health, queue depth, last catalog sync per provider, 
 
 | Rule | Detail |
 |---|---|
-| **It only reads** | It has no form and no control. What an operator does is on a page of its own, which the screen leads to with a link: the global halt, the accounts, and the catalog sync. |
+| **It only reads** | It has no form and no control. What an operator does is on a page of its own, which the screen leads to with a link: the global halt, the accounts, the catalog sync, and the maintenance. |
 | **It is never a page that follows** | It is rendered on the server for each request, says of when it is, and is loaded again for how the service stands now. |
 | **It shows nothing of any user** | No reading names a user, an agent, or a key: a queue is numbers, a sync names a provider, the keys that a provider refuses are a number, and a count of errors holds no word of an event (FR-OPS-5). `GlobalHaltTests.The_pages_of_an_operator_show_nothing_of_any_user` holds it to that, with a user who has keys and two-factor authentication. |
-| **What is of one instance says so** | The queue, the pauses of the calls, the limits, the clock, the outages, and the counts are kept in memory by the instance that answered. The jobs, the syncs, and the sizes are read from the database, and are the same on every instance. |
-| **Unknown is said as unknown** | A clock that was not read has no drift, and is not shown with a drift of nothing. A job that has not run is not said to be late. |
+| **What is of one instance says so** | The queue, the pauses of the calls, the limits, the clock, the outages, and the counts are kept in memory by the instance that answered. The availability, the jobs, the syncs, and the sizes are read from the database, and are the same on every instance. |
+| **Unknown is said as unknown** | A clock that was not read has no drift, and is not shown with a drift of nothing. A job that has not run is not said to be late. A month that nothing was measured of has no availability, and is not shown with one of nothing or of a hundred. |
 
 ### The global halt
 
@@ -221,6 +222,20 @@ An operator has the model catalog synced, outside its schedule (FR-CAT-2, FR-OPS
 | **It is not given up with the request** | Once recorded, the syncs run until they are over or the application stops. The page waits for them, up to a minute, and then asks for itself again, so a reload asks for no second sync. |
 | **With no catalog key there is nothing to sync** | Where the configuration file holds a catalog key for no provider, the page says so in place of the button, and a form that is sent all the same asks no provider and records nothing. |
 | **It shows no key** | The page says whether a provider is synced with the key of the service, and never the key. It shows nothing of any user. |
+
+### Announcing maintenance
+
+An operator announces maintenance, cancels it before it starts, and ends it while it is under way (NFR-REL-6). What an announcement does, and what it does not, is in "Announced maintenance" in [reliability.md](reliability.md).
+
+| Rule | Detail |
+|---|---|
+| **It has a page of its own** | `/operator/maintenance`, which the operator status screen leads to. It says what an announcement does, shows the maintenance that is announced and not over, and has a form of a start and an end, and a button for each row of what is announced. |
+| **It asks in both ways** | The page carries the policy. And each member of `IMaintenanceAnnouncements` of Accounts asks `OperatorAccess.IsOperator` of the user of its request again. |
+| **It is in Accounts because of what it uses** | What is announced is of the service, and `Platform` keeps it, which may use no component and so not the audit trail. Accounts opens the transaction, locks the account of the operator, has `MaintenanceWindows` of `Platform` write the row inside it, and records the event. |
+| **Each action is recorded** | As `MaintenanceAnnounced`, `MaintenanceCancelled`, or `MaintenanceEnded`, with the target `maintenance:<id>`, in the transaction that does it (FR-OPS-5). What changed nothing is not recorded: a form that was sent twice, or maintenance that had started or ended meanwhile. |
+| **It is stored in the database** | As a row of `maintenance_windows`, whose rows belong to the service (NFR-CFG-6). The row says nothing of who announced it, so it stays as it is when that account is deleted, and keeps nothing of it. |
+| **It acts on no user and on no agent** | It pauses nothing, and closes no position. Nothing that trades may read it: see "Announced maintenance" in [reliability.md](reliability.md). |
+| **It shows nothing of any user** | Not who announced what, and no agent, position, or key. |
 
 ## No tenants and no billing
 

@@ -186,6 +186,16 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public const string RestoreTestKey = "restore-test";
 
+    // The job of the platform that says each minute that the service is up, named in the same way.
+    private const string Uptime = "Ecnanib.Platform.Availability.UptimeJob";
+
+    /// <summary>
+    /// The key under which the job that says that the service is up is kept: the scheduler of no
+    /// application of the tests runs it, and a test runs it from there itself, at a moment of its
+    /// choosing.
+    /// </summary>
+    public const string UptimeKey = "uptime";
+
     private readonly bool _runsCycles;
     private readonly bool _settlesOrders;
     private readonly bool _reconciles;
@@ -483,6 +493,18 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
                 services.Remove(backing);
                 services.AddKeyedSingleton(typeof(IBackgroundJob), key, backing.ImplementationType!);
             }
+
+            // The job that says that the service is up writes a row as an application starts,
+            // and lengthens it every minute. A test that holds everything stored against what it
+            // was before a request would find that row changed, in a table that its request has
+            // nothing to do with, and a test of the availability decides itself when the service
+            // was up. So no application of a test runs the job on a schedule: a test that is
+            // about a beat finds the job by its key, and runs it itself.
+            var beating = services.Single(job =>
+                job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == Uptime);
+
+            services.Remove(beating);
+            services.AddKeyedSingleton(typeof(IBackgroundJob), UptimeKey, beating.ImplementationType!);
 
             // The job that reconciles the agents with the exchange runs first as the background
             // work starts, before any other job, and then every few minutes: it asks

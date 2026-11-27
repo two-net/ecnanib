@@ -2337,6 +2337,60 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("notifications", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Platform.Availability.MaintenanceWindow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AnnouncedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("announced_at");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<bool>("InAdvance")
+                        .HasColumnType("boolean")
+                        .HasColumnName("in_advance");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_maintenance_windows");
+
+                    b.HasIndex("EndsAt")
+                        .HasDatabaseName("ix_maintenance_windows_ends_at");
+
+                    b.ToTable("maintenance_windows", (string)null);
+                });
+
+            modelBuilder.Entity("Ecnanib.Platform.Availability.UpSpan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("BeatAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("beat_at");
+
+                    b.Property<DateTimeOffset>("BeganAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("began_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_up_spans");
+
+                    b.HasIndex("BeganAt")
+                        .HasDatabaseName("ix_up_spans_began_at");
+
+                    b.ToTable("up_spans", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Platform.BackgroundWork.BackgroundJobState", b =>
                 {
                     b.Property<string>("Name")

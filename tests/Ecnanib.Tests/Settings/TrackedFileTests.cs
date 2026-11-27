@@ -132,5 +132,11 @@ public class TrackedFileTests
                 AiKey: new AiKeyBreakerSettings(
                     Failures: 3, PauseSeconds: 60, LongestPauseSeconds: 3600, TripsBeforeAttention: 3, ProviderWideKeys: 3)),
             settings.Breakers);
+
+        // A month is held to 99.5% (NFR-REL-1). Maintenance is announced maintenance when it is
+        // announced a day before it starts, and lasts eight hours at the most (NFR-REL-6).
+        Assert.Equal(
+            new AvailabilitySettings(TargetPercent: 99.5m, MaintenanceNoticeHours: 24, LongestMaintenanceHours: 8),
+            settings.Availability);
     }
 }

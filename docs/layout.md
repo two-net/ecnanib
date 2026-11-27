@@ -45,6 +45,7 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 |---|---|
 | The link past the bar | "Skip to the content", the first link of every page. It is out of sight until it has the focus. |
 | The bar, `<header>` | The name of the service, which leads to the start page, and the navigation: see "The bar". |
+| The banner, `<section class="site-notice">` | What every page says of maintenance that is announced, from when to when, while any is announced and not over (NFR-REL-6). A page has none otherwise. See "Announced maintenance" in [reliability.md](reliability.md). |
 | The content, `<main id="content">` | The navigation of the settings, on a page of the settings, and the page itself, which starts with its one `<h1>`. |
 | The foot, `<footer>` | The Terms of Service, the Privacy Policy, and the risk disclosure, for a visitor and for a user. Under them, for a visitor, "Appearance". |
 
@@ -57,6 +58,7 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 | **What the frame says while nothing shows is said to a screen reader.** | A line that is not shown, after the content, says that a page is on its way while the placeholder shows: see [motion.md](motion.md). What the page says of an error that nothing handled is an alert, and what puts it away is a button. |
 | **Its texts are in one place.** | `Screens` (NFR-USA-4): the names of the links, of the menu, and of the navigations as a screen reader says them, what a page says of an error that nothing handled, and the language of the pages, which `App.razor` writes as `lang`. The dialog that rejoins the server has its texts in `ConnectionPages`. No page holds a word of its own: see [texts.md](texts.md). |
 | **A page carries no style of its own.** | The look of the frame is in `app.css`, with the look of every page. |
+| **The banner asks for itself, and fails no page.** | `MaintenanceNotice` reads what is announced with each request, as the link to the notifications reads its count, and a page whose banner cannot be read is written without it. It is a part of the page with a name of its own, "Maintenance", between the bar and the content. It holds one sentence, no link, and no form, and its texts are in `MaintenanceTexts`. The page that says that there is no page is written without it: see "Not built yet" in [reliability.md](reliability.md). |
 
 ## The bar
 
@@ -140,6 +142,7 @@ Every screen of the specification is built. The last was the operator status scr
 | `/operator/global-halt` | Switches the global halt on or off (FR-OPS-3). |
 | `/operator/accounts`, and `/operator/accounts/<id>` | Finds the account of a user by its email address, and disables or enables it (FR-OPS-4). |
 | `/operator/catalog-sync` | Has the model catalog synced, outside its schedule (FR-OPS-4). |
+| `/operator/maintenance` | Announces maintenance, cancels it before it starts, and ends it while it is under way (NFR-REL-6). |
 
 **The operator status screen is no operator function.** It requires the operator policy, as an operator function does, and does nothing that the audit trail could record or that the Risk Guard would have to be told. `AuditRules.OperatorScreensThatOnlyShow` lists it with why, and `AuditRulesTests` holds it to that: the one form of its page is the button of the bar. The first form that is put on it fails that test, and anything else that requires the policy counts as an operator function as before. See "Operators" in [ownership.md](ownership.md).
 

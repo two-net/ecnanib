@@ -61,6 +61,10 @@ public static class AccountsModule
         // implements.
         services.AddSingleton<IAccountDisabling, AccountDisabling>();
 
+        // Announcing maintenance, cancelling it, and ending it, which an operator does
+        // (NFR-REL-6). The platform keeps what is announced, and this records who did it.
+        services.AddSingleton<IMaintenanceAnnouncements, MaintenanceAnnouncements>();
+
         // The theme that a user chose, which is stored with the account (FR-THM-3). A request
         // reads it with its session: see SessionAuthentication.ThemeClaimType.
         services.AddSingleton<IThemeChoice, StoredThemeChoice>();

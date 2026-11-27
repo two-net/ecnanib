@@ -130,6 +130,9 @@ public class SettingsFileTests
                 AiKey: new AiKeyBreakerSettings(
                     Failures: 4, PauseSeconds: 50, LongestPauseSeconds: 700, TripsBeforeAttention: 2, ProviderWideKeys: 5)),
             settings.Breakers);
+        Assert.Equal(
+            new AvailabilitySettings(TargetPercent: 99.9m, MaintenanceNoticeHours: 12, LongestMaintenanceHours: 6),
+            settings.Availability);
     }
 
     /// <summary>Each row is a key to change, its new value as JSON, and the key that must be reported.</summary>
@@ -243,6 +246,18 @@ public class SettingsFileTests
         { "Backup:Directory", "\"\"", "Backup:Directory" },
         { "Backup:PgDump", "\"\"", "Backup:PgDump" },
         { "Backup:PgRestore", "7", "Backup:PgRestore" },
+
+        // The availability that a month is held to is a share of it, and maintenance is
+        // announced by the hour: no notice is asked for with 0, and a week is the longest that
+        // maintenance lasts (NFR-REL-1, NFR-REL-6).
+        { "Availability:TargetPercent", "0.5", "Availability:TargetPercent" },
+        { "Availability:TargetPercent", "100.1", "Availability:TargetPercent" },
+        { "Availability:TargetPercent", "\"99.5\"", "Availability:TargetPercent" },
+        { "Availability:MaintenanceNoticeHours", "-1", "Availability:MaintenanceNoticeHours" },
+        { "Availability:MaintenanceNoticeHours", "721", "Availability:MaintenanceNoticeHours" },
+        { "Availability:MaintenanceNoticeHours", "1.5", "Availability:MaintenanceNoticeHours" },
+        { "Availability:LongestMaintenanceHours", "0", "Availability:LongestMaintenanceHours" },
+        { "Availability:LongestMaintenanceHours", "169", "Availability:LongestMaintenanceHours" },
         { "Limits:MaxAgentsPerUser", "0", "Limits:MaxAgentsPerUser" },
         { "Logging:Outputs:File:RetainedFiles", "0", "Logging:Outputs:File:RetainedFiles" },
 

@@ -594,13 +594,13 @@ The log has `User {UserId} exported their data`, and nothing of the data.
 
 ## The audit trail
 
-Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, the changes to two-factor authentication, and an operator disabling or enabling an account. Credentials records the changes to a key, and that an operator asked for a sync of the catalog, and Agents what a user does to an agent and an operator switching the global halt. Every action of the requirement is recorded: see "What is not recorded yet".
+Security- and money-relevant actions are recorded in the table `audit_events`, in the database and apart from the logs (NFR-LOG-7). Accounts records its own: sign-ins, re-authentications, new passwords, the changes to two-factor authentication, an operator disabling or enabling an account, and an operator announcing, cancelling, or ending maintenance. Credentials records the changes to a key, and that an operator asked for a sync of the catalog, and Agents what a user does to an agent and an operator switching the global halt. Every action of the requirement is recorded: see "What is not recorded yet".
 
 | Column | What it holds |
 |---|---|
 | `user_id` | The user who did it. For the one action that the service does itself, `KeyRejected`, the user it was done for: the owner of the key. |
 | `action` | What was done, as the name of a member of `AuditAction`. |
-| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, and `agent:<id>` for an agent. The account is that of `user_id`, but for what an operator does to the account of another user, where it is that other account. What the service has one of has a name in place of an id: `runtime-flag:global-halt`, which `AuditTarget.GlobalHalt` is, and `catalog:models`, which `AuditTarget.ModelCatalog` is. |
+| `target` | What it was done to, as a kind and an id: `user:<id>` for an account, `ai-key:<id>` for the key of an AI provider, `exchange-key:<id>` for a Binance credential, `agent:<id>` for an agent, and `maintenance:<id>` for maintenance that an operator announced. The account is that of `user_id`, but for what an operator does to the account of another user, where it is that other account. What the service has one of has a name in place of an id: `runtime-flag:global-halt`, which `AuditTarget.GlobalHalt` is, and `catalog:models`, which `AuditTarget.ModelCatalog` is. |
 | `occurred_at` | When. |
 | `origin` | The IP address the request came from, as the connection knows it, or nothing when it does not, or when no request did it. |
 
@@ -624,6 +624,7 @@ Security- and money-relevant actions are recorded in the table `audit_events`, i
 | `GlobalHaltSwitchedOn`, `GlobalHaltSwitchedOff` | An operator switched the global halt on, or off (FR-OPS-3, FR-OPS-5). The event carries the operator as its user. See "The global halt" in [ownership.md](ownership.md). |
 | `AccountDisabled`, `AccountEnabled` | An operator disabled the account of a user, or enabled it again (FR-OPS-4, FR-OPS-5). The event carries the operator as its user, and names the other account as its target. See "Disabling an account". |
 | `CatalogSyncRequested` | An operator asked for a sync of the model catalog, outside its schedule (FR-OPS-4, FR-OPS-5). It is recorded when it is asked for, before a provider is asked. The target is `catalog:models`. See "On demand" in [catalog.md](catalog.md). |
+| `MaintenanceAnnounced`, `MaintenanceCancelled`, `MaintenanceEnded` | An operator announced maintenance, cancelled it before it started, or ended it while it was under way (NFR-REL-6, FR-OPS-5). The event carries the operator as its user, and the target is `maintenance:<id>`, the row of what was announced. See "Announced maintenance" in [reliability.md](reliability.md). |
 
 - **An event is written in the transaction of the action it records,** by `AuditTrail.RecordAsync`. It is stored when the action is, and not when it is not. `RecordAsync` refuses a context that holds no transaction.
 - **A sign-in is recorded where the session is stored,** in `Sessions.AddAsync`, which is the one place. So no session starts without its event. A password that only leads to the page that asks for a code records nothing: nobody is signed in.

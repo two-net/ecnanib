@@ -13,6 +13,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `Screens` | `Layout` | The bar at the top, the navigations, the names of the screens, what a page says of an unhandled error, and the language of the pages. |
 | `SessionPages` | `Layout` | The notice before a session ends. |
 | `ConnectionPages` | `Layout` | The dialog that says a page is rejoining the server. |
+| `MaintenanceTexts` | `Layout` | The banner that announces maintenance on every page. |
 | `LivePages` | `Live` | The parts of a page that follow what changes: the steps of a cycle, the position, the team at work, and what pauses a page. |
 | `HomePages` | `Pages` | The start page, the page that says there is no page at an address, and the page of an error. |
 | `LegalPages` | `Pages/Legal` | The legal documents: their names, their versions, and what stands in the place of a text that is not written yet. |
@@ -27,7 +28,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `CyclePages`, `RiskCheckPages`, `AgentReportPages` | `Pages/Agents` | The cycles and their timelines, the checks of the Risk Guard, and the trades, decisions, and performance of an agent. |
 | `ExperiencePages`, `BoardPages`, `LessonPages` | `Pages/Experience` | The experience screens, the platform-wide board, and the lessons. |
 | `CatalogPages`, `UsagePages` | `Pages/Catalog`, `Pages/Usage` | The model catalog, and the AI usage. |
-| `OperatorPages`, `OperatorStatusPages`, `OperatorAccountPages`, `OperatorSyncPages` | `Pages/Operator` | What frames the operator status screen, with the page of the global halt, what the screen shows, the pages on which an operator disables and enables an account, and the page on which they have the catalog synced. |
+| `OperatorPages`, `OperatorStatusPages`, `OperatorAccountPages`, `OperatorSyncPages`, `OperatorMaintenancePages` | `Pages/Operator` | What frames the operator status screen, with the page of the global halt, what the screen shows, the pages on which an operator disables and enables an account, the page on which they have the catalog synced, and the page on which they announce maintenance. |
 | `ExportFiles` | `Exports` | The links to the two downloads. The names of their columns are words of the files, and no texts: see [export.md](export.md). |
 
 What a market, a mode, and a state of an agent are called is one text for every screen: `AgentPages.NameOf` and `AgentPages.Describe`, wherever a page writes one. What the pages of one screen say is in the class of that screen, also where another screen says the same words: a heading and a link that read alike in English need not read alike in another language.

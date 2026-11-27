@@ -79,6 +79,11 @@ internal static class ComponentRules
             // Order placement. Only the Decision Engine may place orders, after schema
             // validation and the Risk Guard (NFR-SEC-6).
             ["ExchangeGateway.Trading"] = Only(ExchangeGateway, DecisionEngine),
+
+            // The maintenance that is announced, and the measure of availability. Accounts
+            // records who announced what, and the Web UI shows it. Nothing that trades may read
+            // it, so maintenance pauses no agent and closes no position (NFR-REL-6).
+            ["Platform.Availability"] = Only(Platform, Accounts, WebUi),
         },
 
         // Types that talk to another system over the network. They may be used only inside an

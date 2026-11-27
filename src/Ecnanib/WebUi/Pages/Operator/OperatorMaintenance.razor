@@ -1,0 +1,260 @@
+@attribute [Route(WebUiModule.OperatorMaintenancePath)]
+@attribute [Authorize(Policy = OperatorAccess.Policy)]
+@using Ecnanib.Accounts
+@using Ecnanib.Platform.Availability
+@using Ecnanib.Platform.Settings
+@inject IMaintenanceAnnouncements Announcements
+@inject IAnnouncedMaintenance Maintenance
+@inject AvailabilitySettings Settings
+@inject NavigationManager Navigation
+
+@*
+    Rendered on the server for each request, and never interactive: who is an operator is decided
+    with each request (NFR-SEC-3). The page is for operators alone, as the operator status screen
+    is, which leads to it. A visitor is sent to sign in, and a user who is not an operator is
+    refused, for a form that is posted as for the page.
+
+    It says what announcing maintenance does and what it does not, shows the maintenance that is
+    announced and not over, and has two forms (NFR-REL-6). One announces maintenance, from a
+    start to an end that are typed in UTC, each as a date and a time of day in a field of text. The other is around the table, and each of its rows
+    has one button: it cancels maintenance that has not started, and ends maintenance that is
+    under way. Each is recorded in the audit trail by what does it (FR-OPS-5). The page shows
+    nothing of any user: not who announced what, and no agent, position, or key.
+
+    Both forms are on the page while a form is answered, whatever is announced by then: a form
+    that is not there cannot be answered, and one that is sent twice, or after another operator
+    was first, changes nothing and leads back here. Its texts are in OperatorMaintenancePages.
+*@
+
+@if (_announced is not null)
+{
+    <PageTitle>@OperatorMaintenancePages.Title</PageTitle>
+
+    <h1>@OperatorMaintenancePages.Title</h1>
+
+    @* What was announced last is what was just announced, where the page was asked for after the form. *@
+    @if (Announced && !_answers && _announced.MaxBy(maintenance => maintenance.AnnouncedAt) is { } done)
+    {
+        <p class="form-done" role="status">@(done.InAdvance ? OperatorMaintenancePages.Done : OperatorMaintenancePages.DoneLate(Settings.MaintenanceNoticeHours))</p>
+    }
+
+    <p>@OperatorMaintenancePages.Explained</p>
+
+    <p>@OperatorMaintenancePages.ActsOnNoAgent</p>
+
+    <p>@OperatorMaintenancePages.LeftOutWhen(Settings.MaintenanceNoticeHours)</p>
+
+    <section>
+        <h2 id="@OperatorMaintenancePages.AnnouncedId">@OperatorMaintenancePages.AnnouncedHeading</h2>
+
+        @if (_announced.Count == 0)
+        {
+            <p>@OperatorMaintenancePages.NoneAnnounced</p>
+        }
+
+        @if (_answers || _announced.Count > 0)
+        {
+            <form method="post" @formname="@OperatorMaintenancePages.ChangeForm" @onsubmit="ChangeAsync">
+                <AntiforgeryToken />
+
+                @if (_announced.Count > 0)
+                {
+                    <div class="status-table" role="region" aria-labelledby="@OperatorMaintenancePages.AnnouncedId" tabindex="0">
+                        <table>
+                            <caption>@OperatorMaintenancePages.AnnouncedCaption</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">@OperatorMaintenancePages.StartsHeading</th>
+                                    <th scope="col">@OperatorMaintenancePages.EndsHeading</th>
+                                    <th scope="col">@OperatorMaintenancePages.StateHeading</th>
+                                    <th scope="col">@OperatorMaintenancePages.LeftOutHeading</th>
+                                    <th scope="col">@OperatorMaintenancePages.ChangeHeading</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var (maintenance, row) in _announced.Select((maintenance, index) => (maintenance, index + 1)))
+                                {
+                                    <tr>
+                                        <th scope="row" id="@OperatorMaintenancePages.RowId(row)">@Times.At(maintenance.StartsAt)</th>
+                                        <td>@Times.At(maintenance.EndsAt)</td>
+                                        <td>@OperatorMaintenancePages.StateOf(maintenance)</td>
+                                        <td>@OperatorMaintenancePages.LeftOut(maintenance)</td>
+                                        <td>
+                                            @* The button names what it does, and the start of its row says to what. *@
+                                            @if (maintenance.UnderWay)
+                                            {
+                                                <button type="submit" name="End" value="@maintenance.Id" aria-describedby="@OperatorMaintenancePages.RowId(row)">@OperatorMaintenancePages.EndNow</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="submit" name="Cancel" value="@maintenance.Id" aria-describedby="@OperatorMaintenancePages.RowId(row)">@OperatorMaintenancePages.Cancel</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </form>
+        }
+
+        @if (_announced.Count > 0)
+        {
+            <p>@OperatorMaintenancePages.ChangeMeans</p>
+        }
+    </section>
+
+    <section>
+        <h2>@OperatorMaintenancePages.AnnounceHeading</h2>
+
+        <form method="post" @formname="@OperatorMaintenancePages.AnnounceForm" @onsubmit="AnnounceAsync">
+            <AntiforgeryToken />
+
+            <div class="field">
+                <label for="@OperatorMaintenancePages.StartsId">@OperatorMaintenancePages.StartsLabel</label>
+                @* A field of text, in a form that its hint says: one stop of the keyboard, and the same in every browser. *@
+                <input id="@OperatorMaintenancePages.StartsId" name="Starts" type="text" autocomplete="off" spellcheck="false" required value="@Starts"
+                       aria-invalid="@PageFields.Invalid(_startsProblem is not null)"
+                       aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf(OperatorMaintenancePages.StartsId, _startsProblem is not null), StartsHintId)"
+                       autofocus="@(_startsProblem is not null)" />
+                <p id="@StartsHintId" class="field-hint">@OperatorMaintenancePages.StartsHint</p>
+                @if (_startsProblem is { } startsProblem)
+                {
+                    <p id="@PageFields.ErrorOf(OperatorMaintenancePages.StartsId, true)" class="field-error">@OperatorMaintenancePages.Says(startsProblem, Settings.LongestMaintenanceHours)</p>
+                }
+            </div>
+
+            <div class="field">
+                <label for="@OperatorMaintenancePages.EndsId">@OperatorMaintenancePages.EndsLabel</label>
+                <input id="@OperatorMaintenancePages.EndsId" name="Ends" type="text" autocomplete="off" spellcheck="false" required value="@Ends"
+                       aria-invalid="@PageFields.Invalid(_endsProblem is not null)"
+                       aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf(OperatorMaintenancePages.EndsId, _endsProblem is not null), EndsHintId)"
+                       autofocus="@(_startsProblem is null && _endsProblem is not null)" />
+                <p id="@EndsHintId" class="field-hint">@OperatorMaintenancePages.EndsHint(Settings.LongestMaintenanceHours)</p>
+                @if (_endsProblem is { } endsProblem)
+                {
+                    <p id="@PageFields.ErrorOf(OperatorMaintenancePages.EndsId, true)" class="field-error">@OperatorMaintenancePages.Says(endsProblem, Settings.LongestMaintenanceHours)</p>
+                }
+            </div>
+
+            <button type="submit">@OperatorMaintenancePages.Announce</button>
+        </form>
+    </section>
+
+    <p>@OperatorMaintenancePages.Recorded</p>
+
+    <p><a href="@WebUiModule.OperatorStatusPath">@OperatorPages.BackToStatus</a></p>
+}
+
+@code {
+    private const string StartsHintId = OperatorMaintenancePages.StartsId + "-hint";
+    private const string EndsHintId = OperatorMaintenancePages.EndsId + "-hint";
+
+    private IReadOnlyList<AnnouncedMaintenance>? _announced;
+
+    // Whether a form is being answered, which finds its form on the page whatever is announced.
+    private bool _answers;
+
+    private MaintenanceFieldProblem? _startsProblem;
+    private MaintenanceFieldProblem? _endsProblem;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
+    // Whether the page was asked for after maintenance was announced.
+    [SupplyParameterFromQuery(Name = WebUiModule.MaintenanceAnnouncedKey)]
+    private bool Announced { get; set; }
+
+    // The start and the end, as their fields sent them.
+    [SupplyParameterFromForm]
+    private string? Starts { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? Ends { get; set; }
+
+    // The maintenance whose button was pressed: one of the two, by its id.
+    [SupplyParameterFromForm]
+    private Guid? Cancel { get; set; }
+
+    [SupplyParameterFromForm]
+    private Guid? End { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        _answers = !HttpMethods.IsGet(request.Request.Method);
+
+        // What is announced is of the service, and the same for every operator. Nothing of a user is read.
+        _announced = await Maintenance.NotOverAsync(request.RequestAborted);
+    }
+
+    private async Task AnnounceAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        var startsRead = OperatorMaintenancePages.TryRead(Starts, out var startsAt);
+        var endsRead = OperatorMaintenancePages.TryRead(Ends, out var endsAt);
+
+        if (!startsRead || !endsRead)
+        {
+            _startsProblem = startsRead ? null : MaintenanceFieldProblem.NotATime;
+            _endsProblem = endsRead ? null : MaintenanceFieldProblem.NotATime;
+            return;
+        }
+
+        // What announces it asks again whether the user of the request is an operator, holds
+        // the times against now, and records the announcement.
+        var answer = await Announcements.AnnounceAsync(request, startsAt, endsAt);
+
+        if (answer.Problem is MaintenanceProblem.StartsTooSoon)
+        {
+            _startsProblem = OperatorMaintenancePages.Of(MaintenanceProblem.StartsTooSoon);
+            return;
+        }
+
+        if (answer.Problem is { } problem)
+        {
+            _endsProblem = OperatorMaintenancePages.Of(problem);
+            return;
+        }
+
+        // The page as it is now, by a request that changes nothing: a reload of it announces
+        // nothing again. It says that the maintenance is announced when it was.
+        Navigation.NavigateTo(answer.Announced is not null
+            ? WebUiModule.OperatorMaintenanceAnnouncedPath
+            : WebUiModule.OperatorMaintenancePath);
+    }
+
+    private async Task ChangeAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        // What changes it asks again whether the user of the request is an operator, and
+        // records the change. Maintenance that is as asked for already stays as it is.
+        if (Cancel is { } cancelled)
+        {
+            await Announcements.CancelAsync(request, cancelled);
+        }
+        else if (End is { } ended)
+        {
+            await Announcements.EndAsync(request, ended);
+        }
+
+        Navigation.NavigateTo(WebUiModule.OperatorMaintenancePath);
+    }
+}

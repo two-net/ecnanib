@@ -4,6 +4,7 @@
 @using Ecnanib.Catalog
 @using Ecnanib.DecisionEngine
 @using Ecnanib.ExchangeGateway
+@using Ecnanib.Platform.Availability
 @using Ecnanib.Platform.BackgroundWork
 @using Ecnanib.Platform.Logging
 @using Ecnanib.Platform.Persistence
@@ -17,6 +18,7 @@
 @inject IExchangeOutages Outages
 @inject IDatabaseSizes Sizes
 @inject ILoggedProblems Problems
+@inject IAvailability Measure
 @inject TimeProvider Time
 
 @*
@@ -28,7 +30,8 @@
     It shows the health of the scheduler, the depth of the queue of the cycles, the last catalog
     sync of each provider, the use of the request limits of Binance, the drift of the clock, the
     sizes of the tables, and the rates of errors. With them it shows where the calls to the AI
-    providers are paused, and where Binance is out (NFR-REL-4). Each is said by the component
+    providers are paused, and where Binance is out (NFR-REL-4), and before them how available
+    the service was, held against its target (NFR-REL-1). Each is said by the component
     that keeps it, behind an interface, and each is of the service: none of them names a user,
     an agent, or a key, so the screen shows nothing of any user (FR-OPS-5).
 
@@ -53,7 +56,45 @@
         <li><a href="@WebUiModule.GlobalHaltPath">@OperatorPages.HaltTitle</a></li>
         <li><a href="@WebUiModule.OperatorAccountsPath">@OperatorAccountPages.Title</a></li>
         <li><a href="@WebUiModule.OperatorCatalogSyncPath">@OperatorSyncPages.Title</a></li>
+        <li><a href="@WebUiModule.OperatorMaintenancePath">@OperatorMaintenancePages.Title</a></li>
     </ul>
+
+    <section>
+        <h2 id="@OperatorStatusPages.AvailabilityId">@OperatorStatusPages.AvailabilityHeading</h2>
+
+        <p>@OperatorStatusPages.AvailabilityExplained(read.Availability.TargetPercent)</p>
+
+        <p>@OperatorStatusPages.AvailabilityCounts</p>
+
+        <div class="status-table status-wide" role="region" aria-labelledby="@OperatorStatusPages.AvailabilityId" tabindex="0">
+            <table>
+                <caption>@OperatorStatusPages.AvailabilityCaption</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">@OperatorStatusPages.MonthHeading</th>
+                        <th scope="col">@OperatorStatusPages.AvailableHeading</th>
+                        <th scope="col">@OperatorStatusPages.TargetHeading</th>
+                        <th scope="col">@OperatorStatusPages.DownHeading</th>
+                        <th scope="col">@OperatorStatusPages.MaintenanceHeading</th>
+                        <th scope="col">@OperatorStatusPages.MeasuredHeading</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var month in read.Availability.Months)
+                    {
+                        <tr>
+                            <th scope="row">@OperatorStatusPages.Month(month.Month)</th>
+                            <td>@OperatorStatusPages.Available(month)</td>
+                            <td>@OperatorStatusPages.Target(month)</td>
+                            <td>@OperatorStatusPages.Down(month)</td>
+                            <td>@OperatorStatusPages.Maintenance(month)</td>
+                            <td>@OperatorStatusPages.Measured(month, Times)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 
     <section>
         <h2 id="@OperatorStatusPages.SchedulerId">@OperatorStatusPages.SchedulerHeading</h2>
@@ -385,7 +426,8 @@
             Clock.Drift(),
             Outages.Answers(),
             await Sizes.ReadAsync(cancellationToken),
-            Problems.Read());
+            Problems.Read(),
+            await Measure.ReadAsync(cancellationToken));
     }
 
     // What a provider is called, as the catalog says it, or its code where the catalog has none
@@ -403,5 +445,6 @@
         IReadOnlyList<ExchangeClockDrift> Clocks,
         IReadOnlyList<ExchangeAnswers> Outages,
         IReadOnlyList<TableSize> Tables,
-        LoggedProblemCounts Problems);
+        LoggedProblemCounts Problems,
+        AvailabilityReading Availability);
 }

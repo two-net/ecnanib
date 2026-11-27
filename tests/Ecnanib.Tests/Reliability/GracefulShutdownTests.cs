@@ -95,6 +95,49 @@ public class GracefulShutdownTests
         Assert.DoesNotContain(written, said => said.Area == SchedulerLog.Area && said.Level is "Warning" or "Error" or "Fatal");
     }
 
+    [Theory]
+    [InlineData(Market.Spot)]
+    [InlineData(Market.Futures)]
+    public async Task A_position_whose_stop_loss_rests_is_left_as_it_is_as_the_application_stops_for_maintenance(Market market)
+    {
+        var database = PostgresServer.CreateDatabase();
+        var binance = new TradingBinance();
+        Agent agent;
+        int before;
+
+        using (var application = new OrdersApplication(settlesOrders: true, database: database, binance: binance))
+        {
+            agent = await application.GiveAgentAsync(market: market);
+
+            // An entry at the market, which is executed and protected: the position is open,
+            // and its stop-loss and its take-profit rest on the exchange.
+            Assert.Null(await application.PlaceAsync(agent, market == Market.Spot ? GuardCases.OpenLong : GuardCases.OpenLongOnFutures));
+
+            // Maintenance was announced in advance, and is under way as the application is
+            // stopped for it (NFR-REL-6).
+            var now = application.Clock.GetUtcNow();
+            StoredMaintenance.Give(database, now.AddMinutes(-10), now.AddHours(2), announcedAt: now.AddDays(-2));
+
+            before = binance.OrderCalls.Count;
+            await application.Application.Lifetime.StopAsync();
+        }
+
+        // The position is as it was: open, with what protects it resting on the exchange, which
+        // executes it whether the service runs or not (NFR-REL-2).
+        using var after = new OrdersApplication(database: database, binance: binance);
+
+        Assert.Null(Assert.Single(await after.PositionsOfAsync(agent.Id)).ClosedAt);
+        Assert.Equal(
+            [(OrderPurpose.Entry, OrderStatus.Filled), (OrderPurpose.StopLoss, OrderStatus.Open), (OrderPurpose.TakeProfit, OrderStatus.Open)],
+            (await after.OrdersOfAsync(agent.Id)).Select(order => (order.Purpose, order.Status)));
+        Assert.All(binance.Orders.Where(order => order.Asked.Stop || order.TakeProfit), order => Assert.Equal("NEW", order.Status));
+
+        // Nothing was sent to close it, and nothing of it was taken off, as the application
+        // stopped: all that the exchange was asked since is what became of an order.
+        Assert.All(binance.OrderCalls.Skip(before), call => Assert.StartsWith("GET ", call));
+        Assert.Single(binance.Orders, order => !order.Asked.Stop && !order.TakeProfit);
+    }
+
     [Fact]
     public async Task An_entry_of_unknown_outcome_is_asked_about_and_protected_before_the_application_has_stopped()
     {

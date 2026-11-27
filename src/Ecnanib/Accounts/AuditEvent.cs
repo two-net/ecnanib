@@ -130,6 +130,19 @@ public enum AuditAction
     /// The target names the catalog, and the event carries the operator as its user.
     /// </summary>
     CatalogSyncRequested,
+
+    /// <summary>
+    /// An operator announced maintenance: a banner on every page says from when to when, until
+    /// it is over (NFR-REL-6, FR-OPS-5). The target names the announcement, and the event
+    /// carries the operator as its user. It acts on no agent and on no position.
+    /// </summary>
+    MaintenanceAnnounced,
+
+    /// <summary>An operator cancelled maintenance that was announced, before it started: no page tells of it any more.</summary>
+    MaintenanceCancelled,
+
+    /// <summary>An operator ended maintenance that was under way, before the end that was announced.</summary>
+    MaintenanceEnded,
 }
 
 /// <summary>

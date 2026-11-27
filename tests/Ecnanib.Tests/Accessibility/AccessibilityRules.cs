@@ -533,6 +533,26 @@ internal static class AccessibilityRules
             "The page comes back with a message that the sync is over, above the table that says how it ended.",
             Path: "/operator/catalog-sync?synced=true"),
 
+        // The maintenance that an operator announces, which the screen above leads to as well.
+        // The third state announces it, and from then on every page has the banner, which this
+        // page shows as every other would. The fourth cancels it, so no state after these has
+        // the banner, and none before them had it.
+        new("/operator/maintenance", "none announced", Who.Operator, Reach.Opened,
+            "main input[name='_handler'][value='announce-maintenance']",
+            "What an announcement does and what it does not, that none is announced, and the form of a start and an end."),
+        new("/operator/maintenance", "start in the past", Who.Operator,
+            Reach.Answered("announce-maintenance", ("Starts", "2026-11-23 02:00"), ("Ends", "2026-11-23 04:00")), "main .field-error",
+            "The form comes back with what is wrong said at the field of the start, which is marked as wrong and has the focus."),
+        new("/operator/maintenance", "announced", Who.Operator,
+            Reach.AnsweredFrom("/operator/maintenance", "announce-maintenance", ("Starts", "2026-11-26 02:00"), ("Ends", "2026-11-26 04:00")),
+            "body > section.site-notice p[role='status']",
+            "The page comes back with a message that the maintenance is announced, with a table of what is announced, " +
+            "which has the button that cancels it, and with the banner under the bar, which every page has from then on.",
+            Path: "/operator/maintenance?announced=true"),
+        new("/operator/maintenance", "cancelled", Who.Operator, Reach.Answered("change-maintenance"),
+            "main #maintenance-announced + p",
+            "The page comes back without the banner and without the table: none is announced."),
+
         // What the user of that account is told from then on, with the right password. It stands
         // after the state that disabled the account, and before the clock of the world moves.
         new("/sign-in", "account disabled", Who.Visitor,

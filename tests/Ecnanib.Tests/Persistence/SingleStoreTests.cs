@@ -47,10 +47,11 @@ public class SingleStoreTests
                 "agent_roles", "agent_state_changes", "agents", "ai_credentials", "ai_models", "ai_providers",
                 "analyst_calls", "audit_events", "background_jobs", "board_opt_outs", "catalog_sync_runs", "decision_cycles", "email_opt_ins",
                 "equity_marks",
-                "equity_snapshots", "exchange_credentials", "fills", "fundings", "legal_acceptances", "lessons", "notifications",
+                "equity_snapshots", "exchange_credentials", "fills", "fundings", "legal_acceptances", "lessons", "maintenance_windows",
+                "notifications",
                 "orders", "pending_sign_ins", "position_results", "position_roles", "positions", "prompt_templates", "restore_tests",
                 "risk_check_rules", "risk_checks", "role_outputs", "roles", "runtime_flags", "sessions", "shadow_trades",
-                "two_factor_recovery_codes", "users",
+                "two_factor_recovery_codes", "up_spans", "users",
             ],
             modelTables.Order(StringComparer.Ordinal));
         Assert.Equal(

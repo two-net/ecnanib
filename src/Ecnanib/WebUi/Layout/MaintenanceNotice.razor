@@ -1,0 +1,60 @@
+@using Ecnanib.Platform.Availability
+@inject IAnnouncedMaintenance Maintenance
+@inject ILogger<MaintenanceNotice> Logger
+
+@*
+    The banner that announces maintenance, under the bar of every page, for a visitor as for a
+    user (NFR-REL-6): from when to when the service may not answer, or until when once it has
+    started, and that no position is closed for it. It is there from the moment that an operator
+    announces the maintenance until it is over, and is not there otherwise.
+
+    It is rendered on the server for each request, so it is as it was when the page was written:
+    what is announced shows with the next page. The frame is on the page of an error as well, so
+    an announcement that cannot be read fails no page: the page is then without the banner. It
+    is a part of the page with a name, which says how things are and takes no focus. It writes
+    its times as the page does. Its texts are in MaintenanceTexts, and its look is in app.css.
+    See "Announced maintenance" in docs/reliability.md.
+*@
+
+@if (_next is { } next)
+{
+    <section class="site-notice" aria-label="@MaintenanceTexts.Label">
+        @if (next.UnderWay)
+        {
+            <p role="status">@MaintenanceTexts.UnderWay(next.EndsAt, Times)</p>
+        }
+        else
+        {
+            <p role="status">@MaintenanceTexts.Announced(next.StartsAt, next.EndsAt, Times)</p>
+        }
+    </section>
+}
+
+@code {
+    private AnnouncedMaintenance? _next;
+
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // The times of the page, for whoever reads it: see docs/times.md.
+    [CascadingParameter]
+    private PageTimes Times { get; set; } = PageTimes.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext is not { } request)
+        {
+            return;
+        }
+
+        try
+        {
+            // What is announced is of the service, and the same for everyone. Nothing of a user is read.
+            _next = await Maintenance.NextAsync(request.RequestAborted);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            Logger.LogWarning(error, "The maintenance that is announced could not be read for the banner of a page");
+        }
+    }
+}

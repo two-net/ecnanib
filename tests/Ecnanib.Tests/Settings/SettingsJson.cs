@@ -130,7 +130,8 @@ internal sealed class SettingsJson
           "Breakers": {
             "AiProvider": { "Failures": 6, "PauseSeconds": 40, "LongestPauseSeconds": 600 },
             "AiKey": { "Failures": 4, "PauseSeconds": 50, "LongestPauseSeconds": 700, "TripsBeforeAttention": 2, "ProviderWideKeys": 5 }
-          }
+          },
+          "Availability": { "TargetPercent": 99.9, "MaintenanceNoticeHours": 12, "LongestMaintenanceHours": 6 }
         }
         """)
         .With("Security:MasterKeys:k1", Convert.ToBase64String(new byte[32]))

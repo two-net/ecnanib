@@ -28,6 +28,10 @@ internal static class OwnershipRules
         ["prompt_templates"] = "The prompts that the system supplies, which are the same for every user.",
         ["background_jobs"] = "The latest run of each scheduled job of the application.",
         ["restore_tests"] = "The tests of a restore of the database: which backup was restored, when, and how it ended (NFR-DAT-11). A row names no user.",
+        ["up_spans"] = "When the service was up, as it says itself every minute, which its availability is measured from (NFR-REL-1). A row names no user.",
+        ["maintenance_windows"] =
+            "The maintenance that an operator announced, which every page tells of, to visitors and to every user " +
+            "(NFR-REL-6). A row names no user: who announced it is in the audit trail.",
         ["runtime_flags"] =
             "The switches of the service that are set while it runs: the global halt, which is the same for every user " +
             "(FR-OPS-3). A row says who switched it last, and is set to nobody when that account is deleted.",

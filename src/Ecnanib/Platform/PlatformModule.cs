@@ -1,4 +1,5 @@
 using Ecnanib.Platform.Adapters.Http;
+using Ecnanib.Platform.Availability;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.LiveUpdates;
 using Ecnanib.Platform.Logging;
@@ -59,12 +60,17 @@ public static class PlatformModule
             .AddSingleton(settings.Retention)
             .AddSingleton(settings.Backup)
             .AddSingleton(settings.Limits)
-            .AddSingleton(settings.Breakers);
+            .AddSingleton(settings.Breakers)
+            .AddSingleton(settings.Availability);
 
         AddLogging(builder, settings);
 
         builder.Services.AddPersistence();
         builder.Services.AddBackgroundWork();
+
+        // What says that the service is up, how available it was, and the maintenance that is
+        // announced (NFR-REL-1, NFR-REL-6).
+        builder.Services.AddAvailability();
         GiveTimeToStop(builder, settings.Application);
         builder.Services.AddTransportSecurity(settings.Application);
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using Ecnanib.Catalog;
 using Ecnanib.DecisionEngine;
 using Ecnanib.ExchangeGateway;
+using Ecnanib.Platform.Availability;
 using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Persistence;
 
@@ -12,8 +13,9 @@ namespace Ecnanib.WebUi.Pages.Operator;
 /// the scheduler, the depth of the queue of the cycles, the last catalog sync of each provider,
 /// the use of the request limits of Binance, the drift of the clock, the sizes of the tables,
 /// and the rates of errors (FR-OPS-2), and with them where the calls to the AI providers are
-/// paused and where Binance is out (NFR-REL-4). What frames the screen, and the pages that it
-/// leads to, have their texts in <see cref="OperatorPages"/>.
+/// paused and where Binance is out (NFR-REL-4), and how available the service was (NFR-REL-1).
+/// What frames the screen, and the pages that it leads to, have their texts in
+/// <see cref="OperatorPages"/>.
 /// </summary>
 /// <remarks>
 /// A state is said as words, and never as a colour alone. What is not known is said as not
@@ -21,6 +23,9 @@ namespace Ecnanib.WebUi.Pages.Operator;
 /// </remarks>
 public static class OperatorStatusPages
 {
+    /// <summary>The id of the heading of the availability, which names its table.</summary>
+    public const string AvailabilityId = "status-availability";
+
     /// <summary>The id of the heading of the scheduler, which names its table.</summary>
     public const string SchedulerId = "status-scheduler";
 
@@ -70,6 +75,118 @@ public static class OperatorStatusPages
 
     /// <summary>A count, with its thousands apart.</summary>
     public static string Count(long count) => count.ToString("N0", CultureInfo.InvariantCulture);
+
+    /// <summary>The heading of the availability of the service.</summary>
+    public static string AvailabilityHeading => "Availability";
+
+    /// <summary>What the availability is the share of, and what it is held to (NFR-REL-1).</summary>
+    /// <param name="targetPercent">The target of the configuration file, in percent.</param>
+    public static string AvailabilityExplained(decimal targetPercent) =>
+        "The share of each month, by the calendar in UTC, that the service was up for, held against a target of " +
+        $"{targetPercent.ToString("0.###", CultureInfo.InvariantCulture)}%. The service is up while an instance runs the " +
+        "background work and the database answers it, which it says every minute.";
+
+    /// <summary>What counts as down, and what is left out.</summary>
+    public static string AvailabilityCounts =>
+        "Time that nothing said so for counts as down. Maintenance that was announced in advance is left out, and " +
+        "maintenance that was announced late is not. The figures are read from the database.";
+
+    /// <summary>The name of the table of the months.</summary>
+    public static string AvailabilityCaption => "The availability of the service by the month";
+
+    /// <summary>The heading of a month.</summary>
+    public static string MonthHeading => "Month";
+
+    /// <summary>The heading of the share of a month that the service was up for.</summary>
+    public static string AvailableHeading => "Availability";
+
+    /// <summary>The heading of whether that is the target or more.</summary>
+    public static string TargetHeading => "Target";
+
+    /// <summary>The heading of how long the service was down for.</summary>
+    public static string DownHeading => "Down";
+
+    /// <summary>The heading of how long the maintenance lasted that is left out.</summary>
+    public static string MaintenanceHeading => "Maintenance left out";
+
+    /// <summary>The heading of from when to when a month was measured.</summary>
+    public static string MeasuredHeading => "Measured";
+
+    /// <summary>A month of the calendar, by its name and its year.</summary>
+    public static string Month(DateOnly month) => month.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The share of a month that the service was up for, in percent. It is cut after three
+    /// places and never rounded up, so it says no more than was measured. A month that nothing
+    /// was measured of is not known.
+    /// </summary>
+    public static string Available(MonthAvailability month)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return month.Percent is { } percent
+            ? (Math.Floor(percent * 1000m) / 1000m).ToString("0.###", CultureInfo.InvariantCulture) + "%"
+            : NotKnown;
+    }
+
+    /// <summary>Whether a month is at its target, in words.</summary>
+    public static string Target(MonthAvailability month)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return month.MeetsTarget switch
+        {
+            true => "Met",
+            false => "Missed",
+            null => NotKnown,
+        };
+    }
+
+    /// <summary>How long the service was down for in a month, or that this is not known.</summary>
+    public static string Down(MonthAvailability month)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return month.Percent is null ? NotKnown : Lasting(month.Down);
+    }
+
+    /// <summary>How long the maintenance lasted that is left out of a month, or that this is not known.</summary>
+    public static string Maintenance(MonthAvailability month)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return month.MeasuredFrom is null ? NotKnown : Lasting(month.Maintenance);
+    }
+
+    /// <summary>From when to when a month was measured.</summary>
+    public static string Measured(MonthAvailability month, PageTimes times)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+        ArgumentNullException.ThrowIfNull(times);
+
+        return month is { MeasuredFrom: { } from, MeasuredUntil: { } until }
+            ? $"From {times.At(from)} to {times.At(until)}"
+            : "Nothing of it was measured";
+    }
+
+    /// <summary>A length of time in days, hours, minutes, and seconds, without the parts that are nothing.</summary>
+    public static string Lasting(TimeSpan time)
+    {
+        if (time < TimeSpan.FromSeconds(1))
+        {
+            return None;
+        }
+
+        string[] parts =
+        [
+            time.Days > 0 ? Count(time.Days) + " d" : string.Empty,
+            time.Hours > 0 ? Count(time.Hours) + " h" : string.Empty,
+            time.Minutes > 0 ? Count(time.Minutes) + " min" : string.Empty,
+            time.Seconds > 0 ? Count(time.Seconds) + " s" : string.Empty,
+        ];
+
+        return string.Join(' ', parts.Where(part => part.Length > 0));
+    }
 
     /// <summary>The heading of the health of the scheduler.</summary>
     public static string SchedulerHeading => "Scheduler";

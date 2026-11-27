@@ -44,4 +44,11 @@ public sealed class AuditTarget
 
     /// <summary>An agent, by the id of its row: <c>agent:&lt;id&gt;</c>. The id says nothing of what its user named it.</summary>
     public static AuditTarget Agent(Guid agentId) => new($"agent:{agentId}");
+
+    /// <summary>
+    /// Maintenance that an operator announced, by the id of its row: <c>maintenance:&lt;id&gt;</c>
+    /// (NFR-REL-6). It is of the service and belongs to no user, and the id says nothing of when
+    /// it is.
+    /// </summary>
+    public static AuditTarget Maintenance(Guid windowId) => new($"maintenance:{windowId}");
 }
