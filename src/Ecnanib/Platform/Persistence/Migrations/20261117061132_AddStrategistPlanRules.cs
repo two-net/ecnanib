@@ -5,6 +5,7 @@
 namespace Ecnanib.Platform.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DestructiveMigration]
     public partial class AddStrategistPlanRules : Migration
     {
         /// <inheritdoc />

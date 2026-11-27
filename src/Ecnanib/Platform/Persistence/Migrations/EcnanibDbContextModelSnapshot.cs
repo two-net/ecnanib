@@ -2361,6 +2361,55 @@ namespace Ecnanib.Platform.Persistence.Migrations
                     b.ToTable("background_jobs", (string)null);
                 });
 
+            modelBuilder.Entity("Ecnanib.Platform.Persistence.RestoreTest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Backup")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("backup");
+
+                    b.Property<DateTimeOffset>("BackupTakenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("backup_taken_at");
+
+                    b.Property<string>("Failure")
+                        .HasColumnType("text")
+                        .HasColumnName("failure");
+
+                    b.Property<DateTimeOffset>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("result");
+
+                    b.Property<long>("Rows")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rows");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("Tables")
+                        .HasColumnType("integer")
+                        .HasColumnName("tables");
+
+                    b.HasKey("Id")
+                        .HasName("pk_restore_tests");
+
+                    b.HasIndex("StartedAt")
+                        .HasDatabaseName("ix_restore_tests_started_at");
+
+                    b.ToTable("restore_tests", (string)null);
+                });
+
             modelBuilder.Entity("Ecnanib.Platform.Persistence.RoleRow", b =>
                 {
                     b.Property<string>("Code")

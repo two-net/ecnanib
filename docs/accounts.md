@@ -498,6 +498,8 @@ public interface IAgentActivity
 | The rows of a user go with the account. | Each foreign key that carries the owner to `users` deletes the row with what it points at, at every row on the way. `OwnershipModelTests` reads the model. See [ownership.md](ownership.md). |
 | Deleting an account leaves no row of its user, and changes no row of another. | `AccountDeletionTests` gives two users a row in every table of the model that holds rows of users, deletes one account, and compares. A table that is added later fails that test until the test gives both users a row in it. |
 
+**That is of the database. A backup that was taken before the account was deleted still holds its rows,** until the backup is kept no longer, which is 14 days with the tracked file, and a restore of such a backup brings the account back. See "The files" and "Restoring by hand" in [backups.md](backups.md).
+
 ## Disabling an account
 
 An operator can disable or enable a user account (FR-OPS-4). A disabled account is not signed in: its sessions end as it is disabled, and its password starts none. Nothing of it is deleted, and enabling it puts it back as it was. `IAccountDisabling` does it, in `AccountDisabling.cs`, and the pages are of the Web UI: see "Disabling and enabling an account" in [ownership.md](ownership.md).

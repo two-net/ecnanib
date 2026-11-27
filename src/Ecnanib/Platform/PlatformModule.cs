@@ -11,10 +11,11 @@ using Serilog.Extensions.Logging;
 namespace Ecnanib.Platform;
 
 /// <summary>
-/// Platform: the plumbing every component builds on. That is configuration, logging, persistence,
-/// background work, how requests travel, how stored secrets are encrypted, and the signals that
-/// the open pages follow. See docs/configuration.md, docs/logging.md, docs/persistence.md,
-/// docs/background-work.md, docs/security.md, and docs/live-updates.md.
+/// Platform: the plumbing every component builds on. That is configuration, logging, persistence
+/// with the backups of the database, background work, how requests travel, how stored secrets are
+/// encrypted, and the signals that the open pages follow. See docs/configuration.md,
+/// docs/logging.md, docs/persistence.md, docs/backups.md, docs/background-work.md,
+/// docs/security.md, and docs/live-updates.md.
 /// </summary>
 public static class PlatformModule
 {
@@ -56,6 +57,7 @@ public static class PlatformModule
             .AddSingleton(settings.Trading)
             .AddSingleton(settings.Experience)
             .AddSingleton(settings.Retention)
+            .AddSingleton(settings.Backup)
             .AddSingleton(settings.Limits);
 
         AddLogging(builder, settings);

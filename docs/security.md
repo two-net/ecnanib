@@ -171,7 +171,7 @@ What is encrypted this way is the key of two-factor authentication, in `users.tw
    No stored secret is encrypted with the master keys ["key-1"], so they can be taken out of the configuration file
    ```
 
-3. Take the earlier key out of the file, now or at any later start. Keep it somewhere safe for as long as a backup of the database from its time may be restored: the values in that backup name it.
+3. Take the earlier key out of the file, now or at any later start. Keep it somewhere safe for as long as a backup of the database from its time may be restored: the values in that backup name it. The application keeps a backup for `Backup:KeepDays`, and a copy of one is kept for as long as the deployment keeps it: see [backups.md](backups.md).
 
 The routine runs at every start, after the migrations and before anything is served or scheduled, because the active key changes only with a start. With nothing to do, it asks each declared column for the values of other keys, finds none, and writes nothing. It logs under the area `Ecnanib.Platform.Security.StoredSecretReencryptor`.
 

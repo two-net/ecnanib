@@ -483,3 +483,8 @@ $RECYCLE.BIN/
 
 # A per-environment file is not a source of settings (docs/configuration.md), so a local one stays out.
 appsettings.Development.json
+
+# The backups of the database, in the folder that the tracked configuration file names (docs/backups.md).
+# Named here: the rule for the backup folders of Visual Studio, Backup*/, takes it in only where
+# letter case is ignored. That rule also takes in any folder of the code that is called Backups.
+backups/

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Ecnanib.Platform.Persistence;
 
@@ -41,11 +42,19 @@ public sealed class DatabaseMigrationException(Exception cause)
 /// because it is held only inside the transaction of a migration.
 /// </para>
 /// <para>
+/// A migration that is marked as destructive is preceded by a backup (NFR-DAT-11): the database
+/// is backed up under the lock, before the first of the pending migrations is applied, and when
+/// the backup fails, none of them is. See <see cref="DestructiveMigrationAttribute"/>.
+/// </para>
+/// <para>
 /// This is synchronous on purpose. It runs once, on the thread that starts the application,
 /// before anything else does.
 /// </para>
 /// </remarks>
-internal sealed class DatabaseMigrator(IDbContextFactory<EcnanibDbContext> contexts, ILogger<DatabaseMigrator> logger)
+internal sealed class DatabaseMigrator(
+    IDbContextFactory<EcnanibDbContext> contexts,
+    DatabaseBackups backups,
+    ILogger<DatabaseMigrator> logger)
 {
     private static readonly TimeSpan TimeBetweenTries = TimeSpan.FromMilliseconds(250);
 
@@ -104,6 +113,8 @@ internal sealed class DatabaseMigrator(IDbContextFactory<EcnanibDbContext> conte
                 pending[^1]);
         }
 
+        BackUpBeforeTheDestructive(database, pending);
+
         // Called even with nothing pending: it also refuses a model that is ahead of its migrations.
         database.Migrate();
 
@@ -116,6 +127,35 @@ internal sealed class DatabaseMigrator(IDbContextFactory<EcnanibDbContext> conte
         {
             logger.LogInformation("The database is up to date at {Migration}", current);
         }
+    }
+
+    /// <summary>
+    /// Backs the database up when a pending migration is marked as destructive, before any of
+    /// them is applied. A backup that cannot be taken ends the start: the migration does not run
+    /// without it.
+    /// </summary>
+    /// <remarks>
+    /// A database that no migration was applied to yet holds nothing that a migration could
+    /// drop or rewrite, so it is not backed up.
+    /// </remarks>
+    private void BackUpBeforeTheDestructive(DatabaseFacade database, List<string> pending)
+    {
+        var migrations = database.GetService<IMigrationsAssembly>().Migrations;
+
+        var destructive = pending.FirstOrDefault(migration =>
+            migrations.TryGetValue(migration, out var type) && type.IsDefined(typeof(DestructiveMigrationAttribute), inherit: false));
+
+        if (destructive is null || !database.GetAppliedMigrations().Any())
+        {
+            return;
+        }
+
+        logger.LogInformation(
+            "Backing up the database before the migration {Migration}, which is marked as destructive",
+            destructive);
+
+        // On a thread of its own: the thread that starts the application only waits for it.
+        Task.Run(() => backups.TakeAsync(BackupReason.Before(destructive), CancellationToken.None)).GetAwaiter().GetResult();
     }
 
     /// <summary>

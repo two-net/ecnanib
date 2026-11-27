@@ -7,6 +7,7 @@
 namespace Ecnanib.Platform.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DestructiveMigration]
     public partial class AddPromptModules : Migration
     {
         /// <inheritdoc />

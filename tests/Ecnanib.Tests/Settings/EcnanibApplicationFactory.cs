@@ -157,6 +157,25 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
     private readonly string _contentRoot;
     private readonly Action<IWebHostBuilder>? _configure;
     private readonly bool _watchesBinanceClock;
+    // The job of the platform that backs the database up, named in the same way.
+    private const string DatabaseBackup = "Ecnanib.Platform.Persistence.DatabaseBackupJob";
+
+    /// <summary>
+    /// The key under which the job that backs the database up is kept: the scheduler of no
+    /// application of the tests runs it, and a test runs it from there itself, at a moment of its
+    /// choosing.
+    /// </summary>
+    public const string DatabaseBackupKey = "database-backup";
+
+    // The job of the platform that tests a restore, named in the same way.
+    private const string RestoreTest = "Ecnanib.Platform.Persistence.RestoreTestJob";
+
+    /// <summary>
+    /// The key under which the job that tests a restore is kept: the scheduler of no application
+    /// of the tests runs it, and a test runs it from there itself, at a moment of its choosing.
+    /// </summary>
+    public const string RestoreTestKey = "restore-test";
+
     private readonly bool _runsCycles;
     private readonly bool _settlesOrders;
     private readonly bool _reconciles;
@@ -420,6 +439,25 @@ public sealed class EcnanibApplicationFactory : WebApplicationFactory<Program>
 
                 services.Remove(deleting);
                 services.AddKeyedSingleton(typeof(IBackgroundJob), key, deleting.ImplementationType!);
+            }
+
+            // The job that backs the database up and the job that tests a restore are due as
+            // the background work starts, and then after hours and days: each starts a tool of
+            // PostgreSQL, the second makes a database and drops it, and both write files. In a
+            // test of something else that is work that nobody asked for, in every application.
+            // So no application of a test runs these jobs on a schedule: a test that is about
+            // what a run does finds the job by its key, and runs it itself.
+            foreach (var (backup, key) in new[]
+            {
+                (DatabaseBackup, DatabaseBackupKey),
+                (RestoreTest, RestoreTestKey),
+            })
+            {
+                var backing = services.Single(job =>
+                    job.ServiceType == typeof(IBackgroundJob) && job.ImplementationType?.FullName == backup);
+
+                services.Remove(backing);
+                services.AddKeyedSingleton(typeof(IBackgroundJob), key, backing.ImplementationType!);
             }
 
             // The job that reconciles the agents with the exchange is due as the background

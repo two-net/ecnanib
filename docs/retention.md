@@ -21,7 +21,7 @@ The code is `AgedRows` in `src/Ecnanib/Platform/Persistence`, and a class with i
 | **A row goes by its age alone.** | A notification goes read or not, an event of an operator as that of a user, and the cycle of an agent in any state, in Demo and in Live, scheduled or run as a test. |
 | **A day is 24 hours, counted back from the moment of the run.** | A row that is exactly as old as its kind is kept stays, and goes when it is older. The jobs run every hour, so a row goes within an hour of that. |
 | **The days are read from the configuration file, at startup.** | Each is a whole number from 1 to 36500. See [configuration.md](configuration.md). |
-| **A row that went is gone.** | Nothing is moved to another table or to a file first. A user who wants their decisions for longer downloads them: see [export.md](export.md). |
+| **A row that went is gone.** | Nothing is moved to another table or to a file first. A user who wants their decisions for longer downloads them: see [export.md](export.md). A backup that was taken before still holds the row, for as long as the backup is kept: see [backups.md](backups.md). |
 
 ### What a role answered
 

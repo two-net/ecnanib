@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Ecnanib.Platform.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DestructiveMigration]
     public partial class AddSetupMarks : Migration
     {
         /// <inheritdoc />

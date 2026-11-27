@@ -97,6 +97,14 @@ public class TrackedFileTests
                 5, 20, 20, new ShadowFeeSettings(Spot: 0.1m, Futures: 0.05m), new ExperienceBoardSettings(MinUsers: 5, MinTrades: 50)),
             settings.Experience);
         Assert.Equal(new RetentionSettings(90, 365, 90, 730), settings.Retention);
+
+        // The database is backed up daily, a backup is kept for two weeks, and a restore is
+        // tested weekly (NFR-DAT-11). The tools are the client tools of PostgreSQL, by the names
+        // that they are found under where they are installed.
+        Assert.Equal(
+            new BackupSettings(
+                Directory: "backups", IntervalHours: 24, KeepDays: 14, RestoreTestDays: 7, PgDump: "pg_dump", PgRestore: "pg_restore"),
+            settings.Backup);
         Assert.Equal(
             new LimitsSettings(
                 MaxAgentsPerUser: 10,

@@ -38,6 +38,8 @@ internal static class PostgresServer
         return database;
     });
 
+    private static readonly Lazy<ServerTools> Tools = new(() => ServerTools.In(Container.Value.Id));
+
     /// <summary>
     /// One database, already migrated, for every test that needs the application to start and
     /// has nothing to say about the database.
@@ -52,6 +54,15 @@ internal static class PostgresServer
 
         return new TestDatabase(ConnectionStringTo(name));
     }
+
+    /// <summary>
+    /// The tool that backs a database of this server up, as the <c>Backup:PgDump</c> of an
+    /// application of the tests names it: see <see cref="ServerTools"/>.
+    /// </summary>
+    public static string PgDump => Tools.Value.PgDump;
+
+    /// <summary>The tool that restores a backup to a database of this server, named in the same way.</summary>
+    public static string PgRestore => Tools.Value.PgRestore;
 
     /// <summary>A connection string to a database of this server, whether it exists or not.</summary>
     public static string ConnectionStringTo(string database) =>
@@ -77,6 +88,65 @@ internal static class PostgresServer
 
         return container;
     }
+}
+
+/// <summary>
+/// The client tools of PostgreSQL that the application backs a database up and restores it with,
+/// for the tests: two scripts that run <c>pg_dump</c> and <c>pg_restore</c> inside the container
+/// of the test server, where they are. So the tests need Docker, with its command, and no
+/// PostgreSQL on the machine that runs them.
+/// </summary>
+/// <remarks>
+/// The application tells a tool where the server is in the variables of the tool's process, and
+/// hands it what it reads and takes what it writes over its standard input and output. So a
+/// script passes the user and the password on as they are, says the address that the server has
+/// inside its container, and needs no file to be in both places.
+/// </remarks>
+internal sealed class ServerTools
+{
+    private ServerTools(string pgDump, string pgRestore)
+    {
+        PgDump = pgDump;
+        PgRestore = pgRestore;
+    }
+
+    public string PgDump { get; }
+
+    public string PgRestore { get; }
+
+    public static ServerTools In(string container)
+    {
+        var folder = Directory.CreateTempSubdirectory("ecnanib-tests-tools-").FullName;
+
+        // Removed with the process, as the container is.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Directory.Delete(folder, recursive: true);
+
+        return new ServerTools(
+            Script(folder, "pg_dump", Inside(container, "pg_dump")),
+            Script(folder, "pg_restore", Inside(container, "pg_restore")));
+    }
+
+    /// <summary>Writes a script that the application can run as a tool, and says where it is.</summary>
+    /// <param name="folder">Where the script goes.</param>
+    /// <param name="name">The name of its file.</param>
+    /// <param name="command">What it does, as a line of the shell.</param>
+    public static string Script(string folder, string name, string command)
+    {
+        var path = Path.Combine(folder, name);
+
+        File.WriteAllText(path, $"#!/bin/sh\n{command}\n");
+
+        // A script of the shell: the tests of the backups run where one runs.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return path;
+    }
+
+    private static string Inside(string container, string tool) =>
+        $"exec docker exec -i -e PGHOST=localhost -e PGPORT=5432 -e PGUSER -e PGPASSWORD {container} {tool} \"$@\"";
 }
 
 /// <summary>A database of the test server, and what a test wants to ask it directly.</summary>

@@ -1,6 +1,6 @@
 # Persistence
 
-Ecnanib keeps its data in one PostgreSQL database and nowhere else. The schema is defined by the code: the entities and their mappings are the model, migrations are generated from the model, and the application applies the pending ones each time it starts (NFR-DAT-1 to -4, -7, -8, -10).
+Ecnanib keeps its data in one PostgreSQL database and nowhere else. The schema is defined by the code: the entities and their mappings are the model, migrations are generated from the model, and the application applies the pending ones each time it starts (NFR-DAT-1 to -4, -7, -8, -10). The database is backed up daily, restores are tested, and a migration that drops or rewrites data is preceded by a backup (NFR-DAT-11): see [backups.md](backups.md).
 
 The object-relational mapper is Entity Framework Core with the Npgsql provider. The plumbing is in `src/Ecnanib/Platform/Persistence`. The rules below are enforced by tests in `tests/Ecnanib.Tests/Persistence` and `tests/Ecnanib.Tests/Architecture`.
 
@@ -8,11 +8,11 @@ The object-relational mapper is Entity Framework Core with the Npgsql provider. 
 
 | Where | Database |
 |---|---|
-| Development | `docker compose up -d` starts PostgreSQL 18 with the database, user, and password that the tracked configuration file names. |
-| A deployment | An empty database and a role that owns it, named in `ConnectionStrings:EcnanibDbContext` of the deployment's configuration file. See [configuration.md](configuration.md). |
-| Tests | A PostgreSQL container that the tests start themselves, and that is removed when the run ends. They need Docker running, and nothing else. The container is given 512 megabytes of shared memory: PostgreSQL keeps the statistics of every database there, a database of a test stays until the run ends, and the databases of one run outgrow the 64 megabytes that a container has otherwise. |
+| Development | `docker compose up -d` starts PostgreSQL 18 with the database, user, and password that the tracked configuration file names. The backups need the client tools of PostgreSQL 18 on the machine as well: see "The tools" in [backups.md](backups.md). |
+| A deployment | An empty database and a role that owns it, named in `ConnectionStrings:EcnanibDbContext` of the deployment's configuration file. The role may create a database, and the client tools of PostgreSQL 18 are installed where the application runs, both for the backups. See [configuration.md](configuration.md). |
+| Tests | A PostgreSQL container that the tests start themselves, and that is removed when the run ends. They need Docker running, with its command, and nothing else: the tools that back a database up are run inside the container. The container is given 512 megabytes of shared memory: PostgreSQL keeps the statistics of every database there, a database of a test stays until the run ends, and the databases of one run outgrow the 64 megabytes that a container has otherwise. |
 
-The application does not create the database, so its role needs no right to. It creates and changes the tables inside it.
+The application does not create its database. It creates and changes the tables inside it. Its role needs the right to create a database all the same, `CREATEDB`, for one other database: the scratch database that a restore is tested in, which the application makes and drops. See "Testing a restore" in [backups.md](backups.md).
 
 `ConnectionStrings:EcnanibDbContext` is the standard place of a .NET application's connection string, named after the context. It is checked with the rest of the configuration file: a value that is not a PostgreSQL connection string is reported there, by its key.
 
@@ -21,8 +21,9 @@ The application does not create the database, so its role needs no right to. It 
 Before it serves a request or starts any scheduled work, the application brings the database to its model (NFR-DAT-3):
 
 1. It opens one session and takes a PostgreSQL advisory lock on it. If another instance holds the lock, it logs that it is waiting and tries again until the lock is free.
-2. It applies the pending migrations on that same session, all in one transaction.
-3. It releases the lock, and only then starts the host.
+2. When a pending migration is marked as destructive, it backs the database up (NFR-DAT-11). A database that no migration was applied to yet is not backed up. See "Destructive migrations" in [backups.md](backups.md).
+3. It applies the pending migrations on that same session, all in one transaction.
+4. It releases the lock, and only then starts the host.
 
 The lock and the migrations share a session, so the lock cannot be lost while a migration runs. Starting a second instance is safe: it waits, finds nothing pending, and starts (NFR-ARC-4). The lock shows in `pg_locks` as an advisory lock with the key `DatabaseMigration.LockKey`.
 
@@ -47,11 +48,11 @@ The database is up to date at 20261111050450_Initial
 
 ### When it fails
 
-If the server cannot be reached, the database does not exist, a migration fails, or the model is ahead of its migrations, the application does not start. It logs the error once, as `Critical`, with the cause in full, and exits with code 1. The migrations of one start run in a single transaction, so a failure leaves nothing half done. Fix the cause and start again.
+If the server cannot be reached, the database does not exist, the backup before a destructive migration fails, a migration fails, or the model is ahead of its migrations, the application does not start. It logs the error once, as `Critical`, with the cause in full, and exits with code 1. The migrations of one start run in a single transaction, so a failure leaves nothing half done. Fix the cause and start again.
 
 There is one exception. An operation that PostgreSQL cannot run inside a transaction, such as creating an index concurrently, ends that transaction, so a migration with one is applied in steps. No migration has one today.
 
-A migration has no time limit of its own. One that takes long holds up the start, and the instances waiting behind it.
+A migration has no time limit of its own, and neither has the backup before a destructive one. One that takes long holds up the start, and the instances waiting behind it.
 
 ## The model
 
@@ -180,7 +181,7 @@ This needs neither a configuration file nor a database. Read the generated file,
 
 - `ModelTests` fails when the model has changed and no migration has been generated. The application refuses to start in the same state, which `MigrationFailureTests` covers.
 - A migration that has been applied anywhere is never edited. A further change is a further migration.
-- A migration that drops or rewrites data needs a backup first (NFR-DAT-11). Marking such migrations is a separate feature.
+- A migration that drops or rewrites data is marked as destructive, with `[DestructiveMigration]` on its class, and the application backs the database up before it applies one (NFR-DAT-11). `DestructiveMigrationTests` fails for one that is not marked. Marking a migration that was applied changes nothing that it does. See "Destructive migrations" in [backups.md](backups.md).
 - Two things in the database are not of the model, each a function with its triggers. The tool generated the migration of each empty, and the statements were written by hand. `ModelTests` cannot tell whether they are there.
   - What keeps the versions of the prompt templates as they are: `PromptTemplateVersionTests` holds the database to it. See [prompts.md](prompts.md).
   - What says that a row of a user changed, for the pages that follow: `live_signal()`, with a trigger on each table of [`LiveRules.cs`](../tests/Ecnanib.Tests/LiveUpdates/LiveRules.cs). `LiveRuleTests` holds the database to that list. A migration that rebuilds one of those tables gives it its trigger again, and a table that a page comes to follow is given one by a migration that is written by hand, as `AddEquitySignal` gives one to the equity of an agent over time. See "What the database says" in [live-updates.md](live-updates.md).
@@ -208,5 +209,5 @@ Keep each seeded text on one line in the source file. A text that spans lines wo
 1. Add the entity and its `IEntityTypeConfiguration` to the component that owns it. Name the table with `ToTable`.
 2. Use `decimal` for prices, quantities, and money, and `DateTimeOffset` for timestamps.
 3. Say whose its rows are. Rows of a user implement `IUserOwned`, are read through `OwnedBy`, and go with their account. Rows of the service are listed in `OwnershipRules.cs`. See "Adding a kind of resource" in [ownership.md](ownership.md).
-4. Generate a migration, read it, and commit it.
+4. Generate a migration, read it, and commit it. Mark it as destructive when it drops or rewrites data.
 5. Run the tests. `ModelTests` checks the model against its migrations and against the rules for columns, `OwnershipModelTests` checks that every table says whose its rows are and that the rows of a user go with the account, `PersonalDataTests` checks that every column which could say who a user is has been listed, and `StoredSecretRuleTests` checks that a column which names a master key belongs to a stored secret that is declared.

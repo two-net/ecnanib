@@ -106,6 +106,15 @@ public class SettingsFileTests
             settings.Experience);
         Assert.Equal(new RetentionSettings(30, 180, 45, 365), settings.Retention);
         Assert.Equal(
+            new BackupSettings(
+                Directory: "backups",
+                IntervalHours: 12,
+                KeepDays: 10,
+                RestoreTestDays: 3,
+                PgDump: "/usr/lib/postgresql/18/bin/pg_dump",
+                PgRestore: "/usr/lib/postgresql/18/bin/pg_restore"),
+            settings.Backup);
+        Assert.Equal(
             new LimitsSettings(
                 MaxAgentsPerUser: 7,
                 SignIn: new AttemptLimitSettings(PerClient: 400, PerAddress: 200, Minutes: 20),
@@ -185,6 +194,18 @@ public class SettingsFileTests
         { "Retention:DecisionDays", "36501", "Retention:DecisionDays" },
         { "Retention:NotificationDays", "36501", "Retention:NotificationDays" },
         { "Retention:AuditDays", "2147483647", "Retention:AuditDays" },
+
+        // The database is backed up daily, or more often: no file asks for fewer backups than
+        // one of a day (NFR-DAT-11). A backup is kept, and a restore is tested, by the day.
+        { "Backup:IntervalHours", "0", "Backup:IntervalHours" },
+        { "Backup:IntervalHours", "25", "Backup:IntervalHours" },
+        { "Backup:KeepDays", "0", "Backup:KeepDays" },
+        { "Backup:KeepDays", "36501", "Backup:KeepDays" },
+        { "Backup:RestoreTestDays", "0", "Backup:RestoreTestDays" },
+        { "Backup:RestoreTestDays", "366", "Backup:RestoreTestDays" },
+        { "Backup:Directory", "\"\"", "Backup:Directory" },
+        { "Backup:PgDump", "\"\"", "Backup:PgDump" },
+        { "Backup:PgRestore", "7", "Backup:PgRestore" },
         { "Limits:MaxAgentsPerUser", "0", "Limits:MaxAgentsPerUser" },
         { "Logging:Outputs:File:RetainedFiles", "0", "Logging:Outputs:File:RetainedFiles" },
 

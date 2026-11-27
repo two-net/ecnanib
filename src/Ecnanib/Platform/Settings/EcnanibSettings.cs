@@ -20,6 +20,7 @@ public sealed record EcnanibSettings(
     TradingSettings Trading,
     ExperienceSettings Experience,
     RetentionSettings Retention,
+    BackupSettings Backup,
     LimitsSettings Limits)
 {
     /// <summary>The names of the file's top-level sections, which are the properties above. They ignore case.</summary>
@@ -41,10 +42,11 @@ public sealed record EcnanibSettings(
         var trading = TradingSettings.Read(file, aiProviders);
         var experience = ExperienceSettings.Read(file);
         var retention = RetentionSettings.Read(file);
+        var backup = BackupSettings.Read(file);
         var limits = LimitsSettings.Read(file);
 
         return new EcnanibSettings(
             application, connectionStrings, security, logging, email, aiProviders, catalogSync, binance, trading,
-            experience, retention, limits);
+            experience, retention, backup, limits);
     }
 }

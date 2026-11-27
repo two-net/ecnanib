@@ -1,6 +1,8 @@
+using Ecnanib.Platform.BackgroundWork;
 using Ecnanib.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace Ecnanib.Platform.Persistence;
@@ -27,6 +29,16 @@ internal static class PersistenceRegistration
             options.UseNpgsql(provider.GetRequiredService<NpgsqlDataSource>()));
 
         services.AddSingleton<DatabaseMigrator>();
+
+        // The backups of the database, the test of a restore, and the jobs that take the one and
+        // run the other (NFR-DAT-11). The migrations ask for a backup too, before one of them
+        // that is marked as destructive. See docs/backups.md.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<PostgresTools>();
+        services.AddSingleton<DatabaseBackups>();
+        services.AddSingleton<RestoreTests>();
+        services.AddBackgroundJob<DatabaseBackupJob>();
+        services.AddBackgroundJob<RestoreTestJob>();
 
         // The sizes of the tables, for the operator status screen (FR-OPS-2).
         services.AddSingleton<IDatabaseSizes, DatabaseSizes>();

@@ -19,6 +19,12 @@ internal sealed class SettingsJson
 
     private SettingsJson(JsonObject root) => _root = root;
 
+    // The tools that a valid file names, where an installation of PostgreSQL 18 has them.
+    // No test relies on their being there: a file that is pointed at a database of the test
+    // server is pointed at the tools of that server too.
+    private const string PgDump = "/usr/lib/postgresql/18/bin/pg_dump";
+    private const string PgRestore = "/usr/lib/postgresql/18/bin/pg_restore";
+
     /// <summary>The key that <see cref="WithCatalogKey"/> gives the service for the models of Claude.</summary>
     public const string CatalogKey = "claude-catalog-key";
 
@@ -104,6 +110,14 @@ internal sealed class SettingsJson
             "Board": { "MinUsers": 6, "MinTrades": 60 }
           },
           "Retention": { "TranscriptDays": 30, "DecisionDays": 180, "NotificationDays": 45, "AuditDays": 365 },
+          "Backup": {
+            "Directory": "backups",
+            "IntervalHours": 12,
+            "KeepDays": 10,
+            "RestoreTestDays": 3,
+            "PgDump": "/usr/lib/postgresql/18/bin/pg_dump",
+            "PgRestore": "/usr/lib/postgresql/18/bin/pg_restore"
+          },
           "Limits": {
             "MaxAgentsPerUser": 7,
             "SignIn": { "PerClient": 400, "PerAddress": 200, "Minutes": 20 },
@@ -123,8 +137,31 @@ internal sealed class SettingsJson
     /// </summary>
     public SettingsJson OnTestServer() => OnDatabase(PostgresServer.SharedDatabase);
 
-    /// <summary>Points the file at a database of the test's own.</summary>
-    public SettingsJson OnDatabase(TestDatabase database) => With("ConnectionStrings:EcnanibDbContext", database.ConnectionString);
+    /// <summary>
+    /// Points the file at a database of the test's own, and at the tools that back a database of
+    /// the test server up and restore it: an application that starts on a database which is
+    /// behind a destructive migration backs it up first. A tool that the test named itself stays.
+    /// </summary>
+    public SettingsJson OnDatabase(TestDatabase database)
+    {
+        With("ConnectionStrings:EcnanibDbContext", database.ConnectionString);
+
+        if (_root["Backup"] is JsonObject backup)
+        {
+            UseToolOfTheServer(backup, "PgDump", PgDump, () => PostgresServer.PgDump);
+            UseToolOfTheServer(backup, "PgRestore", PgRestore, () => PostgresServer.PgRestore);
+        }
+
+        return this;
+    }
+
+    private static void UseToolOfTheServer(JsonObject backup, string key, string unset, Func<string> tool)
+    {
+        if (backup[key] is JsonValue named && named.TryGetValue<string>(out var path) && path == unset)
+        {
+            backup[key] = tool();
+        }
+    }
 
     /// <summary>Gives the service a key of its own for the models of Claude, and of no other provider.</summary>
     public SettingsJson WithCatalogKey() => With("AiProviders:Claude:CatalogKey", CatalogKey);
