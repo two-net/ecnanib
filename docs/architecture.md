@@ -411,3 +411,7 @@ Components write log events through the host's `ILogger<T>` and nothing else. On
 ## Deployment guard
 
 `DeploymentRuleTests` reads the application's package graph and fails if it contains a message broker client, a cache server client, a search server client, a proprietary cloud SDK, a client for a database other than PostgreSQL (NFR-DAT-1), or the SDK of a payment service, because the service is free (FR-ACC-6). The list is in [`ForbiddenInfrastructure.cs`](../tests/Ecnanib.Tests/Architecture/ForbiddenInfrastructure.cs). It also fails if the graph contains a log output other than the console and the file, so no log can be written to a database (NFR-DAT-7).
+
+## Dependencies
+
+The packages of the application and of its tests are scanned for known vulnerabilities as part of delivery (NFR-SEC-10). `Directory.Build.props` makes the build ask about every package as it restores them, and stop for one that has a known vulnerability, on any machine. A workflow at GitHub scans with every push to `main`, with every pull request, and once a day, and says what it found in the summary of its run and in an issue of the repository. See [dependencies.md](dependencies.md).

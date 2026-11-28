@@ -1,0 +1,90 @@
+# Scans the NuGet packages of the application and of its tests for known vulnerabilities, as part
+# of delivery (NFR-SEC-10): with every push to main, with every pull request, and once a day,
+# because an advisory is published without anything changing here.
+#
+# What a scan found is written to the summary of its run. A scan of main also says it in one
+# issue of the repository, which it opens, keeps, and closes. See docs/dependencies.md.
+name: Dependency scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Every day at 05:17 UTC. Off the hour, when fewer scheduled runs wait for a machine.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One scan of a branch at a time, each to its end, so that two never write the issue at once.
+concurrency:
+  group: dependency-scan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # For the issue. A pull request from a fork gets a token that only reads, and writes none.
+      issues: write
+
+    steps:
+      # The actions are named by commit, so that what runs here does not change with a tag.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      # Before anything is said about the packages: the scan finds a package that is known to be
+      # vulnerable, and the build refuses it. Otherwise "nothing found" would say nothing.
+      - name: Hold the scan to a planted package
+        run: bash .github/scripts/dependency-scan-check.sh
+
+      # 0 is clean, 1 is findings, 2 is a scan that did not happen. The step itself passes, so
+      # that the steps below say what was found before the last one fails the run.
+      - name: Scan the packages
+        id: scan
+        run: |
+          status=0
+          bash .github/scripts/dependency-scan.sh Ecnanib.slnx > "$RUNNER_TEMP/dependency-scan.md" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Write the summary of the run
+        if: always() && steps.scan.outputs.status != ''
+        run: |
+          {
+            cat "$RUNNER_TEMP/dependency-scan.md"
+            echo
+            echo "Commit \`$GITHUB_SHA\`, scanned on $(date -u +'%Y-%m-%d at %H:%M') UTC."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The issue says what main has, so a pull request and a run of another branch leave it be.
+      - name: Say it in the issue
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/dependency-scan-issue.sh "$RUNNER_TEMP/dependency-scan.md" "$RUN_URL" "$GITHUB_SHA"
+
+      - name: Fail for a finding, or for a scan that did not happen
+        if: steps.scan.outputs.status != '0'
+        env:
+          STATUS: ${{ steps.scan.outputs.status }}
+        run: |
+          if [ "$STATUS" = 1 ]; then
+            echo "::error title=Dependency scan::A package has a known vulnerability. See the summary of this run."
+          else
+            echo "::error title=Dependency scan::The scan did not happen. See the summary of this run."
+          fi
+          exit 1

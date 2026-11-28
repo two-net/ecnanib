@@ -1,0 +1,26 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Every restore asks the package source for the known vulnerabilities of every package of
+         the graph, direct or not, of any severity (NFR-SEC-10). These are the defaults of the
+         SDK that the application is built with, said here so that the rule does not move with
+         a default. See docs/dependencies.md. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+
+    <!-- A package with a known vulnerability stops the restore, and with it the build, the tests,
+         and a publish: low (NU1901), moderate (NU1902), high (NU1903), and critical (NU1904).
+         NU1900, which says that the source could not be asked, stays a warning, so a machine
+         without a network still builds. The scan of the delivery does not take that for clean. -->
+    <WarningsAsErrors>$(WarningsAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- An exception is an advisory that is named here, with why it does not apply and the issue
+       that follows it. The scan lists it apart, and it stops nothing:
+
+         <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-xxxx-xxxx-xxxx" />
+
+       There is none. See "When the scan finds something" in docs/dependencies.md. -->
+
+</Project>
