@@ -743,13 +743,36 @@ At registration the user accepts the Terms of Service, the Privacy Policy, and t
 
 | What | Where |
 |---|---|
-| The texts | Pages of the Web UI: `/legal/terms`, `/legal/privacy`, `/legal/risk-disclosure`, in `WebUi/Pages/Legal`. They are drafts at version `0.1` until the legal wording is written. |
+| The texts | Pages of the Web UI: `/legal/terms`, `/legal/privacy`, `/legal/risk-disclosure`, in `WebUi/Pages/Legal`. The risk disclosure is written, at version `1.0`. The Terms of Service and the Privacy Policy are drafts at version `0.1` until their legal wording is written. |
 | The version in force | `LegalDocuments.CurrentVersionOf` in `Accounts/LegalDocuments.cs`. |
 | What a user accepted | The table `legal_acceptances`: one row for each user, document, and version, with the time. |
 
 Each tick box on the form carries the version the page showed. A registration is refused unless it carries the version in force for every document, so nobody is recorded as accepting a text they did not see.
 
 **To change a text,** change its page and its version in `LegalDocuments` in the same commit. A row of `legal_acceptances` is never changed: accepting a later version adds a row.
+
+### The risk disclosure
+
+The risk disclosure says what a user risks when an agent trades for them (NFR-LEG-1). Its text is in `RiskDisclosurePages`, in `WebUi/Pages/Legal`: two paragraphs that say what the document is and that it is about Live, then seven sections, each a heading and its paragraphs. The page writes them as they stand there.
+
+| The specification requires that it states | The section that opens with it |
+|---|---|
+| That automated trading can lose all allocated capital. | "You can lose all of the capital you allocate" |
+| That the aggressive profile raises that risk. | "The aggressive profile raises that risk" |
+| That leverage can cause rapid losses. | "Leverage can cause rapid losses" |
+| That nothing in the service is investment advice. | "Nothing in this service is investment advice" |
+| That past results do not predict future results. | "Past results do not predict future results" |
+
+Two sections say more than the five. "The limits reduce the risk and do not remove it" says that the Risk Guard, the stop-loss, and the loss limits guarantee nothing. "No AI model is a proven trader" says that no model has shown a reliable ability to trade (risk R3 of the specification).
+
+| Rule | Detail |
+|---|---|
+| **The text is pinned to its version.** | `RiskDisclosureTests` holds the version and a fingerprint of the words together. A word that changes fails it, and its message says what to do: give the text a new version in `LegalDocuments`, then pin the new version and the new fingerprint. The message names the new fingerprint. |
+| **The text holds no value of the configuration file.** | It names no leverage cap, no risk per trade, and no limit. A value that changed in the file would change what the document says, under a version that stayed. |
+| **The draft is no longer accepted.** | A form that was opened while the disclosure was at `0.1` is refused, and says to read and accept the current one. |
+| **It says in full what other pages say in short.** | The page that switches an agent to Live lists the risks with `AgentPages.LiveRisks` and leads to the disclosure, and so do the start page and the setup checklist. See [agents.md](agents.md). |
+
+The wording was written from the specification. **It has not been reviewed by counsel.** A review that changes a word gives the text a new version, as any change does.
 
 ## The registration switch and fair-use limits
 
@@ -850,4 +873,6 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - Sharing what a page is expected to ask for between instances. A page that follows says to the instance of its connection that it asks for itself again, and a request that another instance takes counts as activity of its user. See "The session of a connection".
 - A page that is loaded anew after its connection could not be made again. The browser asks for it as for any page, which counts as activity of its user.
 - Removing accounts that were never verified, and the sessions and waiting sign-ins of users who never come back.
-- The wording of the legal documents. The Privacy Policy is to say what goes to AI providers, under whose keys and whose terms (NFR-SEC-8): the pages of the keys and the page of an agent's prompts say it already. See [prompts.md](prompts.md).
+- The wording of the Terms of Service and of the Privacy Policy. The Privacy Policy is to say what goes to AI providers, under whose keys and whose terms (NFR-SEC-8): the pages of the keys and the page of an agent's prompts say it already. See [prompts.md](prompts.md).
+- A review of the risk disclosure by counsel: see "The risk disclosure".
+- Asking a user who accepted an earlier version of a document to accept the one in force. A new version is accepted by whoever registers after it. An account that registered before it keeps its record of the version that it accepted, and is asked nothing.

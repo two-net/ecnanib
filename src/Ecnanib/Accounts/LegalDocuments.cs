@@ -25,12 +25,15 @@ public static class LegalDocuments
     /// <summary>Every document a registration must accept.</summary>
     public static IReadOnlyList<LegalDocument> All { get; } = Enum.GetValues<LegalDocument>();
 
-    /// <summary>The version in force. The texts are drafts until the legal wording is written.</summary>
+    /// <summary>
+    /// The version in force. The risk disclosure is written (NFR-LEG-1). The Terms of Service
+    /// and the Privacy Policy are drafts until their legal wording is written.
+    /// </summary>
     public static string CurrentVersionOf(LegalDocument document) => document switch
     {
         LegalDocument.TermsOfService => "0.1",
         LegalDocument.PrivacyPolicy => "0.1",
-        LegalDocument.RiskDisclosure => "0.1",
+        LegalDocument.RiskDisclosure => "1.0",
         _ => throw new ArgumentOutOfRangeException(nameof(document), document, "The document has no version."),
     };
 }

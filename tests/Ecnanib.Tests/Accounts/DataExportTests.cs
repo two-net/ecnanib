@@ -214,7 +214,7 @@ public class DataExportTests
             Assert.Equal(Morning, acceptance.GetProperty("acceptedAt").GetDateTimeOffset());
         });
         Assert.Equal(
-            ["PrivacyPolicy 0.1", "RiskDisclosure 0.1", "TermsOfService 0.1"],
+            ["PrivacyPolicy 0.1", "RiskDisclosure 1.0", "TermsOfService 0.1"],
             acceptances.Select(acceptance => $"{acceptance.GetProperty("document").GetString()} {acceptance.GetProperty("version").GetString()}"));
 
         // The browser that is signed in, without its token. This request counted as activity.

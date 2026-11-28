@@ -1,6 +1,21 @@
 @attribute [Route(LegalPages.RiskDisclosurePath)]
 @using Ecnanib.Accounts
 
+@* The text is in RiskDisclosurePages. A change to it takes a new version: see docs/accounts.md. *@
+
 <LegalDocumentPage Document="LegalDocument.RiskDisclosure">
-    <p>@LegalPages.Draft</p>
+    @foreach (var paragraph in RiskDisclosurePages.Opening)
+    {
+        <p>@paragraph</p>
+    }
+
+    @foreach (var section in RiskDisclosurePages.Sections)
+    {
+        <h2>@section.Heading</h2>
+
+        @foreach (var paragraph in section.Paragraphs)
+        {
+            <p>@paragraph</p>
+        }
+    }
 </LegalDocumentPage>

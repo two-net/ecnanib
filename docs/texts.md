@@ -17,6 +17,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `LivePages` | `Live` | The parts of a page that follow what changes: the steps of a cycle, the position, the team at work, and what pauses a page. |
 | `HomePages` | `Pages` | The start page, the page that says there is no page at an address, and the page of an error. |
 | `LegalPages` | `Pages/Legal` | The legal documents: their names, their versions, and what stands in the place of a text that is not written yet. |
+| `RiskDisclosurePages` | `Pages/Legal` | The risk disclosure: its opening, and its sections, each a heading and its paragraphs. A word of it that changes takes a new version: see "The risk disclosure" in [accounts.md](accounts.md). |
 | `AccountPages` | `Pages/Account` | The page of the account, the page that deletes it, and what the pages of the account share. |
 | `SignInPages`, `RegistrationPages`, `PasswordPages`, `TwoFactorPages` | `Pages/Account` | Signing in and confirming who one is, registering and verifying, a forgotten password, and two-factor authentication. |
 | `KeyPages` | `Pages/Account` | The keys of the AI providers and of Binance. |
@@ -132,6 +133,6 @@ No test reads a page in another language, because there is none.
 - A second language, and what chooses the language of a request.
 - **What a notification says** is written when it is raised, by the component that raises it, and stored as it was written: the words of a notification are English for good. To say it in the language of its reader, a notification would store what happened and its numbers in place of a sentence. See [notifications.md](notifications.md).
 - **The emails,** which Notifications writes: it may not use the Web UI, and has its texts in `AccountMailer`, `NotificationEmails`, and `NotificationTypes`.
-- **The legal documents,** whose texts are not written yet: a document in another language is another document.
+- **The legal documents:** a document in another language is another document, with a version of its own. The risk disclosure is written in English. The texts of the Terms of Service and of the Privacy Policy are not written yet.
 - **What a model is told and what it answers:** the prompts are in English, and so is a rationale that a page shows as the model wrote it. See [prompts.md](prompts.md).
 - What an operator reads on the console, and what the API answers an error with.

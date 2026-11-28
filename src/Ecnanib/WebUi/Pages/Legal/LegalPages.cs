@@ -5,7 +5,8 @@ namespace Ecnanib.WebUi.Pages.Legal;
 /// <summary>
 /// Where the legal documents are, what they are called, and the texts of their pages, in one
 /// place (NFR-USA-4). The version of each is kept by Accounts, in <see cref="LegalDocuments"/>,
-/// because Accounts records what a user accepted.
+/// because Accounts records what a user accepted. The text of the risk disclosure is in
+/// <see cref="RiskDisclosurePages"/>.
 /// </summary>
 public static class LegalPages
 {
@@ -40,7 +41,10 @@ public static class LegalPages
     /// <summary>What a document says of the version that a registration accepts, under its title.</summary>
     public static string Version(LegalDocument document) => $"Version {LegalDocuments.CurrentVersionOf(document)}";
 
-    /// <summary>What stands in the place of a document whose text is not written yet.</summary>
+    /// <summary>
+    /// What stands in the place of a document whose text is not written yet: the Terms of
+    /// Service and the Privacy Policy.
+    /// </summary>
     public static string Draft =>
         "This document is a draft. Its text is being prepared, and replaces this page before the service opens to the public.";
 
