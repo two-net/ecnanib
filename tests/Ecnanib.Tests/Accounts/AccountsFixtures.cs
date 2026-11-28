@@ -88,6 +88,12 @@ internal sealed class AccountsApplication : IDisposable
     /// <summary>The address users reach the application at, as its configuration file says.</summary>
     public const string PublicUrl = "https://ecnanib.example";
 
+    /// <summary>
+    /// The country that a registration of a test says it lives in: Iceland, which no file of a
+    /// test names as one that the service is not offered in.
+    /// </summary>
+    public const string Country = "IS";
+
     private readonly LoggedApplication _application;
 
     /// <param name="registrationOpen">What the file says about registration. The file of the other tests has it closed.</param>
@@ -118,7 +124,11 @@ internal sealed class AccountsApplication : IDisposable
     {
         Database = database ?? PostgresServer.CreateDatabase();
 
-        var file = LoggedApplication.Settings().With("Application:RegistrationOpen", registrationOpen);
+        // The file of the other tests names countries that the service is not offered in. Here
+        // it names none, so no visitor is asked where they live, unless the test names some.
+        var file = LoggedApplication.Settings()
+            .With("Application:RegistrationOpen", registrationOpen)
+            .WithJson("Application:RestrictedCountries", "[]");
 
         _application = new LoggedApplication(
             settings?.Invoke(file) ?? file,
@@ -574,10 +584,20 @@ internal sealed class AccountsApplication : IDisposable
 
     public string LogText() => _application.LogText();
 
+    /// <param name="email">The address that registers.</param>
+    /// <param name="password">Its password.</param>
+    /// <param name="accepted">The documents that it accepted: every one in the version in force, unless the test says which.</param>
+    /// <param name="country">
+    /// The country that it says it lives in, which an application that asks for one holds
+    /// against its file: <see cref="Country"/>, unless the test says which, or says none.
+    /// </param>
     public Task<RegistrationResult> RegisterAsync(
-        string email, string password = Password, IReadOnlyCollection<AcceptedDocument>? accepted = null) =>
+        string email, string password = Password, IReadOnlyCollection<AcceptedDocument>? accepted = null, string? country = Country) =>
         Registration.RegisterAsync(
-            new RegistrationRequest(email, accepted ?? EveryDocument), password, AuditOrigin.Unknown, TestContext.Current.CancellationToken);
+            new RegistrationRequest(email, accepted ?? EveryDocument, country),
+            password,
+            AuditOrigin.Unknown,
+            TestContext.Current.CancellationToken);
 
     /// <summary>
     /// Confirms a verification link, with the password that the link of a repeat registration

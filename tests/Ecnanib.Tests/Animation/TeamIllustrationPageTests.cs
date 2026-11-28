@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
+using Ecnanib.Tests.Legal;
 using Ecnanib.Tests.Themes;
 using Ecnanib.WebUi;
 using Ecnanib.WebUi.Pages;
@@ -109,10 +110,10 @@ public partial class TeamIllustrationPageTests
             provider => Assert.Single(Regex.Matches(figure, $@"\b{provider}\b")));
 
         // The page names the providers and no company behind one, and says nothing that would
-        // have a provider or the exchange stand behind the service.
-        Assert.All(
-            new[] { "Anthropic", "Google", "OpenAI", "xAI", "logo", "partner", "endorse", "official", "sponsor", "powered by" },
-            word => Assert.DoesNotMatch($@"(?i)\b{Regex.Escape(word)}", ContentOf(page)));
+        // have a provider or the exchange stand behind the service. The words are the ones that
+        // BrandRules holds every text of the application to: here they are looked for in what
+        // the page is sent, which holds the names that the catalog has for the providers too.
+        Assert.DoesNotMatch(BrandRules.Says(), ContentOf(page));
     }
 
     [Fact]

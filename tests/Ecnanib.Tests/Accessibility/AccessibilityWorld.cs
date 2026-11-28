@@ -73,6 +73,12 @@ internal sealed class AccessibilityWorld : IDisposable
     /// </summary>
     public const string Idle = "ida@example.com";
 
+    /// <summary>
+    /// The country that the service of the seeded world is not offered in: Antarctica, by its
+    /// code. A visitor who says that they live there is told so, and is not registered.
+    /// </summary>
+    public const string Restricted = "AQ";
+
     private static readonly DateTimeOffset Morning = Feeding.Morning;
 
     private static readonly LivePrice Bitcoin = new(Market.Spot, TradingMode.Demo, "BTCUSDT", ExchangePriceKind.LastTraded);
@@ -114,6 +120,11 @@ internal sealed class AccessibilityWorld : IDisposable
             settings: file => file
                 .WithJson("Application:Operators", $"[ \"{Operator}\" ]")
                 .WithJson("Binance:Symbols", "[ \"BTCUSDT\", \"SOLUSDT\", \"ETHUSDT\" ]")
+
+                // A country that the service is not offered in, so that the form that registers
+                // a visitor asks where they live (NFR-LEG-3). The people of the world live in
+                // another: see AccountsApplication.Country.
+                .WithJson("Application:RestrictedCountries", $"[ \"{Restricted}\" ]")
 
                 // A key of the service for one provider, of which no user of the world has a
                 // key or a model: so the operator has a catalog to sync on demand (FR-OPS-4).

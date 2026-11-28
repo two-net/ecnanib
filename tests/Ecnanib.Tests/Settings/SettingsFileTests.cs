@@ -23,6 +23,7 @@ public class SettingsFileTests
         Assert.False(settings.Application.RegistrationOpen);
         Assert.Equal(["operator@ecnanib.example"], settings.Application.Operators);
         Assert.Equal(90, settings.Application.ShutdownSeconds);
+        Assert.Equal(["AQ", "BV"], settings.Application.RestrictedCountries);
 
         Assert.Equal(
             "Host=db.example;Database=ecnanib;Username=app;Password=database-password",
@@ -154,6 +155,7 @@ public class SettingsFileTests
         { "Application:Name", "7", "Application:Name" },
         { "Application:RegistrationOpen", "\"yes\"", "Application:RegistrationOpen" },
         { "Application:Operators", "\"operator@ecnanib.example\"", "Application:Operators" },
+        { "Application:RestrictedCountries", "\"AQ\"", "Application:RestrictedCountries" },
         { "Security:MasterKeys", "[]", "Security:MasterKeys" },
         { "Trading", "\"aggressive\"", "Trading" },
         { "Logging:Outputs:File", "true", "Logging:Outputs:File" },
@@ -279,6 +281,14 @@ public class SettingsFileTests
         { "Application:PublicUrl", "\"<the address>\"", "Application:PublicUrl" },
         { "Application:Operators", "[\"not an address\"]", "Application:Operators:0" },
         { "Application:Operators", "[\"a@ecnanib.example\", \"A@ecnanib.example\"]", "Application:Operators" },
+
+        // A country is named by its code, as it is written: a code that names none would
+        // restrict nobody, and nothing would say so (NFR-LEG-3).
+        { "Application:RestrictedCountries", "[\"UK\"]", "Application:RestrictedCountries:0" },
+        { "Application:RestrictedCountries", "[\"AQ\", \"aq\"]", "Application:RestrictedCountries:1" },
+        { "Application:RestrictedCountries", "[\"Antarctica\"]", "Application:RestrictedCountries:0" },
+        { "Application:RestrictedCountries", "[\"AQ\", 7]", "Application:RestrictedCountries:1" },
+        { "Application:RestrictedCountries", "[\"AQ\", \"BV\", \"AQ\"]", "Application:RestrictedCountries" },
         { "Logging:MinimumLevel", "\"Loud\"", "Logging:MinimumLevel" },
         { "Logging:Overrides", "{ \"Ecnanib\": \"Loud\" }", "Logging:Overrides:Ecnanib" },
         { "Logging:Overrides", "{ \"Ecnanib.*.Adapters.*\": \"Debug\" }", "Logging:Overrides:Ecnanib.*.Adapters.*" },
@@ -520,11 +530,15 @@ public class SettingsFileTests
     {
         var settings = Load(SettingsJson.Valid()
             .WithJson("Application:Operators", "[]")
+            .WithJson("Application:RestrictedCountries", "[]")
             .WithJson("Binance:OutboundIps", "[]")
             .WithJson("Binance:FeeSymbols", "[]")
             .WithJson("Logging:Overrides", "{}"));
 
         Assert.Empty(settings.Application.Operators);
+
+        // The service is offered everywhere then, and no visitor is asked where they live.
+        Assert.Empty(settings.Application.RestrictedCountries);
         Assert.Empty(settings.Binance.OutboundIps);
 
         // No symbol prices a fee then: one in an asset of neither side of its symbol has no value.

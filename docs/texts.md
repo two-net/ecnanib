@@ -10,7 +10,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 
 | Text class | In `src/Ecnanib/WebUi` | The texts of |
 |---|---|---|
-| `Screens` | `Layout` | The bar at the top, the navigations, the names of the screens, what a page says of an unhandled error, and the language of the pages. |
+| `Screens` | `Layout` | The bar at the top, the navigations, the names of the screens, the sentence at the foot of every page that says whose service this is, what a page says of an unhandled error, and the language of the pages. |
 | `SessionPages` | `Layout` | The notice before a session ends. |
 | `ConnectionPages` | `Layout` | The dialog that says a page is rejoining the server. |
 | `MaintenanceTexts` | `Layout` | The banner that announces maintenance on every page. |
@@ -20,6 +20,7 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `RiskDisclosurePages` | `Pages/Legal` | The risk disclosure: its opening, and its sections, each a heading and its paragraphs. A word of it that changes takes a new version: see "The risk disclosure" in [accounts.md](accounts.md). |
 | `AccountPages` | `Pages/Account` | The page of the account, the page that deletes it, and what the pages of the account share. |
 | `SignInPages`, `RegistrationPages`, `PasswordPages`, `TwoFactorPages` | `Pages/Account` | Signing in and confirming who one is, registering and verifying, a forgotten password, and two-factor authentication. |
+| `CountryNames` | `Pages/Account` | What the countries are called, for the form that registers a visitor while the service is not offered everywhere. The order of the list is written out there, and not sorted when a page is written. |
 | `KeyPages` | `Pages/Account` | The keys of the AI providers and of Binance. |
 | `AppearancePages` | `Pages/Account` | The appearance: the theme, how much moves, and the time zone. |
 | `NotificationPages` | `Pages/Notifications` | The notifications, and email for critical events. |
@@ -33,6 +34,8 @@ The frame that every page is written in is in [layout.md](layout.md), how a time
 | `ExportFiles` | `Exports` | The links to the two downloads. The names of their columns are words of the files, and no texts: see [export.md](export.md). |
 
 What a market, a mode, and a state of an agent are called is one text for every screen: `AgentPages.NameOf` and `AgentPages.Describe`, wherever a page writes one. What the pages of one screen say is in the class of that screen, also where another screen says the same words: a heading and a link that read alike in English need not read alike in another language.
+
+What a text may say of the exchange and of the AI providers is a rule of its own, which reads every text of the application, and not the pages alone: `BrandRules`, in [legal.md](legal.md).
 
 ## What a text is
 

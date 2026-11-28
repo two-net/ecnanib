@@ -115,7 +115,7 @@ The team of a new agent. The Market Analyst and the Sentiment Analyst work at th
 |---|---|
 | **It is the team of a new agent.** | Each role has the provider that the configuration file gives it, `Trading:DefaultRoles` (FR-TEAM-2, FR-TEAM-3), by the name that the catalog has for the provider: `ICatalogModels.ProviderNamesAsync`, which reads the rows of the providers and nothing else. The name and the job of a role are those of the form of an agent, `AgentPages.Describe`. A mapping that the file changes is the one that the page shows, also one that gives a provider two roles. |
 | **It is the pipeline of the agent screen, as it is once a cycle has gone through it.** | The same three stages, cards, markers, and lines, by the same rules of the stylesheet: see "The team at work" in [agent-screen.md](agent-screen.md). Every role is done, and the work was handed to each stage. `TeamIllustration.razor` writes it as a figure, which no other page has. |
-| **A provider is named as text, to say which it is, and by nothing else** (NFR-LEG-4). | "A model of GPT". The page has no logo and no picture, and a provider has no colour of its own. It names no company behind a provider, and says nothing that would have a provider stand behind the service. An official logo is used only where the terms of its brand allow it: none is used. |
+| **A provider is named as text, to say which it is, and by nothing else** (NFR-LEG-4). | "A model of GPT". The page has no logo and no picture, and a provider has no colour of its own. It names no company behind a provider, and says nothing that would have a provider stand behind the service. An official logo is used only where the terms of its brand allow it: none is used. The rule holds for every page, and `BrandRules` holds the application to it: see "Names and logos" in [legal.md](legal.md). |
 | **A caption says what the picture shows.** | Whose team it is, and the order that the roles work in, in words. Nothing relies on what moves, or on a colour (FR-THM-5). |
 | **The cards and their texts never move, and are never hidden.** | What moves is drawn for the eye alone and hidden from a screen reader: the marker of a role, the second outline of its card, which is an empty element at the start of the card, and the line into a stage. So a page without the script, and a browser that lacks something of it, show the whole picture. |
 | **A visitor and a user see the same.** | The start page is one page. For a user who reduced what moves it stands still, as every page does. It stores nothing and follows nothing. |
@@ -193,7 +193,7 @@ No test of these drives a browser, and none runs the script of what moves: `Acce
 ## Not built yet
 
 - The illustration of the start page played again on request. It is played once each time that the page is shown.
-- A logo of a provider, on the start page or anywhere else. A provider is its name as text, until the terms of its brand are read and allow more (NFR-LEG-4).
+- A logo of a provider, on the start page or anywhere else. A provider is its name as text, until the terms of its brand are read and allow more (NFR-LEG-4). What was read of them is in "The terms of the APIs" in [legal.md](legal.md).
 - An item that leaves a list moving as it goes. It is gone at once.
 - A placeholder on a page that is loaded whole: after a form, and on the first page of a visit. The browser shows the page before until the next one is there.
 - A placeholder in the shape of the page that is on its way. It is the same bars for every page.

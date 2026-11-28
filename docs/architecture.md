@@ -124,7 +124,7 @@ The database is backed up daily, restores are tested, and a migration that drops
 
 ## Accounts
 
-A visitor registers with an email address and a password, accepts the legal documents, and verifies the address by email. Passwords are stored only as Argon2id hashes. Whatever creates an agent asks Accounts first whether the user may, which is where the verified address and the fair-use limit are checked (FR-ACC-1, FR-ACC-7).
+A visitor registers with an email address and a password, accepts the legal documents, and verifies the address by email. While the configuration file names a country that the service is not offered in, a registration also says which country its visitor lives in, and is refused for one of those; the answer is held against the file and not kept (NFR-LEG-3). Passwords are stored only as Argon2id hashes. Whatever creates an agent asks Accounts first whether the user may, which is where the verified address and the fair-use limit are checked (FR-ACC-1, FR-ACC-7).
 
 A user signs in with the address and the password, signs out, and resets a forgotten password by email (FR-ACC-2). Signing in, registering, and asking for a reset can each be tried only so often, from one client and for one address (NFR-SEC-4). A browser that is signed in has a session in the database, named by a cookie, which ends after a period of inactivity. Accounts registers the application's one authentication scheme, so the Web UI and the API both know the signed-in user, and a page says that it needs one with `[Authorize]`.
 
@@ -415,3 +415,9 @@ Components write log events through the host's `ILogger<T>` and nothing else. On
 ## Dependencies
 
 The packages of the application and of its tests are scanned for known vulnerabilities as part of delivery (NFR-SEC-10). `Directory.Build.props` makes the build ask about every package as it restores them, and stop for one that has a known vulnerability, on any machine. A workflow at GitHub scans with every push to `main`, with every pull request, and once a day, and says what it found in the summary of its run and in an issue of the repository. See [dependencies.md](dependencies.md).
+
+## Legal and compliance
+
+What the law and the terms of others ask of the service before it opens to the public is mostly the work of people: counsel reviews whether operating it needs a licence or a registration, the use of each API is held to its terms, and the name of the product is cleared (NFR-LEG-3, NFR-LEG-4, NFR-LEG-5). [legal.md](legal.md) is the record of that work: what is done, what is open, and whose it is.
+
+The code holds three things of it. Restrictions by country are a list of the configuration file, which a registration is held to: the codes of the countries are `Countries` in `Shared`, so that Platform can refuse a file that names none, and their names are a text class of the Web UI. Every page says at its foot that the service is independent of the exchange and of the AI providers. And a rule reads every text and every element that the application writes: a provider and the exchange are named only to say which one is meant, and no page shows a picture but the two drawings of the application's own. It is `BrandRules`, in `tests/Ecnanib.Tests/Legal`. None of this adds a table or a column, and `ComponentRules.cs` is unchanged.

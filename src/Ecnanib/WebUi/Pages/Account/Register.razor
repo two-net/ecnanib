@@ -9,7 +9,7 @@
 @*
     Rendered on the server for each request, and never interactive: the password travels in a form
     post, and not over the connection that an interactive page keeps open. Its texts are in
-    RegistrationPages.
+    RegistrationPages, and the names of the countries in CountryNames.
 *@
 
 <PageTitle>@RegistrationPages.Title</PageTitle>
@@ -65,6 +65,36 @@ else
             }
         </div>
 
+        @*
+            Asked only while the configuration file names a country that the service is not
+            offered in (NFR-LEG-3). The answer is checked and not kept: see docs/legal.md.
+        *@
+        @if (Registration.AsksCountry)
+        {
+            <div class="field">
+                <label for="country">@RegistrationPages.CountryLabel</label>
+                <select id="country" name="Country" autocomplete="country" required
+                        aria-invalid="@PageFields.Invalid(CountryRefused)"
+                        aria-describedby="@PageFields.DescribedBy(PageFields.ErrorOf("country", CountryRefused), "country-hint")"
+                        autofocus="@(FirstRefused == "country")">
+                    <option value="" selected="@(CountryNames.NameOf(Country) is null)">@RegistrationPages.ChooseCountry</option>
+                    @foreach (var country in CountryNames.InOrder)
+                    {
+                        <option value="@country.Code" selected="@(country.Code == Country)">@country.Name</option>
+                    }
+                </select>
+                <p id="country-hint" class="field-hint">@RegistrationPages.CountryHint</p>
+                @if (Has(RegistrationProblem.CountryNotChosen))
+                {
+                    <p id="country-error" class="field-error">@RegistrationPages.CountryNotChosen</p>
+                }
+                else if (Has(RegistrationProblem.CountryRestricted))
+                {
+                    <p id="country-error" class="field-error">@RegistrationPages.CountryRestricted(CountryNames.NameOf(Country))</p>
+                }
+            </div>
+        }
+
         <fieldset>
             <legend>@RegistrationPages.DocumentsLegend</legend>
 
@@ -109,6 +139,10 @@ else
     [SupplyParameterFromForm]
     private string? Password { get; set; }
 
+    // The code of the country that the visitor chose, where the form asks for one.
+    [SupplyParameterFromForm]
+    private string? Country { get; set; }
+
     // Each holds the version of the document that the visitor accepted, or nothing.
     [SupplyParameterFromForm]
     private string? TermsOfService { get; set; }
@@ -134,7 +168,7 @@ else
             .ToList();
 
         var result = await Registration.RegisterAsync(
-            new RegistrationRequest(Email ?? string.Empty, accepted),
+            new RegistrationRequest(Email ?? string.Empty, accepted, Country),
             Password ?? string.Empty,
             HttpContext is { } request ? AuditOrigin.Of(request) : AuditOrigin.Unknown,
             HttpContext?.RequestAborted ?? CancellationToken.None);
@@ -173,12 +207,15 @@ else
 
     private bool PasswordRefused => Has(RegistrationProblem.PasswordTooShort) || Has(RegistrationProblem.PasswordTooLong);
 
+    private bool CountryRefused => Has(RegistrationProblem.CountryNotChosen) || Has(RegistrationProblem.CountryRestricted);
+
     // The first field that was refused, in the order of the form, has the focus when the page
     // opens, unless the page says something above the form, which has it then.
     private string? FirstRefused =>
         _emailNotSent || _tooManyAttempts ? null
         : Has(RegistrationProblem.EmailInvalid) ? "email"
         : PasswordRefused ? "password"
+        : CountryRefused ? "country"
         : Documents.FirstOrDefault(document => Has(document.Problem))?.Id;
 
     /// <summary>One document on the form: its checkbox, and what the visitor posted for it.</summary>

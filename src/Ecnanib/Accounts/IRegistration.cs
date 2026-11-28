@@ -10,11 +10,18 @@ public interface IRegistration
     bool IsOpen { get; }
 
     /// <summary>
+    /// Whether a visitor is asked which country they live in: while the configuration file names
+    /// a country that the service is not offered in (NFR-LEG-3). A registration then needs a
+    /// country, and is refused for one of those. See "Restrictions by country" in docs/legal.md.
+    /// </summary>
+    bool AsksCountry { get; }
+
+    /// <summary>
     /// Registers an account and sends the link that verifies its address. An address that already
     /// has an account gets the same answer as a new one, so the answer does not tell whether an
     /// address is registered. The existing account is left as it is, and its owner is sent an email.
     /// </summary>
-    /// <param name="request">The address, and the documents the visitor accepted.</param>
+    /// <param name="request">The address, the documents the visitor accepted, and the country they said they live in.</param>
     /// <param name="password">
     /// The password. It is passed on its own, not inside the request, so that it is never part of
     /// a value that can be printed or logged.
@@ -64,7 +71,13 @@ public enum EmailVerificationOutcome
 /// <summary>What a visitor fills in on the registration form, except the password.</summary>
 /// <param name="Email">The email address, as typed.</param>
 /// <param name="Accepted">The documents the visitor accepted, each in the version the form showed.</param>
-public sealed record RegistrationRequest(string Email, IReadOnlyCollection<AcceptedDocument> Accepted);
+/// <param name="Country">
+/// The country that the visitor said they live in, by its code of <c>Countries</c>, or null when
+/// they said none. It is held against the countries that the service is not offered in, and
+/// then it is gone: nothing stores it, and no log names it (NFR-SEC-9). A registration that is
+/// not asked for one takes no notice of it.
+/// </param>
+public sealed record RegistrationRequest(string Email, IReadOnlyCollection<AcceptedDocument> Accepted, string? Country);
 
 /// <summary>How a registration ended.</summary>
 public enum RegistrationOutcome
@@ -103,6 +116,12 @@ public enum RegistrationProblem
 
     /// <summary>The risk disclosure was not accepted in the version that is in force.</summary>
     RiskDisclosureNotAccepted,
+
+    /// <summary>The visitor was asked which country they live in, and said none, or something that is no country.</summary>
+    CountryNotChosen,
+
+    /// <summary>The visitor lives in a country that the service is not offered in (NFR-LEG-3).</summary>
+    CountryRestricted,
 }
 
 /// <summary>The outcome of a registration, with the problems of a request that was invalid.</summary>

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ecnanib.Accounts;
 using Ecnanib.Shared;
 using Ecnanib.Tests.Accounts;
@@ -111,8 +112,13 @@ public class BoardPageTests
         Assert.Equal([StoredAgentRows.TeamModel], ExperienceBrowser.RowsOf(page, ByModel).Select(row => row[0]));
 
         // Nothing says that Gemini has trades here: not its name, not its model, and no number
-        // of what is left out.
-        Assert.DoesNotContain("Gemini", page, StringComparison.OrdinalIgnoreCase);
+        // of what is left out. It is the content of the page that says none of it: the foot of
+        // every page names the four providers, to say that the service is none of theirs
+        // (NFR-LEG-4), and says nothing of anyone's trades.
+        var content = Regex.Match(page, "<main[^>]*>(.*?)</main>", RegexOptions.Singleline).Groups[1].Value;
+
+        Assert.Contains(ByProvider, content);
+        Assert.DoesNotContain("Gemini", content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("not counted", page, StringComparison.OrdinalIgnoreCase);
 
         // With a choice that leaves too few for anything, the page says so, and has no table.

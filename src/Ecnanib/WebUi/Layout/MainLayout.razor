@@ -7,7 +7,7 @@
 
 @*
     The frame of every page (FR-UI-1, FR-UI-2): a link past the bar, the bar at the top, the
-    content, and the legal documents at the foot. It is rendered on the server for each request
+    content, and at the foot the legal documents and whose service this is. It is rendered on the server for each request
     and needs no script: on a narrow screen the navigation opens and closes with an element that
     the browser itself opens and closes. The one script of the application is for what moves in
     the content, and is named by the page around the frame: see docs/motion.md. Its look is in app.css. See docs/layout.md. The theme
@@ -113,6 +113,13 @@
             </nav>
         </NotAuthorized>
     </AuthorizeView>
+
+    @*
+        Whose service this is, on every page (NFR-LEG-4): it is not the exchange's and not an AI
+        provider's, and names them only to say which they are. A sentence, with no link in it.
+        See docs/legal.md.
+    *@
+    <p class="site-independence">@Screens.Independence</p>
 </footer>
 
 @*

@@ -1,3 +1,4 @@
+using Ecnanib.Accounts;
 using Ecnanib.Tests.Accounts;
 
 namespace Ecnanib.Tests.Accessibility;
@@ -204,11 +205,27 @@ internal static class AccessibilityRules
             Reach.Answered("sign-in", ("Email", "nobody@example.com"), ("Password", "not the password")), "main .form-error",
             "The form comes back with one message for the whole of it, above its fields."),
 
-        new("/register", "form", Who.Visitor, Reach.Opened, "main input#accept-TermsOfService",
-            "Two fields, and a group of three boxes that each link to a legal document."),
+        // The file of the seeded world names a country that the service is not offered in, so
+        // its form asks where a visitor lives. The form without that field is left off: see below.
+        new("/register", "form", Who.Visitor, Reach.Opened, "main select#country",
+            "Two fields, a list of the countries to choose one from, and a group of three boxes that each link to a legal document."),
         new("/register", "every field refused", Who.Visitor,
-            Reach.Answered("register", ("Email", "no address"), ("Password", "short")), "main #email-error",
-            "Every field and every box is marked as wrong, each with its message under it."),
+            Reach.Answered("register", ("Email", "no address"), ("Password", "short")), "main #country-error",
+            "Every field, the list, and every box is marked as wrong, each with its message under it."),
+
+        // Nothing is stored: nobody who lives there is registered.
+        new("/register", "country refused", Who.Visitor,
+            Reach.Answered(
+                "register",
+                ("Email", "kim@example.com"),
+                ("Password", Password),
+                ("Country", AccessibilityWorld.Restricted),
+                (nameof(LegalDocument.TermsOfService), LegalDocuments.CurrentVersionOf(LegalDocument.TermsOfService)),
+                (nameof(LegalDocument.PrivacyPolicy), LegalDocuments.CurrentVersionOf(LegalDocument.PrivacyPolicy)),
+                (nameof(LegalDocument.RiskDisclosure), LegalDocuments.CurrentVersionOf(LegalDocument.RiskDisclosure))),
+            "main select#country[aria-invalid='true'] option[value='AQ'][selected]",
+            "A form that is in order but for where its visitor lives: the list alone is marked as wrong, keeps what was chosen, " +
+            "and says that the service is not offered there."),
         new("/register", "closed", Who.Visitor, Reach.Opened, "main > h1 + p",
             "With registration closed, the page has a sentence in place of the form.", In: World.RegistrationClosed),
         new("/register/sent", "the page", Who.Visitor, Reach.Opened, "main a[href='/register']",
@@ -613,6 +630,10 @@ internal static class AccessibilityRules
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> LeftOff = new Dictionary<string, string>
     {
+        ["The form of /register without the list of the countries, where the configuration file names no country"] =
+            "The one world names a country, so that its form asks where a visitor lives. Without the list the form is " +
+            "the same, less one field: two fields and three boxes, as its states here have them beside the list.",
+
         ["\"Too many attempts\" on the pages that take a password, an address, or a code"] =
             "Reaching it means spending the attempts of an address, which would keep the people of the one world out of " +
             "their own states. It is a message above the form, as the wrong password of /sign-in is.",

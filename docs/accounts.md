@@ -8,12 +8,13 @@ How requests travel, over TLS and with which cookies, and how the secrets in the
 
 ## Registering
 
-The form is at `/register`. It asks for an email address, a password, and a tick for each of the three legal documents.
+The form is at `/register`. It asks for an email address, a password, and a tick for each of the three legal documents. While the service is not offered in every country, it also asks which country the visitor lives in.
 
 | Rule | Detail |
 |---|---|
 | Email address | One `@`, with a name before it and a domain with a dot after it. It is trimmed and stored in lower case, so one address is one account however it is typed. |
 | Password | 12 to 128 characters, counted as a person counts them. There are no rules about which characters. |
+| Country | Asked only while the configuration file names a country that the service is not offered in. One of the list, and not one that the file names. See "The country a visitor lives in". |
 | Legal documents | Each one accepted, in the version that is in force. |
 
 What happens next depends on the address, but the visitor sees the same page, "Check your email", in every case:
@@ -35,6 +36,20 @@ If the email cannot be sent, the form says so and the error is logged. The accou
 The form can be sent only so often, from one client and for one address, so it sends no address more email than that. See "Limits on attempts".
 
 The log names an account by its id and never by its address.
+
+### The country a visitor lives in
+
+Restrictions by country are applied at registration (NFR-LEG-3). The configuration file names the countries that the service is not offered in, `Application:RestrictedCountries`, and nobody who says that they live in one of them is registered. Which countries those are is for counsel to say: see [legal.md](legal.md).
+
+| Rule | Detail |
+|---|---|
+| **The form asks only while the file names a country.** | `IRegistration.AsksCountry`. With an empty list, which is what the tracked file has, the form has no such field, and a registration is not held to a country, whatever it brings. |
+| **The visitor chooses from every country.** | A list of 250, by name, in the order of the alphabet, with a first choice that chooses none: the codes of `Countries`, in `Shared`, with the names of `CountryNames`. The countries that the service is not offered in are among them, so a visitor answers with where they live and is then told. |
+| **A country that the file names is refused.** | "The service is not offered to people who live in Antarctica, so no account can be registered." No choice, and what is no code of a country, is refused too: "Choose the country that you live in." Both are problems of the form like a password that is too short: nothing is stored, no email is sent, and no attempt is counted. |
+| **The answer is not kept.** | It is held against the list and then it is gone. No column holds it, no log event names it, no email says it, and the audit trail records no registration. Personal data stays what it was (NFR-SEC-9). `CountryRestrictionTests` holds that. |
+| **It is what the visitor says.** | Nothing looks up where a request came from. |
+
+What follows from keeping nothing is in "Restrictions by country" in [legal.md](legal.md): a country that is added to the list later does not reach the accounts that exist.
 
 ## Verifying the address
 
@@ -781,6 +796,7 @@ Both come from the configuration file, are read at startup, and apply to every u
 | Key | Effect |
 |---|---|
 | `Application:RegistrationOpen` | When `false`, the form is replaced by a notice and no account is created. An address that registered earlier can still be verified. |
+| `Application:RestrictedCountries` | The countries that the service is not offered in. While it names one, the form asks which country a visitor lives in, and refuses those. See "The country a visitor lives in". |
 | `Limits:MaxAgentsPerUser` | The most agents one user may have. No account carries a limit of its own. |
 | `Limits:SignIn`, `Limits:Registration`, `Limits:PasswordReset` | How often each may be tried. See "Limits on attempts". |
 
@@ -816,6 +832,7 @@ Personal data is limited to the email address, the password hash, and preference
 - `PersonalDataTests` reads the model. A column that is added and not listed fails it, so what is kept about a person is decided in one visible place. The two lists of personal data are pinned there.
 - The rule reads types and not meanings. A time, such as when a session was last used, or when a user marked a step of the setup checklist, is listed nowhere. It is in the export, and goes with the account.
 - **The name of an agent is what its user typed,** to tell their agents apart, and is listed as that. Nothing asks a user for anything about themselves in it. It is shown to its user alone, is in the export, is in no log event, and goes with the account. See [agents.md](agents.md).
+- **The country that a registration says is not stored.** It is asked only while the service is not offered everywhere, and is held against the configuration file and nothing else. So it is in no column, in no export, and in no log. See "The country a visitor lives in".
 - The id of an account tells nothing about the person, so it is not personal data. See [ownership.md](ownership.md).
 - The logs hold neither an address nor an origin: they name an account by its id. See [logging.md](logging.md).
 
@@ -874,5 +891,6 @@ For development, `docker compose up -d` starts a mail server on `localhost:1025`
 - A page that is loaded anew after its connection could not be made again. The browser asks for it as for any page, which counts as activity of its user.
 - Removing accounts that were never verified, and the sessions and waiting sign-ins of users who never come back.
 - The wording of the Terms of Service and of the Privacy Policy. The Privacy Policy is to say what goes to AI providers, under whose keys and whose terms (NFR-SEC-8): the pages of the keys and the page of an agent's prompts say it already. See [prompts.md](prompts.md).
-- A review of the risk disclosure by counsel: see "The risk disclosure".
+- A review of the risk disclosure by counsel: see "The risk disclosure". What else is for counsel before the service opens to the public is in [legal.md](legal.md).
+- Holding an account that exists to a restriction by country: at the sign-in, or when an agent is switched to Live. The country is asked at registration and not kept, so a country that the file names later reaches nobody who registered before. See "Not built yet" in [legal.md](legal.md).
 - Asking a user who accepted an earlier version of a document to accept the one in force. A new version is accepted by whoever registers after it. An account that registered before it keeps its record of the version that it accepted, and is asked nothing.

@@ -1432,16 +1432,24 @@ main {
         max-width: 75ch;
     }
 
-/* The foot of every page: the legal documents, in smaller text, each as tall as a finger needs. */
+/* The foot of every page: the legal documents, in smaller text, each as tall as a finger needs,
+   and under them the sentence that says whose service this is (NFR-LEG-4), in the colour of the
+   text around it and no wider than reads well. */
 .site-footer {
     padding: 0.5rem 1rem;
     border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     font-size: 0.875rem;
+    overflow-wrap: break-word;
 }
 
     .site-footer a {
         display: block;
         padding: 0.5rem 0;
+    }
+
+    .site-independence {
+        max-width: 75ch;
+        margin: 0.5rem 0;
     }
 
 /* What a page that follows what changes says of itself under its heading, with the link that

@@ -32,6 +32,14 @@ public partial class LayoutPageTests
 
     private static readonly string[] LegalPaths = ["/legal/terms", "/legal/privacy", "/legal/risk-disclosure"];
 
+    // What the foot of every page says of whose service this is, word for word (NFR-LEG-4). A
+    // word of it that changes is a change of what the service says of itself and of others:
+    // see "Names and logos" in docs/legal.md.
+    private const string Independence =
+        "Ecnanib is an independent service. It is not affiliated with, endorsed by, or sponsored by Binance " +
+        "or by the providers of Claude, Gemini, GPT, and Grok. Those names say which services it works with, " +
+        "and are trademarks of their owners.";
+
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -439,8 +447,15 @@ public partial class LayoutPageTests
         Holds(page.IndexOf("<h1", StringComparison.Ordinal) > main, "has no heading in its content");
         Holds(BarOf(page).Contains("<a class=\"site-name\" href=\"/\"", StringComparison.Ordinal), "does not lead to the start page by the name of the service");
 
-        var foot = page[footer..];
+        var foot = page[footer..page.IndexOf("</footer>", StringComparison.Ordinal)];
         Holds(LegalPaths.All(legal => foot.Contains($"<a href=\"{legal}\"", StringComparison.Ordinal)), "does not lead to the legal documents at its foot");
+
+        // Under them, once, as a sentence with no link in it: whose service this is, and that
+        // the exchange and the AI providers are named only to say which they are (NFR-LEG-4).
+        Holds(
+            Regex.IsMatch(foot, $"<p class=\"site-independence\"[^>]*>{Regex.Escape(Independence)}</p>\\s*$"),
+            "does not end its foot with the sentence that says whose service this is");
+        Holds(Regex.Matches(page, Regex.Escape(Independence)).Count == 1, "does not say whose service this is exactly once");
     }
 
     /// <summary>The bar at the top of a page.</summary>

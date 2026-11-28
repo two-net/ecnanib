@@ -47,7 +47,7 @@ Every page is written in the same frame, for a visitor and for a user, also the 
 | The bar, `<header>` | The name of the service, which leads to the start page, and the navigation: see "The bar". |
 | The banner, `<section class="site-notice">` | What every page says of maintenance that is announced, from when to when, while any is announced and not over (NFR-REL-6). A page has none otherwise. See "Announced maintenance" in [reliability.md](reliability.md). |
 | The content, `<main id="content">` | The navigation of the settings, on a page of the settings, and the page itself, which starts with its one `<h1>`. |
-| The foot, `<footer>` | The Terms of Service, the Privacy Policy, and the risk disclosure, for a visitor and for a user. Under them, for a visitor, "Appearance". |
+| The foot, `<footer>` | The Terms of Service, the Privacy Policy, and the risk disclosure, for a visitor and for a user. Under them, for a visitor, "Appearance". Last, on every page, the sentence that says whose service this is: that it is independent of Binance and of the AI providers, whose names only say which services it works with (NFR-LEG-4). It is `Screens.Independence`, a sentence with no link. See "Names and logos" in [legal.md](legal.md). |
 
 | Rule | Detail |
 |---|---|
@@ -123,7 +123,7 @@ It uses no container query, no `:has()`, and no nesting.
 
 | Rule | Detail |
 |---|---|
-| **It says what the service is, in three sentences.** | AI trading agents on Binance, a team of four AI roles with the user's own keys inside fixed limits, and that Demo uses no real funds and Live can lose money, with a link to the risk disclosure. The AI providers and the exchange are named only to say which they are (NFR-LEG-4). |
+| **It says what the service is, in three sentences.** | AI trading agents on Binance, a team of four AI roles with the user's own keys inside fixed limits, and that Demo uses no real funds and Live can lose money, with a link to the risk disclosure. The AI providers and the exchange are named only to say which they are (NFR-LEG-4): see "Names and logos" in [legal.md](legal.md). |
 | **It presents the team as an illustration** (FR-ANI-7). | Under what it says of the team: the four roles as the screen of an agent draws them, each with the provider that the configuration file gives it on a new agent, played once as one cycle. See "The illustration of the start page" in [motion.md](motion.md). |
 | **A visitor is led to register and to sign in.** | While registration is closed, the page says so, and does not lead to it. |
 | **A user is led to their dashboard and to their agents.** | The bar is around the page, as around every page. |

@@ -7,7 +7,8 @@ namespace Ecnanib.WebUi.Pages.Account;
 /// visitor, the page that says the email to confirm the address was sent, and the page that the
 /// link in it opens. What these say alike with other pages of the account, such as the labels of
 /// the fields and what a form says of a password, is in <see cref="AccountPages"/>. The names of
-/// the legal documents are in <c>LegalPages</c>. See docs/accounts.md.
+/// the legal documents are in <c>LegalPages</c>, and the names of the countries in
+/// <see cref="CountryNames"/>. See docs/accounts.md.
 /// </summary>
 public static class RegistrationPages
 {
@@ -16,6 +17,27 @@ public static class RegistrationPages
 
     /// <summary>What that page says in place of its form while registration is closed.</summary>
     public static string Closed => "Registration is closed. No new accounts are being accepted at the moment.";
+
+    /// <summary>
+    /// The label of the field that asks which country a visitor lives in. The form has it only
+    /// while the service is not offered everywhere (NFR-LEG-3).
+    /// </summary>
+    public static string CountryLabel => "Country you live in";
+
+    /// <summary>The first choice of that field, which chooses none.</summary>
+    public static string ChooseCountry => "Choose a country";
+
+    /// <summary>What the form says under that field: why it asks, and that the answer is not kept.</summary>
+    public static string CountryHint =>
+        "The service is not offered in every country. Your answer is checked when you register, and is not kept.";
+
+    /// <summary>What the form says under that field when no country was chosen.</summary>
+    public static string CountryNotChosen => "Choose the country that you live in.";
+
+    /// <summary>What the form says under that field when the service is not offered in the country that was chosen.</summary>
+    /// <param name="country">The name of the country, as users read it.</param>
+    public static string CountryRestricted(string? country) =>
+        $"The service is not offered to people who live in {country}, so no account can be registered.";
 
     /// <summary>What the legal documents that a visitor accepts are, on the form.</summary>
     public static string DocumentsLegend => "Before you register";

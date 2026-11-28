@@ -46,6 +46,18 @@ public static class Screens
     /// <summary>The name of what the foot of a page leads a visitor to beside them, as a screen reader says it.</summary>
     public static string DeviceNavigation => "This device";
 
+    /// <summary>
+    /// What the foot of every page says of whose service this is (NFR-LEG-4): that it is
+    /// independent of the exchange and of the AI providers, and that their names only say
+    /// which services it works with. It names no company behind a provider. The name of the
+    /// service is written in it, and not taken from <see cref="SiteName"/>: it is one text,
+    /// which the rule of the names lists as it stands. See "Names and logos" in docs/legal.md.
+    /// </summary>
+    public static string Independence =>
+        "Ecnanib is an independent service. It is not affiliated with, endorsed by, or sponsored by Binance " +
+        "or by the providers of Claude, Gemini, GPT, and Grok. Those names say which services it works with, " +
+        "and are trademarks of their owners.";
+
     /// <summary>The text of the link of a visitor to the page they sign in on.</summary>
     public static string SignIn => "Sign in";
 

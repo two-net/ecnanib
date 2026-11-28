@@ -30,6 +30,10 @@ public class TrackedFileTests
         // Two minutes to stop in: the cycles that run are stopped, and what they left is settled
         // with the exchange, before the process ends (NFR-REL-5).
         Assert.Equal(120, settings.Application.ShutdownSeconds);
+
+        // The file names no country that the service is not offered in: which ones is for a
+        // deployment to say, once counsel has (NFR-LEG-3).
+        Assert.Empty(settings.Application.RestrictedCountries);
         Assert.Equal(60, settings.Security.SessionIdleMinutes);
         Assert.Equal(LogLevel.Information, settings.Logging.MinimumLevel);
         Assert.True(settings.Logging.Outputs.Console);

@@ -1,5 +1,6 @@
 using Ecnanib.Platform.Persistence;
 using Ecnanib.Platform.Settings;
+using Ecnanib.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecnanib.Accounts;
@@ -21,6 +22,14 @@ namespace Ecnanib.Accounts;
 /// to the database, and sends one email. So neither the answer nor the time it takes tells
 /// whether an address has an account.
 /// </para>
+/// <para>
+/// While the configuration file names a country that the service is not offered in, a
+/// registration says which country its visitor lives in, and is refused for one of those
+/// (NFR-LEG-3). The answer is what the visitor says: nothing looks up where a request came
+/// from. It is read for that one check, as the password is read for its length, and is not
+/// kept: no column holds it, no log event names it, and the audit trail records no
+/// registration. See "Restrictions by country" in docs/legal.md.
+/// </para>
 /// </remarks>
 internal sealed class Registration(
     ApplicationSettings application,
@@ -41,6 +50,8 @@ internal sealed class Registration(
 
     public bool IsOpen => application.RegistrationOpen;
 
+    public bool AsksCountry => application.RestrictedCountries.Count > 0;
+
     public async Task<RegistrationResult> RegisterAsync(
         RegistrationRequest request, string password, AuditOrigin origin, CancellationToken cancellationToken)
     {
@@ -54,7 +65,7 @@ internal sealed class Registration(
         }
 
         var email = EmailAddress.Normalize(request.Email);
-        var problems = ProblemsOf(email, password, request.Accepted);
+        var problems = ProblemsOf(email, password, request.Country, request.Accepted);
         if (problems.Count > 0)
         {
             return RegistrationResult.Invalid(problems);
@@ -294,8 +305,8 @@ internal sealed class Registration(
         return address;
     }
 
-    private static List<RegistrationProblem> ProblemsOf(
-        string email, string password, IReadOnlyCollection<AcceptedDocument> accepted)
+    private List<RegistrationProblem> ProblemsOf(
+        string email, string password, string? country, IReadOnlyCollection<AcceptedDocument> accepted)
     {
         var problems = new List<RegistrationProblem>();
 
@@ -313,6 +324,20 @@ internal sealed class Registration(
             case PasswordProblem.TooLong:
                 problems.Add(RegistrationProblem.PasswordTooLong);
                 break;
+        }
+
+        // In the order of the form. A registration that is not asked for a country is not held
+        // to one, whatever it brings.
+        if (AsksCountry)
+        {
+            if (!Countries.IsCode(country))
+            {
+                problems.Add(RegistrationProblem.CountryNotChosen);
+            }
+            else if (application.RestrictedCountries.Contains(country, StringComparer.Ordinal))
+            {
+                problems.Add(RegistrationProblem.CountryRestricted);
+            }
         }
 
         foreach (var document in LegalDocuments.All)
